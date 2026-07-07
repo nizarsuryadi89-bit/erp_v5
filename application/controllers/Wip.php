@@ -538,12 +538,10 @@ class Wip extends MY_Controller
                 }
 
                 $assigned_user = null;
-                if ($last_done_operator && isset($karyawan_to_user[$last_done_operator])) {
+                if ($active_op_id && isset($karyawan_to_user[$active_op_id])) {
+                    $assigned_user = $karyawan_to_user[$active_op_id];
+                } elseif ($last_done_operator && isset($karyawan_to_user[$last_done_operator])) {
                     $assigned_user = $karyawan_to_user[$last_done_operator];
-                } elseif ($current_step && !empty($current_step->routing_operator_id)) {
-                    if (isset($divisi_to_user[$current_step->routing_operator_id])) {
-                        $assigned_user = $divisi_to_user[$current_step->routing_operator_id];
-                    }
                 }
 
 
