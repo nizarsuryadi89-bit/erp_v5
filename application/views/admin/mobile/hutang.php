@@ -1,5 +1,6 @@
 <div class="row g-3">
     <!-- Header Stats -->
+    <!-- CI/CD Test: File ini otomatis diupdate oleh GitHub Actions -->
     <div class="col-12 mt-2">
         <div class="card border-0 bg-dark text-white rounded-4 shadow-sm position-relative overflow-hidden">
             <div class="position-absolute end-0 top-0 opacity-10 me-n3 mt-n3">
