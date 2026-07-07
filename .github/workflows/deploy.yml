@@ -33,3 +33,10 @@ jobs:
             uploads/**
             error_log
             .env
+            assets/app-releases/**
+            flutter_example/**
+            portal/**
+            portal.zip
+            *.apk
+            *.zip
+            scratch*
