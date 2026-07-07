@@ -1,9 +1,7 @@
 name: Deploy to cPanel via FTP
 
 on:
-  push:
-    branches:
-      - master # Akan otomatis deploy setiap kali ada push ke branch master
+  workflow_dispatch: # Menjadikan proses deploy hanya berjalan jika Anda menekan tombol secara manual di GitHub
 
 jobs:
   web-deploy:
