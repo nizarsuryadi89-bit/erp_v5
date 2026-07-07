@@ -40,3 +40,13 @@ jobs:
             *.apk
             *.zip
             scratch*
+            vendor/**
+            system/**
+            user_guide/**
+            assets/vendor/**
+            application/logs/**
+            application/cache/**
+            application/tests/**
+            erp/**
+            database/**
+            documentation/**
