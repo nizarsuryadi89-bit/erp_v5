@@ -744,26 +744,35 @@
                                 }
                                 $final_catatan = trim(implode("\n", $clean_catatan));
                             ?>
-                            <?php if (!empty($final_catatan) || !empty($item->op_cetak_name) || !empty($item->op_finishing_name) || !empty($pb_oleh)): ?>
+                            <?php if (!empty($final_catatan) || !empty($item->deskprint_nama) || !empty($item->assigned_user) || !empty($item->op_cetak_name) || !empty($item->op_finishing_name) || !empty($pb_oleh)): ?>
                                 <div class="mt-1 p-2 rounded bg-warning bg-opacity-10 border border-warning border-opacity-25 shadow-sm">
                                     <div class="small fw-bold text-warning-emphasis mb-1" style="font-size: 0.6rem;"><i class="fas fa-sticky-note me-1"></i>KETERANGAN:</div>
                                     
-                                    <?php if (!empty($item->op_cetak_name) || !empty($item->op_finishing_name) || !empty($pb_oleh)): ?>
-                                        <div class="<?= !empty($final_catatan) ? 'mb-1 pb-1 border-bottom border-warning border-opacity-25' : '' ?>" style="font-size: 0.65rem;">
+                                    <div class="<?= !empty($final_catatan) ? 'mb-1 pb-1 border-bottom border-warning border-opacity-25' : '' ?>" style="font-size: 0.65rem;">
+                                        <?php if (!empty($item->deskprint_nama)): ?>
+                                            <div class="text-muted"><i class="fas fa-user-edit me-1"></i>Di Proses Oleh Deskprint: <span class="fw-bold text-dark"><?= htmlspecialchars($item->deskprint_nama) ?></span></div>
+                                        <?php endif; ?>
+
+                                        <?php if ($st === 'proses'): ?>
+                                            <?php if (!empty($item->assigned_user)): ?>
+                                                <div class="text-muted"><i class="fas fa-user-cog me-1"></i>Di Kerjakan Oleh: <span class="fw-bold text-dark"><?= htmlspecialchars($item->assigned_user) ?></span></div>
+                                            <?php endif; ?>
+                                        <?php elseif ($st === 'done' || $st === 'on_pb' || $st === 'on_costumer'): ?>
                                             <?php if (!empty($item->op_cetak_name)): ?>
-                                                <div class="text-muted"><i class="fas fa-print me-1"></i>Dikerjakan Oleh Operator: <span class="fw-bold text-dark"><?= htmlspecialchars($item->op_cetak_name) ?></span></div>
+                                                <div class="text-muted"><i class="fas fa-print me-1"></i>Di Kerjakan Oleh Operator: <span class="fw-bold text-dark"><?= htmlspecialchars($item->op_cetak_name) ?></span></div>
                                             <?php endif; ?>
                                             <?php if (!empty($item->op_finishing_name)): ?>
-                                                <div class="text-muted"><i class="fas fa-cut me-1"></i>finishing oleh: <span class="fw-bold text-dark"><?= htmlspecialchars($item->op_finishing_name) ?></span></div>
+                                                <div class="text-muted"><i class="fas fa-cut me-1"></i>Di Kerjakan oleh Finishing: <span class="fw-bold text-dark"><?= htmlspecialchars($item->op_finishing_name) ?></span></div>
                                             <?php endif; ?>
-                                            <?php if (!empty($pb_oleh)): ?>
-                                                <div class="text-muted"><i class="fas fa-handshake me-1"></i>di berikan ke konsumen oleh: <span class="fw-bold text-dark"><?= htmlspecialchars($pb_oleh) ?> (PB)</span> melalui: <span class="fw-bold text-dark"><?= htmlspecialchars($pb_via) ?></span></div>
+                                            
+                                            <?php if ($st === 'on_costumer' && !empty($pb_oleh)): ?>
+                                                <div class="text-muted"><i class="fas fa-handshake me-1"></i>Diserahkan Oleh PB: <span class="fw-bold text-dark"><?= htmlspecialchars($pb_oleh) ?></span> Secara: <span class="fw-bold text-dark"><?= htmlspecialchars($pb_via) ?></span></div>
                                                 <?php if (!empty($pb_note)): ?>
                                                     <div class="text-muted ps-3"><i class="fas fa-comment-dots me-1"></i>Note PB: <span class="fst-italic text-dark"><?= htmlspecialchars($pb_note) ?></span></div>
                                                 <?php endif; ?>
                                             <?php endif; ?>
-                                        </div>
-                                    <?php endif; ?>
+                                        <?php endif; ?>
+                                    </div>
 
                                     <?php if (!empty($final_catatan)): ?>
                                         <div class="text-dark small lh-sm fst-italic" style="font-size: 0.75rem;">
