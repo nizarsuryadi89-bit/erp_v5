@@ -695,7 +695,33 @@
                                 }
                                 ?>
                                 <?php if (!isset($filter_status_view) || $filter_status_view !== 'konsumen'): ?>
-
+                                    <?php if (!empty($item->routing_steps)): ?>
+                                        <div class="d-flex flex-wrap align-items-center mt-1 gap-1" style="font-size: 0.6rem;">
+                                            <span class="text-muted fw-bold" style="font-size: 0.55rem;">Routing:</span>
+                                            <?php foreach ($item->routing_steps as $idx => $step): ?>
+                                                <?php 
+                                                $isActive = ($step->status_produksi == '1'); 
+                                                $isDone = ($step->status_produksi == '2');
+                                                
+                                                $bgClass = 'bg-light text-secondary border border-secondary border-opacity-25';
+                                                $icon = '';
+                                                if ($isDone) {
+                                                    $bgClass = 'bg-success bg-opacity-75 text-white';
+                                                    $icon = '<i class="fas fa-check me-1"></i>';
+                                                } elseif ($isActive) {
+                                                    $bgClass = 'bg-primary text-white shadow-sm';
+                                                    $icon = '<i class="fas fa-cog fa-spin me-1"></i>';
+                                                }
+                                                ?>
+                                                <span class="badge <?= $bgClass ?> fw-normal" style="padding: 2px 4px; letter-spacing: 0.2px;" title="Urutan: <?= $step->routing_urutan ?>">
+                                                    <?= $icon ?><?= htmlspecialchars($step->routing_name) ?>
+                                                </span>
+                                                <?php if ($idx < count($item->routing_steps) - 1): ?>
+                                                    <i class="fas fa-caret-right text-muted opacity-50" style="font-size: 0.55rem;"></i>
+                                                <?php endif; ?>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php endif; ?>
                                 <?php endif; ?>
                             <?php endif; ?>
 
