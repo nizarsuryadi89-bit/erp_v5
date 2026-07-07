@@ -1,7 +1,9 @@
 name: Deploy to cPanel via FTP
 
 on:
-  workflow_dispatch: # Menjadikan proses deploy hanya berjalan jika Anda menekan tombol secara manual di GitHub
+  push:
+    branches:
+      - production # Proses deploy hanya berjalan jika Anda melakukan push ke branch production
 
 jobs:
   web-deploy:
