@@ -1476,11 +1476,19 @@ class Wip extends MY_Controller
                 } else {
                     // Fully done
                     $final_status = $this->input->post('send_to_pb') == 1 ? 'on_pb' : 'done';
-                    $this->db->where('produksi_id', $pid);
-                    $this->db->update('tbl_produksi', [
+                    
+                    $update_payload = [
                         'status_produksi' => $final_status,
                         'tgl_selesai' => date('Y-m-d H:i:s')
-                    ]);
+                    ];
+                    
+                    if ($final_status === 'on_pb') {
+                        $update_payload['tgl_kirim_pb'] = date('Y-m-d H:i:s');
+                    }
+                    
+                    $this->db->where('produksi_id', $pid);
+                    $this->db->update('tbl_produksi', $update_payload);
+                    
                     if ($final_status === 'on_pb') {
                         $this->db->where('produksi_id', $pid);
                         $this->db->update('detail_produksi', [
