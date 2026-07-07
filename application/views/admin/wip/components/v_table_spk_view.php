@@ -196,24 +196,53 @@
                             $spk_op_finishing = array_unique(array_filter(array_map('trim', explode(',', implode(',', $spk_op_finishing)))));
                             ?>
                             
-                            <?php if (!empty($p->catatan) || !empty($spk_op_cetak) || !empty($spk_op_finishing)): ?>
+                            <?php 
+                                $pb_oleh = null;
+                                $pb_via = null;
+                                $pb_note = null;
+                                $clean_catatan = [];
+                                if (!empty($p->catatan)) {
+                                    $lines = explode("\n", $p->catatan);
+                                    foreach ($lines as $line) {
+                                        if (preg_match('/\[(?:BULK )?HANDOVER\].*?\|\s*Oleh:\s*(.*?)\s*\|\s*Via:\s*(.*?)\s*\|\s*Note:\s*(.*)/i', $line, $matches)) {
+                                            $pb_oleh = trim($matches[1]);
+                                            $pb_via = trim($matches[2]);
+                                            $pb_note = trim($matches[3]);
+                                            if ($pb_note === '-') $pb_note = null;
+                                        } elseif (preg_match('/\[PB\].*?Dikirim ke Hub Pengambilan Barang/i', $line)) {
+                                            // Skip noisy line
+                                        } else {
+                                            $clean_catatan[] = $line;
+                                        }
+                                    }
+                                }
+                                $final_catatan = trim(implode("\n", $clean_catatan));
+                            ?>
+                            <?php if (!empty($final_catatan) || !empty($spk_op_cetak) || !empty($spk_op_finishing) || !empty($pb_oleh)): ?>
                                 <div class="mt-1 p-2 rounded bg-warning bg-opacity-10 border border-warning border-opacity-25"
                                     style="max-width:300px; white-space: normal;">
                                     <div class="small fw-bold text-warning-emphasis mb-1"><i
                                             class="fas fa-sticky-note me-1"></i>KETERANGAN:</div>
-                                    <?php if (!empty($p->catatan)): ?>
-                                        <div class="text-dark small lh-sm fst-italic mb-1"><?= nl2br(htmlspecialchars($p->catatan)) ?></div>
-                                    <?php endif; ?>
                                     
-                                    <?php if (!empty($spk_op_cetak) || !empty($spk_op_finishing)): ?>
-                                        <div class="<?= !empty($p->catatan) ? 'pt-1 border-top border-warning border-opacity-25 mt-1' : '' ?>" style="font-size: 0.65rem;">
+                                    <?php if (!empty($spk_op_cetak) || !empty($spk_op_finishing) || !empty($pb_oleh)): ?>
+                                        <div class="<?= !empty($final_catatan) ? 'mb-1 pb-1 border-bottom border-warning border-opacity-25' : '' ?>" style="font-size: 0.65rem;">
                                             <?php if (!empty($spk_op_cetak)): ?>
-                                                <div class="text-muted"><i class="fas fa-print me-1"></i>Op: <span class="fw-bold text-dark"><?= implode(', ', $spk_op_cetak) ?></span></div>
+                                                <div class="text-muted"><i class="fas fa-print me-1"></i>Dikerjakan Oleh Operator: <span class="fw-bold text-dark"><?= implode(', ', $spk_op_cetak) ?></span></div>
                                             <?php endif; ?>
                                             <?php if (!empty($spk_op_finishing)): ?>
-                                                <div class="text-muted"><i class="fas fa-cut me-1"></i>Fin: <span class="fw-bold text-dark"><?= implode(', ', $spk_op_finishing) ?></span></div>
+                                                <div class="text-muted"><i class="fas fa-cut me-1"></i>finishing oleh: <span class="fw-bold text-dark"><?= implode(', ', $spk_op_finishing) ?></span></div>
+                                            <?php endif; ?>
+                                            <?php if (!empty($pb_oleh)): ?>
+                                                <div class="text-muted"><i class="fas fa-handshake me-1"></i>di berikan ke konsumen oleh: <span class="fw-bold text-dark"><?= htmlspecialchars($pb_oleh) ?> (PB)</span> melalui: <span class="fw-bold text-dark"><?= htmlspecialchars($pb_via) ?></span></div>
+                                                <?php if (!empty($pb_note)): ?>
+                                                    <div class="text-muted ps-3"><i class="fas fa-comment-dots me-1"></i>Note PB: <span class="fst-italic text-dark"><?= htmlspecialchars($pb_note) ?></span></div>
+                                                <?php endif; ?>
                                             <?php endif; ?>
                                         </div>
+                                    <?php endif; ?>
+
+                                    <?php if (!empty($final_catatan)): ?>
+                                        <div class="text-dark small lh-sm fst-italic"><?= nl2br(htmlspecialchars($final_catatan)) ?></div>
                                     <?php endif; ?>
                                 </div>
                             <?php endif; ?>
