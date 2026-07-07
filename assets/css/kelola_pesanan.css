@@ -1,0 +1,205 @@
+:root {
+    --market-bg: #f5f6f7;
+    --market-primary: #EE4D2D;
+    --market-secondary: #26aa99;
+    --market-text: #222;
+    --market-border: #e8e8e8;
+}
+
+.kelola-pesanan-wrapper {
+    background: var(--market-bg);
+    min-height: 100vh;
+}
+
+/* Header Section */
+.order-header {
+    background: white;
+    padding: 1rem 2rem;
+    border-bottom: 1px solid var(--market-border);
+}
+
+.order-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--market-text);
+    margin: 0;
+}
+
+/* Stats Cards */
+.stat-card-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    padding: 1.5rem 2rem;
+}
+
+.stat-item {
+    background: white;
+    padding: 1.25rem;
+    border-radius: 8px;
+    text-align: left;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    border: 1px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.stat-item:hover {
+    border-color: var(--market-primary);
+}
+
+.stat-value {
+    font-size: 1.5rem;
+    font-weight: 800;
+    display: block;
+    color: #1a1a1a;
+}
+
+.stat-label {
+    font-size: 0.75rem;
+    color: #8e8e8e;
+    font-weight: 600;
+}
+
+/* Tabs */
+.order-tabs-container {
+    background: white;
+    padding: 0 2rem;
+    border-bottom: 1px solid var(--market-border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.nav-tabs-market {
+    border: none !important;
+    gap: 2.5rem;
+}
+
+.nav-tabs-market .nav-link {
+    border: none !important;
+    padding: 1.25rem 0 !important;
+    color: #555 !important;
+    font-weight: 600 !important;
+    font-size: 0.9rem !important;
+    position: relative;
+    background: none !important;
+}
+
+.nav-tabs-market .nav-link:hover {
+    color: var(--market-primary) !important;
+}
+
+.nav-tabs-market .nav-link.active {
+    color: var(--market-primary) !important;
+}
+
+.nav-tabs-market .nav-link.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    background: var(--market-primary);
+}
+
+/* Search Bar */
+.search-filter-section {
+    background: white;
+    padding: 1rem 2rem;
+    border-bottom: 1px solid var(--market-border);
+}
+
+.market-search-input {
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+}
+
+/* Table Card */
+.order-table-area {
+    padding: 1.5rem 2rem;
+}
+
+.card-order-list {
+    background: white;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    border: 1px solid var(--market-border);
+}
+
+.market-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.market-table thead th {
+    background: #fafafa;
+    border-bottom: 1px solid var(--market-border);
+    padding: 0.75rem 1rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #757575;
+    text-align: left;
+}
+
+.market-table tbody td {
+    padding: 1.25rem 1rem;
+    vertical-align: top;
+    border-bottom: 1px solid var(--market-border);
+}
+
+/* Order Item Row */
+.product-info {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+}
+
+.product-img {
+    width: 48px;
+    height: 48px;
+    background: #f0f0f0;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ccc;
+    font-size: 0.8rem;
+    overflow: hidden;
+}
+
+.product-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #333;
+    display: block;
+    margin-bottom: 2px;
+}
+
+.product-qty {
+    font-size: 0.75rem;
+    color: #888;
+}
+
+/* Badges */
+.badge-market {
+    padding: 4px 8px;
+    border-radius: 2px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    display: inline-block;
+}
+
+.bg-p-wait { background: #fff1f0; color: #f5222d; border: 1px solid #ffa39e; } /* Perlu Dikirim */
+.bg-p-process { background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; } /* Diproses */
+.bg-p-done { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; } /* Selesai */
+.bg-p-cancel { background: #f5f5f5; color: #8c8c8c; border: 1px solid #d9d9d9; } /* Dibatalkan */
+
+.text-price {
+    font-weight: 700;
+    color: var(--market-primary);
+}

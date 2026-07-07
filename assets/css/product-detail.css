@@ -1,0 +1,224 @@
+/* Scoping to avoid conflicts if global styles exist */
+.product-detail-page {
+    /* Colors matching product/index.php */
+    --slate-50: #f8fafc;
+    --slate-100: #f1f5f9;
+    --slate-200: #e2e8f0;
+    --slate-500: #64748b;
+    --slate-600: #475569;
+    --slate-700: #334155;
+    --slate-800: #1e293b;
+    --slate-900: #0f172a;
+    --primary-pastel: #eff6ff;
+    --success-pastel: #f0fdf4;
+    --warning-pastel: #fffbeb;
+    --danger-pastel: #fef2f2;
+    --primary-pro: #3b82f6;
+    --success-pro: #22c55e;
+    --warning-pro: #f59e0b;
+    --danger-pro: #ef4444;
+}
+
+/* Page Header */
+.page-header-pro {
+    background: white;
+    padding: 1.5rem 2rem;
+    border-bottom: 1px solid #e2e8f0;
+    margin-bottom: 2rem;
+}
+
+.header-breadcrumb {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--slate-500);
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.header-title-pro {
+    font-size: 1.75rem;
+    font-weight: 800;
+    color: var(--slate-900);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+/* Status Pills */
+.status-pill {
+    font-size: 0.75rem;
+    padding: 0.25em 0.8em;
+    border-radius: 99px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.status-active {
+    background-color: var(--success-pastel);
+    color: var(--success-pro);
+    border: 1px solid #dcfce7;
+}
+
+.status-inactive {
+    background-color: var(--slate-100);
+    color: var(--slate-500);
+    border: 1px solid #e2e8f0;
+}
+
+/* Stat Cards - Matching index.php style */
+.stat-card-pro {
+    background: white;
+    border: none;
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+    transition: all 0.2s ease;
+    height: 100%;
+    overflow: hidden;
+    border: 1px solid transparent;
+    /* default border */
+}
+
+.stat-card-pro:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.stat-icon-pro {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+/* Icon Context Colors */
+.icon-primary {
+    background-color: var(--primary-pastel);
+    color: var(--primary-pro);
+}
+
+.icon-success {
+    background-color: var(--success-pastel);
+    color: var(--success-pro);
+}
+
+.icon-warning {
+    background-color: var(--warning-pastel);
+    color: var(--warning-pro);
+}
+
+.stat-label-pro {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--slate-500);
+    margin-bottom: 0.25rem;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.stat-value-pro {
+    font-size: 1.75rem;
+    font-weight: 800;
+    color: var(--slate-900);
+    margin: 0;
+    line-height: 1.2;
+}
+
+/* Navigation Tabs */
+.nav-tabs-pro {
+    border: none;
+    gap: 0.5rem;
+    background: var(--slate-100);
+    padding: 0.4rem;
+    border-radius: 0.75rem;
+    display: inline-flex;
+    margin-bottom: 0;
+    /* reset bootstrap margin */
+}
+
+.nav-tabs-pro .nav-link {
+    border: none !important;
+    border-radius: 0.5rem !important;
+    padding: 0.6rem 1.5rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--slate-600) !important;
+    transition: all 0.2s;
+    background: transparent;
+}
+
+.nav-tabs-pro .nav-link:hover {
+    color: var(--slate-900) !important;
+}
+
+.nav-tabs-pro .nav-link.active {
+    background: white !important;
+    color: var(--primary-pro) !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* Content Card */
+.content-card-pro {
+    background: white;
+    border: none;
+    border-radius: 1rem;
+    overflow: hidden;
+    margin-top: 1.5rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    padding: 1.5rem;
+}
+
+/* Table Styling matching index.php */
+.table-pro thead th {
+    background-color: #1e293b;
+    /* Using explicit color from index.php */
+    color: #f8fafc;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 1rem;
+    border: none;
+    vertical-align: middle;
+}
+
+.table-pro thead th:first-child {
+    border-top-left-radius: 0.75rem;
+}
+
+.table-pro thead th:last-child {
+    border-top-right-radius: 0.75rem;
+}
+
+
+.table-pro tbody td {
+    padding: 1rem;
+    font-size: 0.9rem;
+    color: #334155;
+    /* slate-700 */
+    border-bottom: 1px solid #f1f5f9;
+    /* slate-100 */
+    vertical-align: middle;
+}
+
+.table-pro tbody tr:hover {
+    background-color: #f8fafc;
+}
+
+/* HPP Highlight */
+.bg-hpp-light {
+    background-color: var(--success-pastel) !important;
+    border: 1px solid #dcfce7 !important;
+}
+
+.text-hpp-dark {
+    color: #166534 !important;
+}

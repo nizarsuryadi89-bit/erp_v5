@@ -1,0 +1,22 @@
+No.,Kategori,Detail Item,Biaya Satuan (IDR),Qty,Unit,Total Biaya (IDR),Keterangan
+1,PENGEMBANGAN SISTEM (ONETIME),1. Core Framework & Keamanan,8.000.000,1,Paket,8.000.000,"Pondasi CI3, Auth RBAC, Security, Log Aktivitas"
+2,,2. Modul Master Data Center,5.000.000,1,Paket,5.000.000,"Produk, Kontak, Kategori, Multi-lokasi"
+3,,3. Modul Manufaktur & Produksi,25.000.000,1,Paket,25.000.000,"BOM Multi-level, Routing, SPK, Live HPP Calc"
+4,,4. Modul Inventory & Warehouse,15.000.000,1,Paket,15.000.000,"Stok Masuk/Keluar/Transfer, Opname, Barcode System"
+5,,5. Modul Transaksi (Sales & Purchase),12.000.000,1,Paket,12.000.000,"PO, SO, Invoicing, Hutang/Piutang, POS"
+6,,6. Modul Keuangan & Akuntansi,18.000.000,1,Paket,18.000.000,"Jurnal Otomatis, Laba Rugi, Neraca, Arus Kas"
+7,,7. Modul HRM & Absensi Mobile App,20.000.000,1,Paket,20.000.000,"Android Webview/PWA, GPS Geofencing, Payroll, Shift"
+8,,8. Executive Dashboard & BI,10.000.000,1,Paket,10.000.000,"Real-time Analytics, Reporting, Export Data"
+9,JASA PENDUKUNG (ONETIME),UI/UX Design Premium Implementation,10.000.000,1,Paket,10.000.000,Desain Modern & Responsive Mobile-First
+10,,Quality Assurance & Stress Testing,7.000.000,1,Paket,7.000.000,UAT, Bug Fixing, Security Penetration Test
+11,,Deployment & Server Setup,3.000.000,1,Paket,3.000.000,Instalasi VPS/Cloud, SSL, Backup Config
+12,,Training & Dokumentasi,5.000.000,1,Paket,5.000.000,Pelatihan Admin/Staff + Buku Manual & Video
+,,Subtotal Biaya Pengembangan (CAPEX),,,,"138.000.000",
+,,,,,,,
+13,BIAYA OPERASIONAL (BULANAN/TAHUNAN),Cloud VPS Hosting (Spesifikasi Enterprise),350.000,12,Bulan,4.200.000,"4 vCPU, 8GB RAM, 160GB SSD (Estimasi Tahunan)"
+14,,Domain (.com / .co.id) + SSL Premium,350.000,1,Tahun,350.000,Biaya per tahun
+15,,WhatsApp Business API (Unofficial/Gateway),150.000,12,Bulan,1.800.000,"Untuk Notifikasi Otomatis (Tagihan, Approval, OTP)"
+16,,Maintenance & Support (Optional),1.500.000,12,Bulan,18.000.000,"Opsional: Monitoring, Minor Update, Troubleshooting"
+,,Subtotal Biaya Operasional Tahun Pertama (OPEX),,,,"24.350.000",
+,,,,,,,
+,,GRAND TOTAL TAHUN PERTAMA,,,,"162.350.000","(Development + 1 Tahun Operasional)"

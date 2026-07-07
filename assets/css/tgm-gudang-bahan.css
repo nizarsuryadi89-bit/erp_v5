@@ -1,0 +1,108 @@
+/* Data Bahan Baku - Gudang Styles */
+.bahan-info-item {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+    border-left: 4px solid #007bff;
+}
+
+.bahan-info-item label {
+    color: #6c757d;
+    font-size: 0.875rem;
+    margin-bottom: 5px;
+}
+
+.bahan-info-item p {
+    color: #212529;
+    font-weight: 500;
+    margin: 0;
+}
+
+/* Barcode styling */
+.barcode-display {
+    text-align: center;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.barcode-text {
+    font-family: 'Courier New', monospace;
+    font-size: 18px;
+    font-weight: bold;
+    color: #000;
+    margin-bottom: 15px;
+    letter-spacing: 2px;
+}
+
+.barcode-bars {
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    height: 60px;
+}
+
+.barcode-bar {
+    background: #000;
+    margin: 0 1px;
+    border-radius: 1px;
+}
+
+/* Modal styling */
+.modal-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.modal-header .btn-close {
+    filter: invert(1);
+}
+
+.form-label {
+    font-weight: 600;
+    color: #495057;
+}
+
+.input-group-text {
+    background: #e9ecef;
+    border-color: #ced4da;
+}
+
+.btn-outline-secondary:hover {
+    background: #6c757d;
+    border-color: #6c757d;
+    color: white;
+}
+
+/* Button group styling */
+.btn-group .btn {
+    margin-right: 2px;
+}
+
+.btn-group .btn:last-child {
+    margin-right: 0;
+}
+
+/* Badge styling */
+.badge {
+    font-size: 0.75rem;
+    padding: 0.5em 0.75em;
+}
+
+.badge.bg-secondary {
+    background-color: #6c757d !important;
+}
+
+/* Fix untuk backdrop modal */
+.modal-backdrop {
+    z-index: 1040;
+}
+
+.modal {
+    z-index: 1050;
+}
+
+/* Pastikan body tidak memiliki overflow hidden yang mengganggu */
+body.modal-open {
+    overflow: auto !important;
+}

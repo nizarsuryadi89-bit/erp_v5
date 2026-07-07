@@ -1,0 +1,71 @@
+<?php
+defined('BASEPATH') OR exit('No direct script access allowed');
+
+class Roadmap extends MY_Controller
+{
+
+    public function __construct()
+    {
+        parent::__construct();
+    }
+
+    public function index()
+    {
+        $data = $this->_get_common_data('System Roadmap Monitor');
+
+        // Stats
+        $data['total_features'] = $this->db->count_all('tbl_system_roadmap');
+        $data['live_features'] = $this->db->where('status', 'Live')->count_all_results('tbl_system_roadmap');
+        $data['planned_features'] = $this->db->where_in('status', ['Planned', 'In-Progress'])->count_all_results('tbl_system_roadmap');
+        $data['progress_avg'] = $this->db->select_avg('progress')->get('tbl_system_roadmap')->row()->progress;
+
+        // Data grouped by status
+        $data['live_list'] = $this->db->where('status', 'Live')->order_by('created_at', 'DESC')->get('tbl_system_roadmap')->result();
+        $data['inprogress_list'] = $this->db->where('status', 'In-Progress')->order_by('priority', 'ASC')->get('tbl_system_roadmap')->result();
+        $data['planned_list'] = $this->db->where('status', 'Planned')->order_by('priority', 'ASC')->get('tbl_system_roadmap')->result();
+        $data['idea_list'] = $this->db->where('status', 'Idea')->order_by('created_at', 'DESC')->get('tbl_system_roadmap')->result();
+
+        $this->load_admin_view('admin/roadmap/index', $data);
+    }
+
+    public function add()
+    {
+        $data = [
+            'feature_name' => $this->input->post('feature_name', true),
+            'category' => $this->input->post('category', true),
+            'status' => $this->input->post('status', true),
+            'priority' => $this->input->post('priority', true),
+            'description' => $this->input->post('description', true),
+            'progress' => $this->input->post('progress', true)
+        ];
+        $this->db->insert('tbl_system_roadmap', $data);
+        $this->session->set_flashdata('success', 'Fitur baru berhasil ditambahkan ke roadmap.');
+        redirect('roadmap');
+    }
+
+    public function update_status()
+    {
+        $id = $this->input->post('id', true);
+        $data = [
+            'status' => $this->input->post('status', true),
+            'progress' => $this->input->post('progress', true)
+        ];
+        $this->db->where('id', $id)->update('tbl_system_roadmap', $data);
+        echo json_encode(['status' => 'success']);
+    }
+
+    // Helper to get common data
+    private function _get_common_data($title)
+    {
+        $perusahaan_id = $this->session->userdata('perusahaan_id') ?: 1;
+        $perusahaan_info = $this->db->get_where('tbl_perusahaan', ['id_perusahaan' => $perusahaan_id])->row_array();
+
+        return [
+            'controller' => 'roadmap',
+            'function' => 'index',
+            'title' => $title,
+            'perusahaan' => $perusahaan_info['nama_perusahaan'] ?? 'TGM ERP',
+            'is_admin_owner' => true
+        ];
+    }
+}

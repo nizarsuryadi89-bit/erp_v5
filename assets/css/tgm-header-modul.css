@@ -1,0 +1,144 @@
+/* TGM Core - Master Header Styles */
+:root {
+    --primary: #4361ee;
+    --secondary: #3f37c9;
+    --success: #4cc9f0;
+    --warning: #f72585;
+    --danger: #7209b7;
+    --info: #4895ef;
+    --dark: #1e1e2d;
+    --glass: rgba(255, 255, 255, 0.1);
+    --glass-dark: rgba(0, 0, 0, 0.2);
+}
+
+body {
+    font-family: 'Outfit', sans-serif;
+    background-color: #f0f2f5;
+}
+
+.master-header {
+    background: linear-gradient(135deg, var(--dark) 0%, #2d2d44 100%);
+    padding: 1.5rem 2rem;
+    color: white;
+    border-radius: 0;
+    margin-bottom: 2rem;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    position: relative;
+    overflow: hidden;
+}
+
+.master-header::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -10%;
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, rgba(67, 97, 238, 0.1) 0%, transparent 70%);
+    pointer-events: none;
+}
+
+.header-flex {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: relative;
+    z-index: 2;
+}
+
+.brand-section {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+}
+
+.brand-icon {
+    width: 48px;
+    height: 48px;
+    background: var(--primary);
+    color: white;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    box-shadow: 0 8px 16px rgba(67, 97, 238, 0.3);
+}
+
+.brand-text h1 {
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: -0.5px;
+}
+
+.brand-text p {
+    font-size: 0.85rem;
+    margin: 0;
+    opacity: 0.7;
+}
+
+.nav-glass {
+    display: flex;
+    gap: 1rem;
+}
+
+.glass-item {
+    background: var(--glass);
+    backdrop-filter: blur(10px);
+    padding: 0.6rem 1.2rem;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    text-decoration: none !important;
+    color: white !important;
+    transition: all 0.3s;
+}
+
+.glass-item:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+}
+
+.glass-icon {
+    font-size: 1rem;
+    opacity: 0.9;
+}
+
+.glass-content {
+    line-height: 1.2;
+}
+
+.glass-label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    opacity: 0.6;
+}
+
+.glass-value {
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.btn-back-glass {
+    background: rgba(247, 37, 133, 0.2);
+    color: #f72585 !important;
+    border: 1px solid rgba(247, 37, 133, 0.3);
+}
+
+@media (max-width: 768px) {
+    .brand-text p {
+        display: none;
+    }
+
+    .nav-glass {
+        gap: 0.5rem;
+    }
+
+    .glass-label {
+        display: none;
+    }
+}

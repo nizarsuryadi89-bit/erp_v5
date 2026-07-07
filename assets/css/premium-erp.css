@@ -1,0 +1,195 @@
+/* ==========================================================================
+   PREMIUM DESIGN SYSTEM (LEGGER THEME v2) - GLOBAL ERP STYLES
+   ========================================================================== */
+:root {
+    --primary-gradient: linear-gradient(135deg, #1a1c23 0%, #2c3e50 100%);
+    --success-gradient: linear-gradient(135deg, #27ae60 0%, #1e8449 100%);
+    --info-gradient: linear-gradient(135deg, #4895ef 0%, #4cc9f0 100%);
+    --warning-gradient: linear-gradient(135deg, #f1c40f 0%, #f39c12 100%);
+    --danger-gradient: linear-gradient(135deg, #f72585 0%, #b5179e 100%);
+    --premium-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+}
+
+/* Summary Stat Cards */
+.summary-stat-card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 20px;
+    border: 1px solid #f1f5f9;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    height: 100%;
+}
+
+.summary-stat-card:hover {
+    transform: translateY(-5px);
+    box-shadow: var(--premium-shadow);
+}
+
+.stat-v2-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    color: white;
+}
+
+.stat-v2-label {
+    color: #64748b;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.6rem;
+    letter-spacing: 1px;
+}
+
+.stat-v2-value {
+    font-size: 1.5rem;
+    font-weight: 900;
+    color: #1a1c23;
+    line-height: 1;
+}
+
+/* Report Section / Card Styles */
+.report-section-card {
+    background: white;
+    border-radius: 24px;
+    border: none;
+    box-shadow: var(--premium-shadow);
+    overflow: hidden;
+    margin-bottom: 2rem;
+}
+
+.section-header {
+    background: var(--primary-gradient);
+    padding: 1.25rem 1.75rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: white;
+}
+
+.section-header h5 {
+    margin: 0;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* Premium Tables */
+.premium-table thead th {
+    background: #f8fafc;
+    border: none;
+    color: #475569;
+    font-weight: 800;
+    text-transform: uppercase;
+    font-size: 0.65rem;
+    letter-spacing: 1px;
+    padding: 1.25rem 1.5rem;
+}
+
+.premium-table tbody td {
+    padding: 1.25rem 1.5rem;
+    vertical-align: middle;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 0.9rem;
+}
+
+/* Action Buttons */
+.btn-action-premium {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    border: none;
+    margin: 0 2px;
+}
+
+.btn-submenu-p {
+    background: #e0f2fe;
+    color: #0369a1;
+    width: auto;
+    padding: 0 12px;
+    height: 32px;
+    font-weight: 700;
+    font-size: 0.75rem;
+    border-radius: 8px;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+}
+
+.btn-edit-p {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.btn-delete-p {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.btn-submenu-p:hover {
+    background: #bae6fd;
+    transform: translateY(-2px);
+}
+
+.btn-edit-p:hover {
+    background: #ffe69c;
+    transform: translateY(-2px);
+}
+
+.btn-delete-p:hover {
+    background: #fecaca;
+    transform: translateY(-2px);
+}
+
+/* Standard Buttons */
+.btn-premium-primary {
+    background: var(--primary-gradient);
+    border: none;
+    color: white;
+    font-weight: 700;
+    border-radius: 50rem;
+    padding: 0.5rem 1.5rem;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    transition: all 0.2s;
+}
+
+.btn-premium-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+    color: white;
+}
+
+/* Utilities */
+.text-xs { font-size: 0.7rem; }
+.fw-900 { font-weight: 900; }
+.ls-1 { letter-spacing: 1px; }
+
+/* Animations */
+@keyframes slideUpFade {
+    from {
+        opacity: 0;
+        transform: translateY(15px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-up {
+    animation: slideUpFade 0.5s ease-out forwards;
+}

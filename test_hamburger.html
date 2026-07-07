@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hamburger Click Test</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+            min-height: 100vh;
+        }
+
+        .test-header {
+            background-color: #1a1a1a;
+            padding: 1rem;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .hamburger-toggle {
+            padding: 0.5rem;
+            cursor: pointer;
+            z-index: 9999;
+            background-color: transparent;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            min-width: 44px;
+            min-height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            color: white;
+        }
+
+        .hamburger-toggle:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.4);
+        }
+
+        .hamburger-toggle:active {
+            background-color: rgba(255, 255, 255, 0.2);
+            transform: scale(0.95);
+        }
+
+        .hamburger-toggle i {
+            font-size: 1.5rem;
+            pointer-events: none;
+        }
+
+        .brand {
+            font-weight: bold;
+            font-size: 1.2rem;
+        }
+
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: -280px;
+            width: 280px;
+            height: 100vh;
+            background-color: #1e1e1e;
+            box-shadow: 2px 0 12px rgba(0, 0, 0, 0.5);
+            transition: left 0.3s ease;
+            z-index: 9998;
+            padding: 1rem;
+            color: white;
+        }
+
+        body.sidebar-open .sidebar {
+            left: 0;
+        }
+
+        .backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(3px);
+            z-index: 9997;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        body.sidebar-open .backdrop {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .sidebar-header {
+            font-size: 1.3rem;
+            font-weight: bold;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .sidebar-menu {
+            list-style: none;
+            padding: 0;
+        }
+
+        .sidebar-menu li {
+            padding: 0.75rem 1rem;
+            margin-bottom: 0.5rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .sidebar-menu li:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .sidebar-menu li i {
+            margin-right: 0.75rem;
+            opacity: 0.8;
+        }
+
+        .content {
+            padding: 2rem;
+            color: white;
+        }
+
+        .status {
+            background-color: rgba(255, 255, 255, 0.1);
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 1rem;
+        }
+
+        .status.success {
+            background-color: rgba(76, 175, 80, 0.2);
+            border: 2px solid rgba(76, 175, 80, 0.5);
+        }
+
+        .status.error {
+            background-color: rgba(244, 67, 54, 0.2);
+            border: 2px solid rgba(244, 67, 54, 0.5);
+        }
+
+        .click-count {
+            font-size: 2rem;
+            font-weight: bold;
+            margin: 1rem 0;
+        }
+
+        .instructions {
+            background-color: rgba(33, 150, 243, 0.2);
+            border: 2px solid rgba(33, 150, 243, 0.5);
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin-top: 2rem;
+        }
+
+        .instructions h3 {
+            margin-top: 0;
+        }
+
+        .instructions ol {
+            margin: 0.5rem 0;
+            padding-left: 1.5rem;
+        }
+
+        .instructions li {
+            margin: 0.5rem 0;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Header -->
+    <div class="test-header">
+        <a href="javascript:void(0)" class="hamburger-toggle" onclick="toggleSidebar(); return false;">
+            <i class="bi bi-list"></i>
+        </a>
+        <div class="brand">TGM CORE - Hamburger Test</div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <i class="bi bi-intersect"></i> Navigation
+        </div>
+        <ul class="sidebar-menu">
+            <li onclick="closeSidebar()">
+                <i class="bi bi-house-door"></i> Home
+            </li>
+            <li onclick="closeSidebar()">
+                <i class="bi bi-people"></i> CRM
+            </li>
+            <li onclick="closeSidebar()">
+                <i class="bi bi-gear"></i> Production
+            </li>
+            <li onclick="closeSidebar()">
+                <i class="bi bi-box"></i> Inventory
+            </li>
+            <li onclick="closeSidebar()">
+                <i class="bi bi-graph-up"></i> Reports
+            </li>
+        </ul>
+    </div>
+
+    <!-- Backdrop -->
+    <div class="backdrop" onclick="closeSidebar()"></div>
+
+    <!-- Content -->
+    <div class="content">
+        <div id="status" class="status">
+            <h2>🧪 Status: Waiting for click...</h2>
+            <div class="click-count">Clicks: <span id="clickCount">0</span></div>
+            <p id="statusMessage">Klik hamburger menu (☰) di kiri atas untuk test</p>
+        </div>
+
+        <div class="instructions">
+            <h3>📋 Testing Instructions:</h3>
+            <ol>
+                <li><strong>Klik hamburger icon (☰)</strong> di pojok kiri atas</li>
+                <li>Sidebar harus slide masuk dari kiri</li>
+                <li>Backdrop gelap harus muncul</li>
+                <li>Click count harus bertambah</li>
+                <li>Klik backdrop atau menu item untuk close sidebar</li>
+            </ol>
+
+            <h3>✅ Expected Behavior:</h3>
+            <ul>
+                <li>Hamburger bisa diklik (cursor pointer)</li>
+                <li>Hover effect saat mouse over hamburger</li>
+                <li>Sidebar slide smooth dari kiri</li>
+                <li>Backdrop blur visible</li>
+                <li>Auto-close saat klik menu atau backdrop</li>
+            </ul>
+
+            <h3>🔍 Jika Tidak Berfungsi:</h3>
+            <ul>
+                <li>Check browser console (F12) untuk error</li>
+                <li>Pastikan JavaScript enabled</li>
+                <li>Try hard refresh (Ctrl+Shift+R atau Cmd+Shift+R)</li>
+                <li>Test di browser lain (Chrome, Firefox, Safari)</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        let clickCount = 0;
+        const statusDiv = document.getElementById('status');
+        const statusMessage = document.getElementById('statusMessage');
+        const clickCountSpan = document.getElementById('clickCount');
+
+        function toggleSidebar() {
+            document.body.classList.toggle('sidebar-open');
+            clickCount++;
+            clickCountSpan.textContent = clickCount;
+
+            if (document.body.classList.contains('sidebar-open')) {
+                statusDiv.className = 'status success';
+                statusMessage.textContent = '✅ SUCCESS! Hamburger menu berfungsi! Sidebar terbuka.';
+            } else {
+                statusDiv.className = 'status';
+                statusMessage.textContent = 'Sidebar ditutup. Klik hamburger lagi untuk test.';
+            }
+
+            console.log('Hamburger clicked! Sidebar open:', document.body.classList.contains('sidebar-open'));
+        }
+
+        function closeSidebar() {
+            document.body.classList.remove('sidebar-open');
+            statusDiv.className = 'status';
+            statusMessage.textContent = 'Sidebar ditutup via menu/backdrop click.';
+            console.log('Sidebar closed');
+        }
+
+        // Log when page loads
+        console.log('Hamburger test page loaded!');
+        console.log('Try clicking the hamburger menu (☰) in the top left');
+    </script>
+</body>
+
+</html>

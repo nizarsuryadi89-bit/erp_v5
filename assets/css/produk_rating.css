@@ -1,0 +1,150 @@
+:root {
+    --market-bg: #f8f9fa;
+    --market-primary: #EE4D2D;
+    --market-border: #e8e8e8;
+    --star-gold: #ffc107;
+}
+
+.rating-container {
+    background: var(--market-bg);
+    min-height: 100vh;
+    padding-bottom: 3rem;
+}
+
+.rating-card {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    margin-bottom: 20px;
+}
+
+/* Marketplace Selector */
+.market-tabs {
+    display: flex;
+    gap: 30px;
+    padding: 15px 25px;
+    border-bottom: 1px solid var(--market-border);
+}
+
+.market-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 10px;
+    cursor: pointer;
+    position: relative;
+    opacity: 0.6;
+}
+
+.market-item.active {
+    opacity: 1;
+}
+
+.market-item.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    background: #00bfa5; /* Shifting color for active marketplace */
+}
+
+/* Stats Section */
+.stats-grid {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 20px;
+    padding: 25px;
+}
+
+.tanggapi-card {
+    border-right: 1px solid var(--market-border);
+    padding-right: 20px;
+}
+
+.stat-box {
+    margin-bottom: 25px;
+}
+
+.stat-title {
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 15px;
+}
+
+.stat-item-inner {
+    padding: 12px 15px;
+    border-radius: 6px;
+    background: #fdfdfd;
+    border: 1px solid #efefef;
+    margin-bottom: 10px;
+}
+
+.stat-count {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #222;
+}
+
+/* Star Rating */
+.star-rating {
+    color: var(--star-gold);
+    display: flex;
+    gap: 2px;
+}
+
+/* Rating List Table */
+.rating-table thead th {
+    background: #fafafa;
+    border-bottom: 1px solid var(--market-border);
+    padding: 12px 15px;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: #888;
+}
+
+.rating-table tbody td {
+    padding: 20px 15px;
+    vertical-align: top;
+    border-bottom: 1px solid #f9f9f9;
+}
+
+.review-text {
+    font-size: 0.9rem;
+    color: #444;
+    line-height: 1.5;
+    margin-top: 10px;
+}
+
+.product-info-box {
+    display: flex;
+    gap: 12px;
+}
+
+.product-thumb {
+    width: 45px;
+    height: 45px;
+    background: #eee;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.id-pesanan {
+    font-size: 0.8rem;
+    color: #888;
+}
+
+.customer-name {
+    font-weight: 600;
+    color: #333;
+}
+
+.action-links a {
+    color: #00bfa5;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-decoration: none;
+    display: block;
+    margin-bottom: 5px;
+}

@@ -1,0 +1,374 @@
+/* ==================== SIDEBAR STYLES ==================== */
+
+/* Sidebar Container - Force consistent font on TEXT elements only (preserve icon fonts) */
+.app-sidebar,
+.app-sidebar .nav-link,
+.app-sidebar .nav-link p,
+.app-sidebar .nav-header,
+.app-sidebar .sidebar-brand,
+.app-sidebar .brand-text,
+.app-sidebar .nav-treeview .nav-link,
+.app-sidebar span,
+.app-sidebar a {
+    font-family: "Source Sans 3", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+}
+
+.app-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: 250px;
+    background-color: #222 !important;
+    border-right: 1px solid #333;
+    color: #e0e0e0;
+    z-index: 1038;
+    transition: all 0.3s ease-in-out;
+    font-size: 14px !important; /* Force consistent base font size */
+    line-height: 1.5 !important;
+}
+
+/* Sidebar Brand */
+.sidebar-brand {
+    background-color: #222 !important;
+    border-bottom: 1px solid #333 !important;
+    padding: 1rem;
+    text-align: center;
+}
+
+.brand-link {
+    text-decoration: none;
+    color: #fff !important;
+    font-size: 1.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.brand-image {
+    max-height: 40px;
+    width: auto;
+}
+
+/* Sidebar Wrapper (Scrollable Menu Area) */
+.sidebar-wrapper {
+    height: calc(100vh - 70px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: #444 #222;
+}
+
+/* Custom scrollbar for webkit browsers */
+.sidebar-wrapper::-webkit-scrollbar {
+    width: 6px;
+}
+
+.sidebar-wrapper::-webkit-scrollbar-track {
+    background: #222;
+}
+
+.sidebar-wrapper::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 3px;
+}
+
+.sidebar-wrapper::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Sidebar Menu */
+.sidebar-menu {
+    padding: 0.5rem;
+}
+
+/* Sidebar Links */
+.app-sidebar .nav-link {
+    color: #bdbdbd !important;
+    transition: all 0.2s;
+    padding: 8px 16px;
+    border-radius: 6px;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    font-size: 14px !important; /* Consistent menu item size */
+    line-height: 1.5;
+}
+
+.app-sidebar .nav-link p {
+    margin: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 14px !important; /* Match parent nav-link */
+}
+
+.app-sidebar .nav-link:hover,
+.app-sidebar .nav-link.active {
+    background-color: #333 !important;
+    color: #fff !important;
+}
+
+.app-sidebar .nav-icon {
+    margin-right: 8px;
+    width: 18px;
+    text-align: center;
+    flex-shrink: 0;
+    font-size: 16px !important; /* Consistent icon size */
+}
+
+/* Submenu Wrapper & Animation (BOOTSTRAP NATIVE) */
+.nav-treeview {
+    background-color: #1a1a1a !important;
+    padding-left: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+    /* Let Bootstrap handle display/height */
+    border-radius: 6px;
+}
+
+.app-sidebar .nav-treeview .nav-link {
+    font-size: 13px !important; /* Slightly smaller for submenu */
+    padding: 8px 12px 8px 36px;
+    /* Indent submenus */
+}
+
+/* Arrow Icon */
+.nav-arrow {
+    float: right;
+    transition: transform 0.3s;
+}
+
+/* Arrow Rotation for Bootstrap Collapse */
+.nav-link[aria-expanded="true"] .nav-arrow {
+    transform: rotate(90deg);
+}
+
+.nav-link[aria-expanded="false"] .nav-arrow {
+    transform: rotate(0deg);
+}
+
+/* Dividers */
+.nav-divider {
+    border-top: 1px solid #333 !important;
+    margin: 0.5rem 0;
+}
+
+.app-sidebar .nav-header {
+    font-size: 11px !important; /* Consistent header size */
+    font-weight: 600;
+    letter-spacing: 1px;
+    color: #666 !important;
+    padding: 8px 16px;
+    text-transform: uppercase;
+}
+
+/* ==================== CONTENT AREA ==================== */
+
+/* Content Wrapper - Main content area */
+.content-wrapper {
+    margin-left: 250px;
+    margin-top: 57px;
+    /* Height of main-header navbar */
+    min-height: calc(100vh - 57px);
+    background-color: #f4f6f9;
+    transition: margin-left 0.3s ease-in-out;
+}
+
+.content-header {
+    padding: 1rem 0;
+}
+
+/* Main Header (Top Bar) */
+.main-header {
+    position: fixed;
+    top: 0;
+    right: 0;
+    left: 250px;
+    z-index: 1037;
+    transition: left 0.3s ease-in-out;
+}
+
+/* ==================== SIDEBAR COLLAPSED STATE ==================== */
+
+/* When sidebar is collapsed */
+.sidebar-collapse .app-sidebar {
+    width: 60px;
+}
+
+/* Hide sidebar labels in mini mode */
+.sidebar-mini.sidebar-collapse .app-sidebar .brand-text,
+.sidebar-mini.sidebar-collapse .app-sidebar .nav-link p,
+.sidebar-mini.sidebar-collapse .app-sidebar .nav-arrow {
+    display: none;
+}
+
+/* IMPORTANT: Hide mini-sidebar column ON MOBILE */
+@media (max-width: 991.98px) {
+    .sidebar-mini.sidebar-collapse .app-sidebar {
+        left: -250px !important;
+        width: 250px !important;
+    }
+}
+
+.sidebar-collapse .content-wrapper {
+    margin-left: 60px;
+}
+
+.sidebar-collapse .main-header {
+    left: 60px;
+}
+
+.sidebar-collapse .nav-treeview {
+    display: none !important;
+}
+
+/* ==================== RESPONSIVE (MOBILE) ==================== */
+
+@media (max-width: 991.98px) {
+
+    /* Sidebar as overlay on mobile - Hidden by default */
+    .app-sidebar {
+        left: -250px;
+        z-index: 1050;
+        box-shadow: 2px 0 15px rgba(0, 0, 0, 0.3);
+    }
+
+    /* When sidebar is open - Slide in from left */
+    body.sidebar-open .app-sidebar {
+        left: 0 !important;
+        width: 280px !important;
+        transition: left 0.3s ease-in-out;
+    }
+
+    /* Override any mini-sidebar styles on mobile */
+    .app-sidebar .brand-text, 
+    .app-sidebar .nav-link p,
+    .app-sidebar .nav-arrow {
+        display: block !important;
+    }
+
+    /* Content always full width on mobile */
+    .content-wrapper {
+        margin-left: 0 !important;
+        padding-bottom: 70px; /* Offset for Bottom Nav */
+    }
+
+    /* Header always full width on mobile */
+    .main-header {
+        left: 0 !important;
+    }
+
+    /* Backdrop overlay when sidebar is open */
+    body.sidebar-open::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(0, 0, 0, 0.6);
+        z-index: 1045;
+        animation: fadeIn 0.3s ease;
+        backdrop-filter: blur(2px);
+    }
+
+    /* Prevent body scroll when sidebar is open */
+    body.sidebar-open {
+        overflow: hidden;
+    }
+
+    /* Make toggle button more visible on mobile */
+    .navbar-nav [data-widget="pushmenu"] {
+        font-size: 1.25rem;
+    }
+
+    /* Ensure menu items are touch-friendly */
+    .app-sidebar .nav-link {
+        padding: 12px 16px;
+        min-height: 44px;
+        font-size: 14px !important;
+    }
+
+    /* Better submenu spacing on mobile */
+    .app-sidebar .nav-treeview .nav-link {
+        padding: 12px 16px 12px 40px;
+        font-size: 13px !important;
+    }
+
+    /* Hide sidebar text when collapsed on tablet */
+    .sidebar-collapse .app-sidebar {
+        left: -250px;
+    }
+}
+
+/* Tablet specific adjustments */
+@media (min-width: 768px) and (max-width: 991.98px) {
+    .app-sidebar {
+        width: 280px;
+    }
+
+    body.sidebar-open .app-sidebar {
+        width: 280px;
+    }
+}
+
+/* Small mobile devices */
+@media (max-width: 575.98px) {
+
+    /* Reduce sidebar width on very small screens */
+    .app-sidebar {
+        width: 240px;
+        left: -240px;
+    }
+
+    body.sidebar-open .app-sidebar {
+        width: 240px;
+    }
+
+    /* Smaller brand text */
+    .brand-text {
+        font-size: 1rem;
+    }
+
+    .brand-image {
+        max-height: 35px;
+    }
+
+    /* Compact nav items */
+    .app-sidebar .nav-link {
+        font-size: 13px !important;
+    }
+
+    .nav-icon {
+        font-size: 1rem;
+    }
+}
+
+/* Fade in animation for backdrop */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+/* ==================== ADMINLTE COMPATIBILITY ==================== */
+
+/* Make sure wrapper fills viewport */
+.wrapper {
+    min-height: 100vh;
+    position: relative;
+}
+
+/* Hold transition prevents animation on page load */
+.hold-transition .content-wrapper,
+.hold-transition .main-header,
+.hold-transition .app-sidebar {
+    transition: none !important;
+}

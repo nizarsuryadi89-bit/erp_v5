@@ -1,0 +1,27 @@
+/* --- Global Base Styles --- */
+a {
+    text-decoration: none;
+}
+
+footer.fixed-bottom {
+    height: 80px;
+}
+
+.content-wrapper {
+    padding-bottom: 70px;
+}
+
+/* --- Read-Only Mode Restraints --- */
+/* These apply only when the body has the .is-readonly class */
+body.is-readonly .btn-primary:not([onclick*="print"]):not([onclick*="export"]),
+body.is-readonly .btn-success:not([onclick*="print"]):not([onclick*="export"]),
+body.is-readonly .btn-danger,
+body.is-readonly [data-bs-target*="modal"],
+body.is-readonly .table th:last-child,
+body.is-readonly .table td:last-child {
+    display: none !important;
+}
+
+body.is-readonly .readonly-visible {
+    display: inline-block !important;
+}

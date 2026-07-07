@@ -1,0 +1,151 @@
+/* PREMIUM DESIGN SYSTEM (LEGGER THEME v2) - INVENTORY STOCK */
+:root {
+    --primary-gradient: linear-gradient(135deg, #1a1c23 0%, #2c3e50 100%);
+    --success-gradient: linear-gradient(135deg, #27ae60 0%, #1e8449 100%);
+    --info-gradient: linear-gradient(135deg, #4895ef 0%, #4cc9f0 100%);
+    --danger-gradient: linear-gradient(135deg, #f72585 0%, #b5179e 100%);
+    --premium-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+}
+
+.summary-stat-card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 20px;
+    border: 1px solid #f1f5f9;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    text-decoration: none !important;
+}
+
+.summary-stat-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+}
+
+.stat-v2-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    box-shadow: 0 8px 15px rgba(0, 0, 0, 0.05);
+}
+
+.stat-v2-label {
+    color: #64748b;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.65rem;
+    letter-spacing: 1px;
+}
+
+.stat-v2-value {
+    font-size: 1.5rem;
+    font-weight: 900;
+    color: #1a1c23;
+    line-height: 1;
+}
+
+.report-section-card {
+    background: white;
+    border-radius: 20px;
+    border: none;
+    box-shadow: var(--premium-shadow);
+    overflow: hidden;
+    margin-bottom: 2rem;
+}
+
+.section-header {
+    background: var(--primary-gradient);
+    padding: 1.25rem 1.75rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: white;
+}
+
+.section-header h5 {
+    margin: 0;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* Table Styles */
+.premium-table thead th {
+    background: #f8fafc;
+    border: none;
+    color: #475569;
+    font-weight: 800;
+    text-transform: uppercase;
+    font-size: 0.65rem;
+    letter-spacing: 1px;
+    padding: 1rem 1.5rem;
+}
+
+.premium-table tbody td {
+    padding: 1rem 1.5rem;
+    vertical-align: middle;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 0.9rem;
+}
+
+.stock-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 900;
+    font-size: 1.1rem;
+    color: #1a1c23;
+}
+
+.unit-pill {
+    font-size: 0.65rem;
+    background: #f1f5f9;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    color: #64748b;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.status-badge {
+    padding: 0.4rem 0.8rem;
+    border-radius: 8px;
+    font-weight: 800;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+}
+
+.status-safe {
+    background: rgba(39, 174, 96, 0.1);
+    color: #27ae60;
+}
+
+.status-warning {
+    background: rgba(231, 76, 60, 0.1);
+    color: #e74c3c;
+}
+
+/* Animation */
+@keyframes slideUpFade {
+    from {
+        opacity: 0;
+        transform: translateY(15px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-up {
+    animation: slideUpFade 0.5s ease-out forwards;
+}

@@ -1,0 +1,267 @@
+/* Legger-Inspired Theme Consistency */
+:root {
+    --primary-gradient: linear-gradient(135deg, #2c3e50, #34495e);
+    --secondary-gradient: linear-gradient(135deg, #1a1c23, #2c3e50);
+    --success-gradient: linear-gradient(135deg, #28a745, #20c997);
+    --warning-gradient: linear-gradient(135deg, #f39c12, #e67e22);
+    --info-gradient: linear-gradient(135deg, #3498db, #2980b9);
+}
+
+.report-section-card {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+    overflow: hidden;
+    margin-bottom: 0.75rem;
+    transition: transform 0.3s ease;
+}
+
+.section-header {
+    background: var(--primary-gradient);
+    color: white;
+    padding: 1rem 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.section-header h5,
+.section-header h6 {
+    margin: 0;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.section-body {
+    padding: 1.5rem;
+}
+
+.form-section {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 1.25rem;
+    border: 1px solid #eee;
+    height: 100%;
+}
+
+.form-section h6 {
+    color: #2c3e50;
+    border-bottom: 2px solid #3498db;
+    padding-bottom: 8px;
+    margin-bottom: 1.25rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+}
+
+.btn-premium {
+    border-radius: 6px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 0.75rem 1.5rem;
+    transition: all 0.3s ease;
+    border: none;
+}
+
+.btn-premium-primary {
+    background: var(--primary-gradient);
+    color: white;
+}
+
+.btn-premium-success {
+    background: var(--success-gradient);
+    color: white;
+}
+
+.btn-premium-warning {
+    background: var(--warning-gradient);
+    color: white;
+}
+
+.btn-premium:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+    color: white;
+}
+
+.table thead th {
+    background: #f1f3f5;
+    color: #2c3e50;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    border-bottom: 2px solid #dee2e6;
+    padding: 12px;
+}
+
+.table td {
+    vertical-align: middle;
+    padding: 12px;
+}
+
+.summary-card {
+    background: #f8f9fa;
+    border: 1px dashed #3498db;
+    border-radius: 8px;
+}
+
+.badge-premium {
+    padding: 0.5em 1em;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.status-active-pulse {
+    width: 10px;
+    height: 10px;
+    background-color: #2ecc71;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 8px;
+    box-shadow: 0 0 0 rgba(46, 204, 113, 0.4);
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.4);
+    }
+
+    70% {
+        box-shadow: 0 0 0 10px rgba(46, 204, 113, 0);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(46, 204, 113, 0);
+    }
+}
+
+/* Choice Cards Styling */
+.choice-card-group {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+}
+
+.choice-card {
+    cursor: pointer;
+    border: 2px solid #e9ecef;
+    border-radius: 12px;
+    padding: 1rem;
+    text-align: center;
+    transition: all 0.2s ease;
+    background: white;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.choice-card i {
+    font-size: 1.5rem;
+    margin-bottom: 8px;
+    color: #adb5bd;
+    transition: all 0.2s ease;
+}
+
+.choice-card span {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #6c757d;
+}
+
+.choice-card:hover {
+    border-color: #3498db;
+    background: #f8fbff;
+}
+
+.choice-card:hover i {
+    color: #3498db;
+}
+
+.choice-card.active {
+    border-color: #3498db;
+    background: #eef7fe;
+    box-shadow: 0 4px 12px rgba(52, 152, 219, 0.15);
+}
+
+.choice-card.active i {
+    color: #3498db;
+    transform: scale(1.1);
+}
+
+.choice-card.active span {
+    color: #2c3e50;
+}
+
+.choice-card .check-icon {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    color: #3498db;
+    font-size: 0.9rem;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.choice-card.active .check-icon {
+    opacity: 1;
+}
+
+/* Loading States and ERP Optimizations */
+.skeleton-loader {
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: loading 1.5s infinite;
+    height: 20px;
+    border-radius: 4px;
+}
+
+@keyframes loading {
+    0% {
+        background-position: 200% 0;
+    }
+
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+.table-loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.7);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 5;
+}
+
+.processing-blur {
+    filter: blur(2px);
+    pointer-events: none;
+    transition: filter 0.2s ease;
+}
+
+/* Optimization for active rows */
+tr.adding-row {
+    background-color: rgba(40, 167, 69, 0.1) !important;
+    animation: flash-green 1s ease;
+}
+
+@keyframes flash-green {
+    0% {
+        background-color: rgba(40, 167, 69, 0.3);
+    }
+
+    100% {
+        background-color: transparent;
+    }
+}

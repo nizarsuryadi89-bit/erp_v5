@@ -1,0 +1,653 @@
+<?php
+defined('BASEPATH') OR exit('No direct script access allowed');
+
+/**
+ * MY_Controller - Enterprise Grade Core Controller
+ * 
+ * STANDARDISASI ERP MANUFAKTUR:
+ * 1. Centralized Authentication & Authorization (RBAC)
+ * 2. High Performance Session Caching (Mengurangi Query DB Berulang)
+ * 3. Strict Read-Only Access Control (Based on HTTP Verbs)
+ * 4. Modular Menu Management
+ * 
+ * @property CI_DB_query_builder $db
+ * @property CI_Input $input
+ * @property CI_Session $session
+ * @property CI_Router $router
+ * @property CI_URI $uri
+ * @property CI_Output $output
+ */
+class MY_Controller extends CI_Controller
+{
+    protected $data = [];       // Data global untuk View
+    protected $conf = [];       // Konfigurasi Legacy (Backward Compat)
+    protected $user_info = [];  // Cache User Session
+
+    // WHITELIST: Controller/Method yang bisa diakses TANPA Login
+    // Format: 'controller' => ['method1', 'method2'] atau '*' untuk semua
+    protected $public_routes = [
+        'auth' => '*',
+        'mobile' => '*',
+        'api_mobile' => '*',
+        'kiosk' => '*',
+        'antrian' => ['index', 'ambil_nomor_interface', 'ambil_nomor_ajax', 'display', 'get_data_display', 'print_karcis', 'mobile'],
+        'absensi' => ['absen_masuk', 'absen_pulang', 'izin_absen', 'scan'],
+        'chat' => '*',
+        'cron' => '*',
+        'website' => '*',
+        'pengaturan' => ['stop_impersonating', 'aset_detail']
+    ];
+
+    public function __construct()
+    {
+        parent::__construct();
+
+        // 1. Inisialisasi Environment Global
+        date_default_timezone_set("Asia/Jakarta");
+
+        // 2. Security Guard (Auth & Access)
+        $this->_check_auth();
+
+        // 3. Load Core Data (Hanya jika Login)
+        if ($this->session->userdata('logged_in')) {
+            $this->_init_user_session(); // Load data user dari session cache (CEPAT)
+            $this->_enforce_access_control(); // Cek hak akses controller (RBAC)
+            $this->_enforce_readonly(); // Security untuk Read-Only User
+
+            // 4. AUTOMATIC AUDIT LOG (Hanya untuk aksi TULIS/POST)
+            if ($this->input->method() === 'post') {
+                $this->_auto_audit_log();
+            }
+        }
+    }
+
+    /**
+     * ---------------------------------------------------------
+     * CORE SECURITY & AUTHENTICATION
+     * ---------------------------------------------------------
+     */
+
+    private function _check_auth()
+    {
+        $class = strtolower($this->router->fetch_class());
+        $method = strtolower($this->router->fetch_method());
+
+        // A. Cek Public Routes (Whitelist)
+        if (isset($this->public_routes[$class])) {
+            if ($this->public_routes[$class] === '*' || in_array($method, $this->public_routes[$class])) {
+                return; // ByPass Login
+            }
+        }
+
+        // B. Cek Session Login
+        if ($this->session->userdata('logged_in') !== TRUE) {
+            // Jika request via AJAX, return JSON 401 (Unauthorized) bukan redirect HTML
+            if ($this->input->is_ajax_request()) {
+                header('HTTP/1.1 401 Unauthorized');
+                header('Content-Type: application/json');
+                echo json_encode(['status' => 'error', 'message' => 'Sesi berakhir. Silakan login kembali.']);
+                exit;
+            }
+            // Jika request biasa, redirect ke Login
+            redirect('auth');
+        }
+    }
+
+    /**
+     * Mengamankan User Read-Only dari aksi Tulis/Edit/Hapus
+     * Menggunakan pendekatan HTTP VERB (POST) yang lebih aman & standar daripada cek nama fungsi.
+     */
+    private function _enforce_readonly()
+    {
+        // Skip jika user bukan ReadOnly atau jika Developer
+        if (empty($this->data['is_readonly']) || !empty($this->data['is_developer'])) {
+            return;
+        }
+
+        // Cek apakah request bersifat WRITE (POST, PUT, DELETE)
+        // Standar Enterprise: Semua aksi simpan/update HARUS via POST.
+        $request_method = strtoupper($this->input->method());
+
+        // Double Protection: Cek keyword sensitif di URL (untuk legacy controller yang mungkin pakai GET untuk delete)
+        $current_method = strtolower($this->router->fetch_method());
+        $write_keywords = ['save', 'update', 'delete', 'insert', 'aksi', 'proses', 'upload', 'hapus', 'edit'];
+
+        $is_write_intent = false;
+        foreach ($write_keywords as $kw) {
+            if (strpos($current_method, $kw) !== false) {
+                $is_write_intent = true;
+                break;
+            }
+        }
+
+        if ($request_method === 'POST' || $is_write_intent) {
+            // Blokir Action
+            if ($this->input->is_ajax_request()) {
+                header('Content-Type: application/json');
+                header('HTTP/1.1 403 Forbidden');
+                echo json_encode(['status' => 'error', 'pesan' => 'AKSES DITOLAK: Mode Read-Only tidak mengizinkan perubahan data.']);
+                exit;
+            } else {
+                $this->session->set_flashdata('error', 'AKSES DITOLAK: Mode Read-Only tidak mengizinkan perubahan data.');
+                redirect($this->router->fetch_class()); // Kembali ke index controller tsb
+                exit;
+            }
+        }
+    }
+
+    /**
+     * Enforce Access Control (RBAC)
+     * Menggantikan logika akses yang lama dengan yang lebih terstruktur.
+     */
+    private function _enforce_access_control()
+    {
+        $current_controller = strtolower($this->router->fetch_class());
+        $current_method = strtolower($this->router->fetch_method());
+
+        // 1. Bypass Rules
+        if (!empty($this->data['is_developer']))
+            return;
+        if ($current_controller == 'dashboard' || $current_controller == 'support' || $current_controller == 'antrian' || $current_controller == 'switchbranch')
+            return;
+
+        // Bypass Public Routes
+        if (isset($this->public_routes[$current_controller])) {
+            $routes = $this->public_routes[$current_controller];
+            if ($routes === '*' || (is_array($routes) && in_array($current_method, $routes))) {
+                return;
+            }
+        }
+
+        $role_id = $this->session->userdata('level');
+        if (!$role_id) {
+            redirect('auth');
+            return;
+        }
+
+        // 2. Owner / Super Admin Bypass (Direct from DB)
+        // Only Owners have full bypass permissions. Administrators (Role 1) are restricted by menu access.
+        if ($role_id == 1) {
+            // Admin must follow the rules below
+        } else {
+            $this->db->where('divisi_id', $role_id);
+            $divisi = $this->db->get('tbl_divisi')->row_array();
+            if ($divisi && (isset($divisi['is_super_admin']) && $divisi['is_super_admin'] == 1)) {
+                return;
+            }
+        }
+
+        // 3. Submenu Access Check
+        $this->db->group_start();
+        $this->db->where('link_submenu', $current_controller);
+        $this->db->or_where('link_submenu', $current_controller . '/' . $current_method);
+        $this->db->or_where('link_submenu', '../' . $current_controller);
+        $this->db->or_where('link_submenu', '../' . $current_controller . '/' . $current_method);
+        $this->db->or_like('link_submenu', $current_controller . '/', 'after');
+        $this->db->or_like('link_submenu', '../' . $current_controller . '/', 'after');
+        $this->db->group_end();
+        $submenus = $this->db->get('submenu')->result_array();
+
+        if (!empty($submenus)) {
+            $submenu_ids = array();
+            foreach ($submenus as $sm) {
+                $submenu_ids[] = $sm['id'];
+            }
+
+            $this->db->where_in('submenu_id', $submenu_ids);
+            $this->db->where('role_id', $role_id);
+            $access = $this->db->get('tbl_submenu_access')->row_array();
+            if ($access)
+                return;
+        }
+
+        // 4. Main Menu Access Check
+        $this->db->group_start();
+        $this->db->where('link', $current_controller);
+        $this->db->or_where('link', '../' . $current_controller);
+        $this->db->or_like('link', $current_controller . '/', 'after');
+        $this->db->or_like('link', '../' . $current_controller . '/', 'after');
+        $this->db->group_end();
+        $menus = $this->db->get('menu')->result_array();
+
+        if (!empty($menus)) {
+            $menu_ids = array();
+            foreach ($menus as $m) {
+                $menu_ids[] = $m['id'];
+            }
+
+            $this->db->where_in('menu_id', $menu_ids);
+            $this->db->where('role_id', $role_id);
+            $access = $this->db->get('tbl_menu_access')->row_array();
+            if ($access)
+                return;
+        }
+
+        // Jika sampai sini, berarti tidak ada izin
+        $username = isset($this->data['username']) ? $this->data['username'] : 'Unknown';
+        log_message('error', "Unauthorized Access: User $username -> $current_controller/$current_method (Role: $role_id)");
+
+        $this->session->set_flashdata('error', 'Akses Ditolak: Anda tidak memiliki izin mengakses modul ini.');
+        redirect('dashboard');
+        exit;
+    }
+
+    /**
+     * ---------------------------------------------------------
+     * DATA LOADING & CACHING (PERFORMANCE ENGINE)
+     * ---------------------------------------------------------
+     */
+
+    private function _init_user_session()
+    {
+        // PERFORMANCE BOOST: 
+        // Cek apakah data user & perusahaan sudah ada di session cache?
+        // Jika belum (misal baru update code ini), paksa refresh cache.
+
+        if (!$this->session->has_userdata('app_session_cache')) {
+            $this->_refresh_session_cache();
+        }
+
+        $cache = $this->session->userdata('app_session_cache');
+
+        // Set Global Property untuk Controller
+        // Fallback untuk antisipasi jika cache korup/kosong
+        $user_data = $cache['user_info'] ?? [];
+        $level_info = $cache['level_info'] ?? [];
+        $perusahaan = $cache['perusahaan'] ?? [];
+
+        // Pre-calculate status before creating $this->data
+        $is_dev_status = $this->_is_super_admin($user_data, $level_info);
+
+        // LOGIC HYBRID NAVIGATION
+        $menu_data = $this->_get_menu_realtime($level_info['divisi_id'] ?? 0, $is_dev_status);
+
+        // FALLBACK: Jika menu kosong, mungkin cache corrupt/belum ada. Coba pakai session raw.
+        if (empty($menu_data) && ($this->session->userdata('level') > 0)) {
+            $menu_data = $this->_get_menu_realtime($this->session->userdata('level'), $is_dev_status);
+        }
+
+        // HYBRID NAVIGATION (ROLE BASED)
+        // Default for everyone: TOP HEADER (Top Nav)
+        $layout_mode = 'top_nav';
+        $body_class = 'hold-transition layout-top-nav';
+
+        // Check who gets the SIDEBAR (Privileged Users)
+        $role_name = strtolower($level_info['divisi_nama'] ?? '');
+        $force_sidebar = false;
+
+        // 1. Developer & Super Admin
+        if ($is_dev_status || ($level_info['is_super_admin'] ?? 0) == 1) {
+            $force_sidebar = true;
+        }
+
+        // 2. Role Name Keywords (Owner, Admin, HR)
+        $role_id_raw = (int) ($this->session->userdata('level') ?? 0);
+        if (strpos($role_name, 'owner') !== false || in_array($role_id_raw, [8, 17]))
+            $force_sidebar = true;
+        if (strpos($role_name, 'admin') !== false || $role_id_raw == 1)
+            $force_sidebar = true;
+        if (strpos($role_name, 'hr') !== false || in_array($role_id_raw, [16, 21]))
+            $force_sidebar = true;
+
+        // Apply Sidebar Layout if forced
+        if ($force_sidebar) {
+            $layout_mode = 'sidebar';
+            $body_class = 'hold-transition sidebar-mini layout-fixed';
+        }
+
+        // DEBUGGING / TESTING: Allow forcing layout via URL ?layout=top_nav
+        if ($this->input->get('layout') == 'top_nav') {
+            $layout_mode = 'top_nav';
+            $body_class = 'hold-transition layout-top-nav';
+        } elseif ($this->input->get('layout') == 'sidebar') {
+            $layout_mode = 'sidebar';
+            $body_class = 'hold-transition sidebar-mini layout-fixed';
+        }
+
+        // Setup variable $this->data yang dipakai di View
+        $this->data = [
+            'controller' => strtolower($this->router->fetch_class()),
+            'is_developer' => $is_dev_status,
+            'is_super_admin' => $is_dev_status, // Tambahkan ini agar sinkron dengan sidebar.php
+            'function' => $this->router->fetch_method(),
+            'perusahaan' => $perusahaan['nama_perusahaan'] ?? 'TGM ERP',
+            'logo' => $perusahaan['logo'] ?? 'default.png',
+            'username' => $user_data['username'] ?? 'User',
+            'hakakses' => $level_info['divisi_nama'] ?? 'Guest',
+
+            'menu' => $menu_data,
+            'layout_mode' => $layout_mode, // Pass layout decision to views
+            'body_class' => $body_class,    // Pass body class to views
+
+            'is_readonly' => $this->_check_is_readonly_context(),
+            'current_perusahaan_id' => $perusahaan['id_perusahaan'] ?? 0,
+            'available_branches' => $cache['available_branches'] ?? [],
+            'foto' => $cache['karyawan_foto'] ?? [],
+
+            // BACKWARD COMPATIBILITY
+            'level' => $user_data,
+        ];
+
+        // RESTORE LEGACY CONFIG ($this->conf)
+        // Banyak controller lama mengakses langsung $this->conf['perusahaan']
+        $this->conf = [
+            'perusahaan' => $perusahaan,
+            'hakakses' => $level_info,
+            'userid' => $user_data,
+            'available_branches' => $cache['available_branches'] ?? []
+        ];
+    }
+
+    /**
+     * Re-build session cache dari Database.
+     * Dipanggil satu kali saat Login atau Switch Branch.
+     */
+    protected function _refresh_session_cache()
+    {
+        $user_id = $this->session->userdata('id');
+        $level_id = (int) $this->session->userdata('level');
+        $perusahaan_id = $this->session->userdata('perusahaan_id');
+
+        if (!$user_id)
+            return;
+
+        // 1. Fetch Core Data
+        $this->db->where('user_id', $user_id);
+        $user = $this->db->get('users')->row_array();
+
+        $this->db->where('id_perusahaan', $perusahaan_id);
+        $perusahaan = $this->db->get('tbl_perusahaan')->row_array();
+
+        $this->db->where('divisi_id', $level_id);
+        $divisi = $this->db->get('tbl_divisi')->row_array();
+
+        $foto = array();
+        if ($user && isset($user['karyawan_id'])) {
+            $this->db->where('karyawan_id', $user['karyawan_id']);
+            $foto = $this->db->get('tbl_karyawan')->row_array();
+        }
+
+        // 2. Cek Super Admin / Developer / Switch Access
+        $is_developer = (isset($user['username']) && $user['username'] === 'nizarsuryadi');
+        $is_super = ($divisi && (isset($divisi['is_super_admin']) && $divisi['is_super_admin'] == 1));
+
+        // Multi-Branch Access Check: Owner (8/17) or explicitly Super Admin
+        $can_switch = ($is_developer || $is_super || in_array($level_id, [8, 17]));
+
+        // 3. Multi-Branch Logic
+        $branches = [];
+        if ($can_switch) {
+            $branches = $this->db->get('tbl_perusahaan')->result();
+        }
+
+        $cache_payload = [
+            'user_info' => $user,
+            'perusahaan' => $perusahaan,
+            'level_info' => $divisi,
+            'karyawan_foto' => $foto,
+            'available_branches' => $branches,
+            'is_super_admin' => ($is_developer || $is_super),
+            'timestamp' => time()
+        ];
+
+        // Simpan ke CodeIgniter Session
+        $this->session->set_userdata('app_session_cache', $cache_payload);
+    }
+
+    /**
+     * Logic Menu Generator
+     */
+    private function _get_menu_realtime($role_id, $is_dev_context = false)
+    {
+        $this->db->select('menu.*');
+        $this->db->from('menu');
+
+        // Jika Developer / Super Admin: AMBIL SEMUA TANPA FILTER APAPUN
+        if ($is_dev_context) {
+            $this->db->order_by('menu.urutan', 'ASC');
+            return $this->db->get()->result();
+        }
+
+        // Untuk User Biasa: Filter ketat
+        $this->db->join('tbl_menu_access', 'tbl_menu_access.menu_id = menu.id');
+        $this->db->where('tbl_menu_access.role_id', $role_id);
+        $this->db->where('menu.status', 1);
+        $this->db->group_by('menu.id');
+        $this->db->order_by('menu.urutan', 'ASC');
+        return $this->db->get()->result();
+    }
+
+    /**
+     * Helper check Super Admin Context
+     */
+    private function _is_super_admin($user, $divisi)
+    {
+        // 1. Developer Bypass
+        if (isset($user['username']) && $user['username'] === 'nizarsuryadi')
+            return true;
+
+        // 2. Explicit Case for Administrator (Role 1) - Must NOT be Super Admin
+        $role_id = isset($divisi['divisi_id']) ? $divisi['divisi_id'] : (isset($user['level']) ? $user['level'] : 0);
+        if ($role_id == 1)
+            return false;
+
+        // 3. Owner Check (ID 8 \u0026 17)
+        if (in_array($role_id, [8, 17]))
+            return true;
+
+        // 4. Fallback to DB Flag
+        if ($divisi && isset($divisi['is_super_admin']) && $divisi['is_super_admin'] == 1)
+            return true;
+
+        return false;
+    }
+
+    // Helper cepat ambil status tanpa parameter (baca dari property $this->data)
+    private function _is_super_admin_context()
+    {
+        return $this->data['is_developer'] ?? false;
+    }
+
+    /**
+     * Cek status ReadOnly spesifik per controller
+     */
+    private function _check_is_readonly_context()
+    {
+        if ($this->_is_super_admin_context())
+            return false;
+
+        $role_id = $this->session->userdata('level');
+        $current_controller = strtolower($this->router->fetch_class());
+
+        $this->db->select('tbl_menu_access.is_readonly');
+        $this->db->from('tbl_menu_access');
+        $this->db->join('menu', 'menu.id = tbl_menu_access.menu_id');
+        $this->db->where('tbl_menu_access.role_id', $role_id);
+        $this->db->group_start();
+        $this->db->like('menu.link', $current_controller, 'after');
+        $this->db->or_like('menu.link', '../' . $current_controller, 'after');
+        $this->db->group_end();
+        $res = $this->db->get()->row_array();
+
+        return ($res && isset($res['is_readonly']) && $res['is_readonly'] == 1);
+    }
+
+    /**
+     * ---------------------------------------------------------
+     * AUDIT SYSTEM (Enterprise Feature)
+     * ---------------------------------------------------------
+     */
+
+    /**
+     * Otomatis mencatat aktivitas POST (Write/Update/Delete)
+     */
+    private function _auto_audit_log()
+    {
+        $class = $this->router->fetch_class();
+        $method = $this->router->fetch_method();
+
+        // 1. Daftar Controller yang TIDAK perlu dicatat secara otomatis (High traffic / non-critical)
+        $ignored_controllers = ['absensi', 'chat', 'notifikasi', 'antrian'];
+        if (in_array(strtolower($class), $ignored_controllers))
+            return;
+
+        // 2. Daftar method spesifik yang TIDAK perlu dicatat
+        $ignored_methods = ['get_data', 'search', 'ajax_list', 'get_notif'];
+        if (in_array(strtolower($method), $ignored_methods))
+            return;
+
+        $captured_data = array_merge($this->input->get(), $this->input->post());
+
+        // Jika tidak ada data sama sekali, tetap catat URI
+        if (empty($captured_data))
+            $captured_data = ['uri' => $this->uri->uri_string()];
+
+        // Hilangkan data sensitif dari log (Password dsb)
+        $sensitive_fields = ['password', 'old_password', 'new_password', 'confirm_password', 'pass'];
+        foreach ($sensitive_fields as $field) {
+            if (isset($captured_data[$field]))
+                $captured_data[$field] = '********';
+        }
+
+        $log_content = [
+            'url' => current_url(),
+            'data' => $captured_data,
+            'user_agent' => $this->input->user_agent()
+        ];
+
+        $this->_write_audit_entry(
+            'WRITE',
+            "User melakukan aksi di modul $class fungsi $method",
+            json_encode($log_content)
+        );
+    }
+
+    /**
+     * Mencatat entri log ke Database
+     */
+    protected function _write_audit_entry($type, $action, $details = null)
+    {
+        // Jangan sampai proses log membuat aplikasi error jika tabel belum ada
+        if (!$this->db->table_exists('tbl_audit_log')) {
+            return;
+        }
+
+        $data = [
+            'user_id' => $this->session->userdata('id'),
+            'username' => $this->data['username'] ?? 'System',
+            'ip_address' => $this->input->ip_address(),
+            'log_type' => $type, // INFO, WRITE, DELETE, LOGIN
+            'log_action' => $action,
+            'log_details' => $details,
+            'controller' => $this->router->fetch_class(),
+            'method' => $this->router->fetch_method(),
+            'created_at' => date('Y-m-d H:i:s')
+        ];
+
+        $this->db->insert('tbl_audit_log', $data);
+    }
+
+    /**
+     * Public helper untuk log manual dari controller lain
+     * Contoh penggunaan: $this->_log_manual("Membatalkan Invoice #123", json_encode($data_lama));
+     */
+    public function _log_manual($action, $details = null, $type = 'INFO')
+    {
+        $this->_write_audit_entry($type, $action, $details);
+    }
+
+    /**
+     * ---------------------------------------------------------
+     * VIEW & HELPER METHODS
+     * ---------------------------------------------------------
+     */
+
+    /**
+     * Load view standar Admin
+     */
+    protected function load_admin_view($content_view, $additional_data = [])
+    {
+        $view_data = array_merge($this->data, $additional_data);
+
+        // Load struktur halaman standar
+        $this->load->view('layout_admin/head', $view_data);
+        $this->load->view('layout_admin/top_header', $view_data);
+        $this->load->view('layout_admin/sidebar', $view_data); // Enable Sidebar Left
+
+        $this->load->view($content_view, $view_data);
+
+        $this->load->view('layout_admin/footer', $view_data);
+        $this->load->view('layout_admin/alert', $view_data);
+    }
+
+    /**
+     * Load view khusus DEVELOPER (Tema Berbeda: Dark/Industrial)
+     */
+    protected function load_dev_view($content_view, $additional_data = [])
+    {
+        $view_data = array_merge($this->data, $additional_data);
+        $view_data['is_dev_theme'] = true; // Flag untuk CSS khusus di head
+
+        // Load struktur halaman standar (head akan baca flag is_dev_theme)
+        $this->load->view('layout_admin/head', $view_data);
+        $this->load->view('layout_admin/top_header', $view_data);
+        $this->load->view('layout_admin/sidebar', $view_data); // Enable Sidebar Left
+
+        $this->load->view($content_view, $view_data);
+
+        $this->load->view('layout_admin/footer', $view_data);
+        $this->load->view('layout_admin/alert', $view_data);
+    }
+
+    /**
+     * Helper untuk Modul WIP / Produksi
+     * Menentukan apakah user ini Operator Mesin atau Admin
+     * @return int|null (Divisi ID jika operator, Null jika admin)
+     */
+    protected function get_operator_id_for_current_user()
+    {
+        // 1. Jika Super Admin / Developer -> Bisa lihat semua (Return NULL)
+        if ($this->_is_super_admin_context()) {
+            return null;
+        }
+
+        // 2. Owner (8/17) dan HR (21)
+        // Diberikan akses 'Lihat Semua' untuk modul Operasional & SDM tertentu
+        $role_id = $this->session->userdata('level');
+        if (in_array($role_id, [8, 17, 21])) {
+            $modul = strtolower($this->router->fetch_class());
+
+            // Khusus modul Penggajian tetap difilter ketat jika bukan Super Admin
+            if ($modul !== 'penggajian') {
+                return null;
+            }
+        }
+
+        // 3. User Biasa / Operator -> Hanya bisa lihat job divisinya sendiri
+        // Logic: Return divisi_id mereka sebagai filter
+        $cache = $this->session->userdata('app_session_cache');
+        if (isset($cache['level_info']['divisi_id'])) {
+            return $cache['level_info']['divisi_id'];
+        }
+
+        return $role_id; // Fallback
+    }
+
+    // --- Utilitas ---
+
+    public function get_config()
+    {
+        // Compatibility wrapper untuk controller lama yang panggil $this->get_config()
+        return [
+            'perusahaan' => $this->session->userdata('app_session_cache')['perusahaan'] ?? [],
+            'hakakses' => $this->session->userdata('app_session_cache')['level_info'] ?? [],
+            'userid' => $this->session->userdata('app_session_cache')['user_info'] ?? [],
+            'available_branches' => $this->session->userdata('app_session_cache')['available_branches'] ?? []
+        ];
+    }
+
+    public function get_common_data()
+    {
+        return $this->data;
+    }
+}

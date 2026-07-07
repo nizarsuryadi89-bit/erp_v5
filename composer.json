@@ -1,0 +1,14 @@
+{
+    "name": "a990/tgm_erp",
+    "require": {
+        "google/auth": "^1.37",
+        "firebase/php-jwt": "^6.10",
+        "kreait/firebase-php": "^5.26",
+        "mike42/escpos-php": "^2.2"
+    },
+    "config": {
+        "audit": {
+            "block-insecure": false
+        }
+    }
+}

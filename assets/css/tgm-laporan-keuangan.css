@@ -1,0 +1,22 @@
+/* Financial Report Management Styles */
+.fc-event {
+    cursor: pointer;
+    font-size: 0.8rem;
+}
+
+.fc-event:hover {
+    opacity: 0.8;
+}
+
+.fc-daygrid-day.fc-day-today {
+    background-color: rgba(255, 193, 7, 0.1) !important;
+}
+
+.fc-daygrid-day.fc-day-selected {
+    background-color: rgba(40, 167, 69, 0.2) !important;
+}
+
+.table-responsive {
+    max-height: 300px;
+    overflow-y: auto;
+}

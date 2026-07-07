@@ -1,0 +1,226 @@
+/* Laporan Piutang Konsumen - Integrated Dashboard Style */
+/* Ensure consistency with the main report page (dashboard.php) */
+.stats-overview {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background: white;
+    border-radius: 0;
+    padding: 1.5rem;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+    border: 1px solid #e9ecef;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #2c3e50, #34495e);
+}
+
+.stat-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+}
+
+.stat-card.info::before {
+    background: linear-gradient(90deg, #3498db, #2980b9);
+}
+
+.stat-card.danger::before {
+    background: linear-gradient(90deg, #e74c3c, #c0392b);
+}
+
+.stat-card.warning::before {
+    background: linear-gradient(90deg, #f39c12, #d35400);
+}
+
+.stat-card.success::before {
+    background: linear-gradient(90deg, #27ae60, #2ecc71);
+}
+
+.stat-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.stat-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    color: white;
+}
+
+.stat-icon.info {
+    background: linear-gradient(135deg, #3498db, #2980b9);
+}
+
+.stat-icon.danger {
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+}
+
+.stat-icon.warning {
+    background: linear-gradient(135deg, #f39c12, #d35400);
+}
+
+.stat-icon.success {
+    background: linear-gradient(135deg, #27ae60, #2ecc71);
+}
+
+.stat-info h3 {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #2c3e50;
+    margin: 0;
+    line-height: 1;
+}
+
+.stat-info p {
+    font-size: 0.8rem;
+    color: #6c757d;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0;
+}
+
+/* Report Card Style for Tables */
+.report-section-card {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 0;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+    margin-bottom: 2rem;
+}
+
+.section-header {
+    background: linear-gradient(135deg, #2c3e50, #34495e);
+    color: white;
+    padding: 1rem 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.section-header h5 {
+    margin: 0;
+    font-weight: 600;
+    font-size: 1.1rem;
+}
+
+.section-body {
+    padding: 1.5rem;
+}
+
+.table {
+    border-radius: 0;
+}
+
+.table th {
+    background: #f8f9fa;
+    color: #2c3e50;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 1px;
+    border-color: #e9ecef;
+    padding: 1rem;
+}
+
+.status-badge {
+    padding: 0.4rem 0.8rem;
+    border-radius: 0;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.badge-lunas {
+    background: #27ae60;
+    color: white;
+}
+
+.badge-sebagian {
+    background: #f39c12;
+    color: white;
+}
+
+.badge-belum-lunas {
+    background: #e74c3c;
+    color: white;
+}
+
+/* Row Group Styling */
+.dtrg-group {
+    background: #f8f9fa !important;
+    font-weight: 700 !important;
+    color: #2c3e50 !important;
+}
+
+.dtrg-group td {
+    padding: 0.8rem 1rem !important;
+    border-left: 4px solid #3498db !important;
+}
+
+/* Action Buttons */
+.btn-action {
+    width: 32px;
+    height: 32px;
+    border-radius: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    border: none;
+    margin: 0 2px;
+    color: white;
+}
+
+.btn-pay {
+    background: #27ae60;
+}
+
+.btn-history {
+    background: #3498db;
+}
+
+.btn-action:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+    color: white;
+}
+
+/* Form & Select Styles */
+.form-control-premium {
+    border-radius: 0;
+    border: 1px solid #dee2e6;
+    padding: 0.6rem 1rem;
+}
+
+.form-control-premium:focus {
+    border-color: #2c3e50;
+    box-shadow: none;
+}
+
+@media (max-width: 768px) {
+    .stats-overview {
+        grid-template-columns: 1fr;
+    }
+}

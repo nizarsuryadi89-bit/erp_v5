@@ -1,0 +1,168 @@
+
+    :root {
+        --primary-color: #0d6efd;
+        --secondary-color: #6c757d;
+        --success-color: #198754;
+        --warning-color: #ffc107;
+        --danger-color: #dc3545;
+        --light-color: #f8f9fa;
+        --dark-color: #212529;
+    }
+
+    * {
+        font-family: 'Lato', sans-serif;
+    }
+
+    body {
+        font-family: 'Lato', sans-serif;
+        font-weight: 400;
+        line-height: 1.6;
+        background-color: #f8f9fa;
+    }
+
+    .main-container {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+
+    .card {
+        border: none;
+        border-radius: 15px;
+        box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+        margin-bottom: 20px;
+    }
+
+    .card-header {
+        background: linear-gradient(135deg, var(--primary-color), #0056b3);
+        color: white;
+        border-radius: 15px 15px 0 0 !important;
+        padding: 1.5rem;
+    }
+
+    .btn {
+        border-radius: 8px;
+        font-weight: 500;
+        padding: 0.5rem 1.5rem;
+        transition: all 0.3s ease;
+    }
+
+    .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .btn-primary {
+        background: var(--primary-color);
+        border-color: var(--primary-color);
+    }
+
+    .btn-secondary {
+        background: var(--secondary-color);
+        border-color: var(--secondary-color);
+    }
+
+    .btn-success {
+        background: var(--success-color);
+        border-color: var(--success-color);
+    }
+
+    .btn-warning {
+        background: var(--warning-color);
+        border-color: var(--warning-color);
+        color: var(--dark-color);
+    }
+
+    .btn-danger {
+        background: var(--danger-color);
+        border-color: var(--danger-color);
+    }
+
+    .table {
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    }
+
+    .table th {
+        background: var(--light-color);
+        border-bottom: 2px solid #dee2e6;
+        font-weight: 700;
+        color: var(--dark-color);
+    }
+
+    .table td {
+        vertical-align: middle;
+    }
+
+    .form-control, .form-select {
+        border-radius: 8px;
+        border: 1px solid #ced4da;
+        padding: 0.75rem;
+        transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+    }
+
+    .form-control:focus, .form-select:focus {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+    }
+
+    .modal-content {
+        border-radius: 15px;
+        border: none;
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    }
+
+    .modal-header {
+        background: linear-gradient(135deg, var(--primary-color), #0056b3);
+        color: white;
+        border-radius: 15px 15px 0 0;
+    }
+
+    .modal-title {
+        font-weight: 700;
+    }
+
+    /* Print Styles */
+    @media print {
+        body {
+            background: white !important;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .no-print {
+            display: none !important;
+        }
+
+        .card {
+            box-shadow: none;
+            border: 1px solid #dee2e6;
+        }
+
+        .card-header {
+            background: #f8f9fa !important;
+            color: var(--dark-color) !important;
+        }
+
+        .table {
+            box-shadow: none;
+        }
+
+        .btn {
+            display: none !important;
+        }
+    }
+
+    /* Custom utility classes */
+    .text-primary { color: var(--primary-color) !important; }
+    .text-secondary { color: var(--secondary-color) !important; }
+    .text-success { color: var(--success-color) !important; }
+    .text-warning { color: var(--warning-color) !important; }
+    .text-danger { color: var(--danger-color) !important; }
+
+    .bg-primary { background-color: var(--primary-color) !important; }
+    .bg-secondary { background-color: var(--secondary-color) !important; }
+    .bg-success { background-color: var(--success-color) !important; }
+    .bg-warning { background-color: var(--warning-color) !important; }
+    .bg-danger { background-color: var(--danger-color) !important; }

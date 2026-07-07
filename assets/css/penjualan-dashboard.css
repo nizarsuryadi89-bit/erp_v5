@@ -1,0 +1,623 @@
+/* ==================== PENJUALAN DASHBOARD STYLES ==================== */
+
+/* Google Fonts Modern */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* Root Variables */
+:root {
+    --primary-color: #3182ce;
+    --success-color: #38a169;
+    --warning-color: #f6ad55;
+    --danger-color: #e53e3e;
+    --info-color: #3182ce;
+    --secondary-color: #e5e7eb;
+    --dark-color: #2d3748;
+    --light-color: #f7f8fa;
+    --border-color: #e5e7eb;
+    --text-color: #222;
+    --text-muted: #555;
+    --shadow: none;
+    --border-radius: 8px;
+    --border-radius-sm: 6px;
+    --transition: all 0.3s ease;
+}
+
+/* Base Styles */
+/* body, .app-content, .container-fluid {
+    font-family: 'Inter', Arial, sans-serif;
+    background: var(--light-color);
+    color: var(--text-color);
+} */
+
+/* Statistics Cards */
+.stats-card {
+    background: #fff;
+    border-radius: var(--border-radius);
+    color: var(--text-color);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
+    margin-bottom: 0;
+    transition: var(--transition);
+    position: relative;
+    overflow: hidden;
+}
+
+.stats-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--primary-color), var(--success-color));
+    opacity: 0;
+    transition: var(--transition);
+}
+
+.stats-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+}
+
+.stats-card:hover::before {
+    opacity: 1;
+}
+
+.stats-card .card-body {
+    padding: 1.5rem 1rem;
+}
+
+.stats-card h4 {
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+    color: var(--dark-color);
+}
+
+.stats-card p {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-bottom: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.stats-card i {
+    opacity: 0.8;
+    transition: var(--transition);
+}
+
+.stats-card:hover i {
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+/* Calendar Card */
+.calendar-card {
+    background: #fff;
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+}
+
+.calendar-card .card-header {
+    background: linear-gradient(135deg, var(--primary-color), #4a90e2);
+    color: #fff;
+    border-bottom: none;
+    padding: 1rem 1.5rem;
+}
+
+.calendar-card .card-header h5 {
+    font-weight: 600;
+    margin: 0;
+}
+
+.calendar-controls {
+    display: flex;
+    align-items: center;
+}
+
+.calendar-controls button {
+    background: rgba(255,255,255,0.2);
+    border: 1px solid rgba(255,255,255,0.3);
+    color: #fff;
+    border-radius: var(--border-radius-sm);
+    padding: 0.5rem 0.75rem;
+    transition: var(--transition);
+}
+
+.calendar-controls button:hover {
+    background: rgba(255,255,255,0.3);
+    border-color: rgba(255,255,255,0.5);
+    transform: translateY(-1px);
+}
+
+.calendar-controls span {
+    color: #fff;
+    font-weight: 600;
+    min-width: 120px;
+    text-align: center;
+}
+
+/* FullCalendar Customization */
+/* .fc {
+    font-family: 'Inter', Arial, sans-serif;
+} */
+
+.fc-toolbar {
+    display: none !important;
+}
+
+.fc-daygrid-day {
+    transition: var(--transition);
+}
+
+.fc-daygrid-day:hover {
+    background-color: rgba(49, 130, 206, 0.05);
+}
+
+.fc-daygrid-day-number {
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.fc-daygrid-day.fc-day-today {
+    background-color: rgba(49, 130, 206, 0.1) !important;
+}
+
+.fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
+    background: var(--primary-color);
+    color: #fff;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 2px;
+}
+
+.fc-event {
+    border-radius: var(--border-radius-sm);
+    border: none;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 2px 6px;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.fc-event:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.fc-event-title {
+    font-weight: 600;
+}
+
+/* Selected Date Info */
+.selected-date-info h5 {
+    font-weight: 700;
+    margin-bottom: 1rem;
+    text-align: center;
+}
+
+.info-item {
+    padding: 0.5rem;
+    border-radius: var(--border-radius-sm);
+    background: var(--light-color);
+    transition: var(--transition);
+}
+
+.info-item:hover {
+    background: var(--secondary-color);
+    transform: translateY(-2px);
+}
+
+.info-item h4 {
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+    font-size: 1.2rem;
+}
+
+.info-item small {
+    font-weight: 500;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-size: 0.75rem;
+}
+
+/* Table Styles */
+.table {
+    font-size: 0.9rem;
+}
+
+.table thead th {
+    background: var(--dark-color);
+    color: #fff;
+    border: none;
+    font-weight: 600;
+    padding: 1rem 0.75rem;
+    font-size: 0.85rem;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.table tbody td {
+    padding: 1rem 0.75rem;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--border-color);
+    transition: var(--transition);
+}
+
+.table tbody tr:hover td {
+    background-color: rgba(49, 130, 206, 0.05);
+}
+
+/* Badge Styles */
+.badge {
+    font-weight: 600;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--border-radius-sm);
+    font-size: 0.75rem;
+    letter-spacing: 0.5px;
+}
+
+.badge-success {
+    background: var(--success-color) !important;
+    color: #fff !important;
+}
+
+.badge-warning {
+    background: var(--warning-color) !important;
+    color: #fff !important;
+}
+
+.badge-danger {
+    background: var(--danger-color) !important;
+    color: #fff !important;
+}
+
+.badge-primary {
+    background: var(--primary-color) !important;
+    color: #fff !important;
+}
+
+/* Button Styles */
+.btn {
+    border-radius: var(--border-radius-sm);
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    transition: var(--transition);
+    border: 1px solid var(--border-color);
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.btn-outline-primary {
+    color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.btn-outline-primary:hover {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.btn-outline-success {
+    color: var(--success-color);
+    border-color: var(--success-color);
+}
+
+.btn-outline-success:hover {
+    background: var(--success-color);
+    border-color: var(--success-color);
+}
+
+.btn-outline-info {
+    color: var(--info-color);
+    border-color: var(--info-color);
+}
+
+.btn-outline-info:hover {
+    background: var(--info-color);
+    border-color: var(--info-color);
+}
+
+/* Modal Styles */
+.modal-content {
+    border-radius: var(--border-radius);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    border: none;
+}
+
+.modal-header {
+    background: linear-gradient(135deg, var(--primary-color), #4a90e2);
+    color: #fff;
+    border-bottom: none;
+    border-radius: var(--border-radius) var(--border-radius) 0 0;
+}
+
+.modal-header .btn-close {
+    filter: invert(1);
+}
+
+.modal-footer {
+    border-top: 1px solid var(--border-color);
+    background: var(--light-color);
+    border-radius: 0 0 var(--border-radius) var(--border-radius);
+}
+
+/* Loading Animation */
+.loading-spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid rgba(255,255,255,.3);
+    border-radius: 50%;
+    border-top-color: #fff;
+    animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--text-muted);
+}
+
+.empty-state i {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+.empty-state h5 {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.empty-state p {
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .calendar-controls {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .calendar-controls span {
+        min-width: auto;
+    }
+    
+    .stats-card h4 {
+        font-size: 1.5rem;
+    }
+    
+    .stats-card .card-body {
+        padding: 1rem 0.75rem;
+    }
+    
+    .table {
+        font-size: 0.8rem;
+    }
+    
+    .table thead th,
+    .table tbody td {
+        padding: 0.75rem 0.5rem;
+    }
+    
+    .fc-event {
+        font-size: 0.7rem;
+        padding: 1px 4px;
+    }
+}
+
+@media (max-width: 576px) {
+    .stats-card h4 {
+        font-size: 1.3rem;
+    }
+    
+    .stats-card p {
+        font-size: 0.8rem;
+    }
+    
+    .calendar-card .card-header {
+        padding: 0.75rem 1rem;
+    }
+    
+    .calendar-card .card-header h5 {
+        font-size: 1rem;
+    }
+    
+    .info-item h4 {
+        font-size: 1rem;
+    }
+    
+    .info-item small {
+        font-size: 0.7rem;
+    }
+}
+
+/* Print Styles */
+@media print {
+    .calendar-controls,
+    .btn,
+    .modal-footer {
+        display: none !important;
+    }
+    
+    .stats-card,
+    .calendar-card,
+    .card {
+        border: 1px solid #000;
+        box-shadow: none;
+    }
+    
+    .table thead th {
+        background: #000 !important;
+        color: #fff !important;
+        -webkit-print-color-adjust: exact;
+    }
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --text-color: #e2e8f0;
+        --light-color: #1a202c;
+        --border-color: #4a5568;
+        --secondary-color: #2d3748;
+        --dark-color: #e2e8f0;
+    }
+    
+    .stats-card,
+    .calendar-card,
+    .card {
+        background: #2d3748;
+        color: var(--text-color);
+    }
+    
+    .table tbody td {
+        border-bottom-color: #4a5568;
+    }
+    
+    .info-item {
+        background: #4a5568;
+    }
+    
+    .info-item:hover {
+        background: #5a6c7a;
+    }
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* Focus States */
+.btn:focus,
+.fc-event:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+/* High Contrast Mode */
+@media (prefers-contrast: high) {
+    :root {
+        --border-color: #000;
+        --text-color: #000;
+        --light-color: #fff;
+    }
+    
+    .stats-card,
+    .calendar-card,
+    .card {
+        border: 2px solid #000;
+    }
+    
+    .table thead th {
+        background: #000 !important;
+        color: #fff !important;
+    }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--light-color);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--secondary-color);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--border-color);
+}
+
+/* Animation Classes */
+.fade-in {
+    animation: fadeIn 0.5s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.slide-in {
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(-100%);
+    }
+    to {
+        transform: translateX(0);
+    }
+}
+
+/* Tooltip Styles */
+.tooltip {
+    font-family: 'Inter', Arial, sans-serif;
+    font-size: 0.8rem;
+}
+
+.tooltip-inner {
+    background: var(--dark-color);
+    border-radius: var(--border-radius-sm);
+    padding: 0.5rem 0.75rem;
+}
+
+/* Custom Calendar Event Colors */
+.fc-event.high-sales {
+    background: var(--success-color) !important;
+    border-color: var(--success-color) !important;
+}
+
+.fc-event.medium-sales {
+    background: var(--info-color) !important;
+    border-color: var(--info-color) !important;
+}
+
+.fc-event.low-sales {
+    background: var(--warning-color) !important;
+    border-color: var(--warning-color) !important;
+}
+
+.fc-event.no-sales {
+    background: var(--danger-color) !important;
+    border-color: var(--danger-color) !important;
+}
