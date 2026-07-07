@@ -202,7 +202,7 @@
                                     <div class="small fw-bold text-warning-emphasis mb-1"><i
                                             class="fas fa-sticky-note me-1"></i>KETERANGAN:</div>
                                     <?php if (!empty($p->catatan)): ?>
-                                        <div class="text-dark small lh-sm fst-italic mb-1"><?= htmlspecialchars($p->catatan) ?></div>
+                                        <div class="text-dark small lh-sm fst-italic mb-1"><?= nl2br(htmlspecialchars($p->catatan)) ?></div>
                                     <?php endif; ?>
                                     
                                     <?php if (!empty($spk_op_cetak) || !empty($spk_op_finishing)): ?>

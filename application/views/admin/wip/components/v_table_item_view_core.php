@@ -727,7 +727,7 @@
                                     <div class="small fw-bold text-warning-emphasis mb-1" style="font-size: 0.6rem;"><i class="fas fa-sticky-note me-1"></i>KETERANGAN:</div>
                                     <?php if (!empty($item->catatan)): ?>
                                         <div class="text-dark small lh-sm fst-italic mb-1" style="font-size: 0.75rem;">
-                                            <?= htmlspecialchars($item->catatan) ?>
+                                            <?= nl2br(htmlspecialchars($item->catatan)) ?>
                                         </div>
                                     <?php endif; ?>
                                     
