@@ -546,13 +546,6 @@ class Wip extends MY_Controller
                     }
                 }
 
-                // Override assigned_user for PB/Handover items by extracting from catatan
-                $st_prod = (string)$item->status_produksi;
-                if ($st_prod === 'on_costumer' && !empty($item->catatan)) {
-                    if (preg_match('/\[(?:BULK )?HANDOVER\].*?Oleh:\s*([^|]+)/', $item->catatan, $matches)) {
-                        $assigned_user = trim($matches[1]);
-                    }
-                }
 
                 $prod_stats_map[$pid] = [
                     'total_steps' => $total,
@@ -588,6 +581,14 @@ class Wip extends MY_Controller
                     $item->active_operator_id = null;
                     $item->op_cetak_name = null;
                     $item->op_finishing_name = null;
+                }
+
+                // Override assigned_user for PB/Handover items by extracting from catatan
+                $st_prod = (string)$item->status_produksi;
+                if ($st_prod === 'on_costumer' && !empty($item->catatan)) {
+                    if (preg_match('/\[(?:BULK )?HANDOVER\].*?Oleh:\s*([^|]+)/', $item->catatan, $matches)) {
+                        $item->assigned_user = trim($matches[1]);
+                    }
                 }
             }
         }
