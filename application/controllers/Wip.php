@@ -493,6 +493,8 @@ class Wip extends MY_Controller
                 $current_step = null;
                 $last_done_operator = null;
                 $active_op_id = null;
+                $op_cetak = [];
+                $op_finishing = [];
 
                 foreach ($steps as $s) {
                     if ($s->status_produksi == '2') {
@@ -508,6 +510,29 @@ class Wip extends MY_Controller
                     if ($s->status_produksi == '1') {
                         if ($active_op_id === null) {
                             $active_op_id = $s->operator_id;
+                        }
+                    }
+                    
+                    // Extract operator name if an operator is assigned, regardless of status
+                    if (!empty($s->operator_id)) {
+                        $op_name = $karyawan_to_user[$s->operator_id] ?? null;
+                        if ($op_name) {
+                            // Check database flag or routing name keywords
+                            $is_finishing_step = ($s->is_finishing == 1) || 
+                                (stripos($s->routing_name, 'finish') !== false) || 
+                                (stripos($s->routing_name, 'cutting') !== false) || 
+                                (stripos($s->routing_name, 'potong') !== false) || 
+                                (stripos($s->routing_name, 'jahit') !== false) || 
+                                (stripos($s->routing_name, 'mata ayam') !== false) || 
+                                (stripos($s->routing_name, 'laminasi') !== false) ||
+                                (stripos($s->routing_name, 'pon') !== false) ||
+                                (stripos($s->routing_name, 'kiss cut') !== false);
+
+                            if ($is_finishing_step) {
+                                if (!in_array($op_name, $op_finishing)) $op_finishing[] = $op_name;
+                            } else {
+                                if (!in_array($op_name, $op_cetak)) $op_cetak[] = $op_name;
+                            }
                         }
                     }
                 }
@@ -527,7 +552,9 @@ class Wip extends MY_Controller
                     'current_step_name' => $current_step ? $current_step->routing_name : null,
                     'current_step_urutan' => $current_step ? $current_step->routing_urutan : null,
                     'assigned_user' => $assigned_user,
-                    'active_operator_id' => $active_op_id
+                    'active_operator_id' => $active_op_id,
+                    'op_cetak_name' => !empty($op_cetak) ? implode(', ', $op_cetak) : null,
+                    'op_finishing_name' => !empty($op_finishing) ? implode(', ', $op_finishing) : null
                 ];
             }
 
@@ -542,6 +569,8 @@ class Wip extends MY_Controller
                     $item->current_step_urutan = $st['current_step_urutan'];
                     $item->assigned_user = $st['assigned_user'];
                     $item->active_operator_id = $st['active_operator_id'];
+                    $item->op_cetak_name = $st['op_cetak_name'];
+                    $item->op_finishing_name = $st['op_finishing_name'];
                 } else {
                     $item->total_steps = 0;
                     $item->done_steps = 0;
@@ -549,6 +578,8 @@ class Wip extends MY_Controller
                     $item->current_step_urutan = null;
                     $item->assigned_user = null;
                     $item->active_operator_id = null;
+                    $item->op_cetak_name = null;
+                    $item->op_finishing_name = null;
                 }
             }
         }

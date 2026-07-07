@@ -185,12 +185,36 @@
                                     </div>
                                 <?php endforeach; ?>
                             </div>
-                            <?php if (!empty($p->catatan)): ?>
+                            <?php
+                            $spk_op_cetak = [];
+                            $spk_op_finishing = [];
+                            foreach ($group_items as $it) {
+                                if (!empty($it->op_cetak_name)) $spk_op_cetak[] = $it->op_cetak_name;
+                                if (!empty($it->op_finishing_name)) $spk_op_finishing[] = $it->op_finishing_name;
+                            }
+                            $spk_op_cetak = array_unique(array_filter(array_map('trim', explode(',', implode(',', $spk_op_cetak)))));
+                            $spk_op_finishing = array_unique(array_filter(array_map('trim', explode(',', implode(',', $spk_op_finishing)))));
+                            ?>
+                            
+                            <?php if (!empty($p->catatan) || !empty($spk_op_cetak) || !empty($spk_op_finishing)): ?>
                                 <div class="mt-1 p-2 rounded bg-warning bg-opacity-10 border border-warning border-opacity-25"
                                     style="max-width:300px; white-space: normal;">
                                     <div class="small fw-bold text-warning-emphasis mb-1"><i
                                             class="fas fa-sticky-note me-1"></i>KETERANGAN:</div>
-                                    <div class="text-dark small lh-sm fst-italic"><?= htmlspecialchars($p->catatan) ?></div>
+                                    <?php if (!empty($p->catatan)): ?>
+                                        <div class="text-dark small lh-sm fst-italic mb-1"><?= htmlspecialchars($p->catatan) ?></div>
+                                    <?php endif; ?>
+                                    
+                                    <?php if (!empty($spk_op_cetak) || !empty($spk_op_finishing)): ?>
+                                        <div class="<?= !empty($p->catatan) ? 'pt-1 border-top border-warning border-opacity-25 mt-1' : '' ?>" style="font-size: 0.65rem;">
+                                            <?php if (!empty($spk_op_cetak)): ?>
+                                                <div class="text-muted"><i class="fas fa-print me-1"></i>Op: <span class="fw-bold text-dark"><?= implode(', ', $spk_op_cetak) ?></span></div>
+                                            <?php endif; ?>
+                                            <?php if (!empty($spk_op_finishing)): ?>
+                                                <div class="text-muted"><i class="fas fa-cut me-1"></i>Fin: <span class="fw-bold text-dark"><?= implode(', ', $spk_op_finishing) ?></span></div>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php endif; ?>
                                 </div>
                             <?php endif; ?>
                         </div>

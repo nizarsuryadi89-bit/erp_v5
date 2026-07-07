@@ -722,14 +722,25 @@
 
                             <?php $this->load->view('admin/wip/components/v_render_metadata', ['item' => $item, 'category_schemas' => $category_schemas, 'only_badges' => false, 'only_instructions' => true]); ?>
 
-                            <?php if (!empty($item->catatan)): ?>
-                                <div
-                                    class="mt-1 p-2 rounded bg-warning bg-opacity-10 border border-warning border-opacity-25 shadow-sm">
-                                    <div class="small fw-bold text-warning-emphasis mb-1" style="font-size: 0.6rem;"><i
-                                            class="fas fa-sticky-note me-1"></i>KETERANGAN:</div>
-                                    <div class="text-dark small lh-sm fst-italic" style="font-size: 0.75rem;">
-                                        <?= htmlspecialchars($item->catatan) ?>
-                                    </div>
+                            <?php if (!empty($item->catatan) || !empty($item->op_cetak_name) || !empty($item->op_finishing_name)): ?>
+                                <div class="mt-1 p-2 rounded bg-warning bg-opacity-10 border border-warning border-opacity-25 shadow-sm">
+                                    <div class="small fw-bold text-warning-emphasis mb-1" style="font-size: 0.6rem;"><i class="fas fa-sticky-note me-1"></i>KETERANGAN:</div>
+                                    <?php if (!empty($item->catatan)): ?>
+                                        <div class="text-dark small lh-sm fst-italic mb-1" style="font-size: 0.75rem;">
+                                            <?= htmlspecialchars($item->catatan) ?>
+                                        </div>
+                                    <?php endif; ?>
+                                    
+                                    <?php if (!empty($item->op_cetak_name) || !empty($item->op_finishing_name)): ?>
+                                        <div class="<?= !empty($item->catatan) ? 'pt-1 border-top border-warning border-opacity-25 mt-1' : '' ?>" style="font-size: 0.65rem;">
+                                            <?php if (!empty($item->op_cetak_name)): ?>
+                                                <div class="text-muted"><i class="fas fa-print me-1"></i>Op: <span class="fw-bold text-dark"><?= htmlspecialchars($item->op_cetak_name) ?></span></div>
+                                            <?php endif; ?>
+                                            <?php if (!empty($item->op_finishing_name)): ?>
+                                                <div class="text-muted"><i class="fas fa-cut me-1"></i>Fin: <span class="fw-bold text-dark"><?= htmlspecialchars($item->op_finishing_name) ?></span></div>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php endif; ?>
                                 </div>
                             <?php endif; ?>
 
