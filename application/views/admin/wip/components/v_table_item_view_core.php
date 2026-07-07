@@ -937,7 +937,7 @@
                                         </div>
                                     <?php endif; ?>
                                     
-                                    <?php if (!empty($item->assigned_user)): ?>
+                                    <?php if (!empty($item->assigned_user) && !in_array($st, ['on_pb', 'on_costumer'])): ?>
                                         <div class="text-primary fw-bold mt-1 pt-1 border-top" style="font-size: 0.65rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="PIC: <?= htmlspecialchars($item->assigned_user) ?>">
                                             <i class="fas fa-user-check me-1"></i> Oleh: <?= strtoupper(htmlspecialchars($item->assigned_user)) ?>
                                         </div>
