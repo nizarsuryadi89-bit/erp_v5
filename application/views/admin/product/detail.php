@@ -14,8 +14,8 @@
 <script src="<?= base_url('assets/js/product-detail.js?v=' . time()) ?>"></script>
 
 <!-- External CSS -->
-<link rel="stylesheet" href="<?= base_url('assets/css/costume-tgm.css') ?>">
-<link rel="stylesheet" href="<?= base_url('assets/css/product-detail.css') ?>">
+<link rel="stylesheet" href="<?= base_url('assets/css/costume-tgm.css?v=' . time()) ?>">
+<link rel="stylesheet" href="<?= base_url('assets/css/product-detail.css?v=' . time()) ?>">
 
 <div class="app-content">
     <?php

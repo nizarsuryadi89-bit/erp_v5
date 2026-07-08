@@ -33,6 +33,8 @@ $excludeColumns = ['panjang', 'lebar', 'qty', 'catatan', 'keterangan', 'lock_qty
 if ($renderBadges && !empty($schema) && !empty($meta)) {
     echo '<div class="d-flex flex-wrap gap-1 mt-1">';
 
+    $uniform_badge_style = "padding: 4px 10px; font-size: 0.65rem; border-radius: 6px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center;";
+
     foreach ($schema as $field) {
         $key = $field['name'];
         if (in_array($key, $excludeColumns))
@@ -66,11 +68,6 @@ if ($renderBadges && !empty($schema) && !empty($meta)) {
         if ($field['type'] === 'boolean')
             $val = ($val == 1 || $val == 'true') ? 'YA' : 'TIDAK';
 
-        // Override Machine names dynamically (ONLY for Cat 1 & 2)
-        // if ($key === 'jenisprint_id' && in_array($item->kategori_id, [1, 2]) && isset($mesin_printing_map[$meta[$key]])) {
-        //     $val = $mesin_printing_map[$meta[$key]];
-        // }
-
         // Highlighting for Large Format Finishing
         $isLFFinishing = false;
         if ($item->kategori_id == 2) {
@@ -88,44 +85,44 @@ if ($renderBadges && !empty($schema) && !empty($meta)) {
         if ($key === 'jenisprint_id') {
             if ($item->kategori_id == 3) {
                 // Flatbed Color Profile
-                echo "<span class='badge bg-info bg-opacity-10 text-info border border-info border-opacity-25' style='font-size: 0.6rem;'>";
+                echo "<span class='badge bg-info bg-opacity-10 text-info border border-info border-opacity-25' style='{$uniform_badge_style}'>";
                 echo "<i class='fas fa-palette me-1'></i> WARNA: " . strtoupper($val);
                 echo "</span>";
             } else {
                 // Standard Machine Badge
-                echo "<span class='badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25' style='font-size: 0.6rem;'>";
+                echo "<span class='badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25' style='{$uniform_badge_style}'>";
                 echo "<i class='fas fa-print me-1'></i> " . strtoupper($val);
                 echo "</span>";
             }
         } elseif ($item->kategori_id == 6 && $key === 'ket_1') {
             // Laser Material Branding
-            echo "<span class='badge bg-dark text-white border border-secondary shadow-sm' style='font-size: 0.65rem;'>";
+            echo "<span class='badge bg-dark text-white border border-secondary shadow-sm' style='{$uniform_badge_style}'>";
             echo "<i class='fas fa-layer-group me-1'></i> MATERIAL: " . strtoupper($val);
             echo "</span>";
         } elseif ($item->kategori_id == 6 && $key === 'thickness') {
             // Laser Thickness Branding
-            echo "<span class='badge bg-dark text-white border border-secondary shadow-sm' style='font-size: 0.65rem;'>";
+            echo "<span class='badge bg-dark text-white border border-secondary shadow-sm' style='{$uniform_badge_style}'>";
             echo "<i class='fas fa-ruler-vertical me-1'></i> TEBAL: " . strtoupper($val) . " MM";
             echo "</span>";
         } elseif ($item->kategori_id == 6 && $key === 'metode_laser') {
             // Laser Method Branding
-            echo "<span class='badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 fw-900' style='font-size: 0.65rem;'>";
+            echo "<span class='badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25' style='{$uniform_badge_style}'>";
             echo "<i class='fas fa-cut me-1'></i> " . strtoupper($val);
             echo "</span>";
         } elseif ($item->kategori_id == 7 && $key === 'model_apparel') {
             // Apparel Model
-            echo "<span class='badge bg-primary text-white border border-primary shadow-sm' style='font-size: 0.65rem;'>";
+            echo "<span class='badge bg-primary text-white border border-primary shadow-sm' style='{$uniform_badge_style}'>";
             echo "<i class='fas fa-tshirt me-1'></i> " . strtoupper($val);
             echo "</span>";
         } elseif ($item->kategori_id == 7 && in_array($key, ['size_details', 'jersey_data'])) {
             // Apparel Specific Details
             $icon = ($key === 'size_details') ? 'fa-ruler-combined' : 'fa-id-card';
-            echo "<span class='badge bg-info bg-opacity-10 text-info border border-info border-opacity-25' style='font-size: 0.65rem;'>";
+            echo "<span class='badge bg-info bg-opacity-10 text-info border border-info border-opacity-25' style='{$uniform_badge_style}'>";
             echo "<i class='fas $icon me-1'></i> " . strtoupper($val);
             echo "</span>";
         } elseif ($item->kategori_id == 8 && $key === 'ket_1') {
             // DTG Print Size
-            echo "<span class='badge bg-dark text-white border border-secondary shadow-sm' style='font-size: 0.65rem;'>";
+            echo "<span class='badge bg-dark text-white border border-secondary shadow-sm' style='{$uniform_badge_style}'>";
             echo "<i class='fas fa-expand-arrows-alt me-1'></i> BIDANG: " . strtoupper($val);
             echo "</span>";
         } elseif ($item->kategori_id == 8 && $key === 'jenisprint_id') {
@@ -133,39 +130,39 @@ if ($renderBadges && !empty($schema) && !empty($meta)) {
             $isDark = (strpos(strtolower($val), 'gelap') !== false || strpos(strtolower($val), 'warna') !== false);
             $bg = $isDark ? 'bg-secondary' : 'bg-light';
             $txt = $isDark ? 'text-white' : 'text-dark';
-            echo "<span class='badge $bg $txt border shadow-sm fw-900' style='font-size: 0.65rem;'>";
+            echo "<span class='badge $bg $txt border shadow-sm' style='{$uniform_badge_style}'>";
             echo "<i class='fas fa-filter me-1'></i> PROSES: " . strtoupper($val);
             echo "</span>";
         } elseif ($item->kategori_id == 8 && $key === 'posisi_cetak') {
             // DTG Print Position
-            echo "<span class='badge bg-info bg-opacity-10 text-info border border-info border-opacity-25' style='font-size: 0.65rem;'>";
+            echo "<span class='badge bg-info bg-opacity-10 text-info border border-info border-opacity-25' style='{$uniform_badge_style}'>";
             echo "<i class='fas fa-bullseye me-1'></i> POSISI: " . strtoupper($val);
             echo "</span>";
         } elseif ($item->kategori_id == 10 && $key === 'ket_1') {
             // Merchandise Model/Varian
-            echo "<span class='badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 shadow-sm' style='font-size: 0.65rem;'>";
+            echo "<span class='badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 shadow-sm' style='{$uniform_badge_style}'>";
             echo "<i class='fas fa-gift me-1'></i> MODEL: " . strtoupper($val);
             echo "</span>";
         } elseif ($item->kategori_id == 10 && $key === 'keterangan_merch') {
             // Merchandise Special Notes
-            echo "<span class='badge bg-warning bg-opacity-10 text-dark border border-warning border-opacity-25' style='font-size: 0.65rem;'>";
+            echo "<span class='badge bg-warning bg-opacity-10 text-dark border border-warning border-opacity-25' style='{$uniform_badge_style}'>";
             echo "<i class='fas fa-sticky-note me-1'></i> NOTE: " . strtoupper($val);
             echo "</span>";
         } elseif (in_array($item->kategori_id, [5, 9]) && $key === 'ket_1') {
             $formatted_val = str_replace(',', ' x', $val);
-            echo "<span class='badge bg-dark bg-opacity-10 text-dark border border-dark border-opacity-25 fw-900 shadow-sm' style='font-size: 0.65rem;'>";
+            echo "<span class='badge bg-dark bg-opacity-10 text-dark border border-dark border-opacity-25 shadow-sm' style='{$uniform_badge_style}'>";
             echo "<i class='fas fa-ruler-horizontal me-1'></i> " . strtoupper($formatted_val);
             echo "</span>";
         } elseif ($isLFFinishing) {
             // Highly prominent badge for Finishing Instructions in Large Format
-            echo "<span class='badge bg-warning text-dark border border-warning shadow-sm' style='font-size: 0.65rem; padding: 4px 8px;'>";
+            echo "<span class='badge bg-warning text-dark border border-warning shadow-sm' style='{$uniform_badge_style}'>";
             echo "<i class='fas fa-tools me-1 opacity-75'></i> <span class='opacity-75 me-1'>" . strtoupper($label) . ":</span>";
-            echo "<strong class='text-uppercase fw-900'>" . $val . "</strong>";
+            echo "<span class='text-uppercase'>" . $val . "</span>";
             echo "</span>";
         } else {
-            echo "<span class='badge bg-light text-dark border' style='font-size: 0.6rem;'>";
-            echo "<span class='text-muted text-uppercase me-1' style='font-size: 0.55rem;'>" . $label . ":</span>";
-            echo "<strong>" . strtoupper($val) . "</strong>";
+            echo "<span class='badge bg-light text-dark border' style='{$uniform_badge_style}'>";
+            echo "<span class='text-muted text-uppercase me-1'>" . $label . ":</span>";
+            echo "<span>" . strtoupper($val) . "</span>";
             echo "</span>";
         }
     }

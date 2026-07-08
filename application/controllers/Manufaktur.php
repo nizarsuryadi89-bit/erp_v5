@@ -1523,14 +1523,51 @@ class Manufaktur extends MY_Controller
             return;
         }
 
-        $result = $this->db->select('bl.bom_line_id as id, CONCAT(b.bahan_nama, " - ", m.varian, " (", bl.quantity, " ", s.satuan_nama, ")") as text')
+        // Get variations map
+        $variations = $this->db->get_where('tbl_harga_product', ['product_id' => $product_id])->result();
+        $var_map = [];
+        foreach ($variations as $v) {
+            $var_name = $v->detail_product ?: 'Variasi ID: ' . $v->harga_id;
+            $meta_desc = [];
+            if (!empty($v->metadata)) {
+                $meta = json_decode($v->metadata, true);
+                if (is_array($meta)) {
+                    $ignored = ['product_id', 'nospk', 'qty', 'panjang', 'lebar', 'kategori_id', 'keterangan', 'approve', 'lokasi_cetak'];
+                    foreach ($meta as $k => $val) {
+                        if (!in_array($k, $ignored) && strpos($k, 'dim_') === false && strpos($k, '_id') === false && $val !== '') {
+                            $meta_desc[] = $val;
+                        }
+                    }
+                }
+            }
+            if (empty($meta_desc)) {
+                if (!empty($v->ket_1) && $v->ket_1 !== '0') $meta_desc[] = $v->ket_1;
+                if (!empty($v->jenisprint_id) && $v->jenisprint_id !== '0') $meta_desc[] = $v->jenisprint_id;
+                if (!empty($v->side_id) && $v->side_id !== '0') $meta_desc[] = $v->side_id;
+            }
+            if (!empty($meta_desc)) {
+                $var_name .= ' (' . implode(' | ', $meta_desc) . ')';
+            }
+            $var_map[$v->harga_id] = $var_name;
+        }
+
+        $boms = $this->db->select('bl.bom_line_id as id, bl.harga_id, bl.keterangan, b.bahan_nama, m.varian, bl.quantity, s.satuan_nama')
             ->from('bom_lines bl')
             ->join('tbl_material m', 'm.material_id = bl.bahan_id', 'left')
             ->join('tbl_bahan b', 'b.bahan_id = m.bahan_id', 'left')
             ->join('tbl_satuan s', 's.satuan_id = bl.satuan_id', 'left')
             ->where('bl.product_id', $product_id)
+            ->order_by('bl.harga_id', 'ASC')
             ->order_by('b.bahan_nama', 'ASC')
             ->get()->result();
+
+        $result = [];
+        foreach ($boms as $bom) {
+            $var_text = ($bom->harga_id && isset($var_map[$bom->harga_id])) ? " [Var: " . $var_map[$bom->harga_id] . "]" : " [Var: Global]";
+            $ket_text = !empty($bom->keterangan) ? " - " . $bom->keterangan : "";
+            $text = $bom->bahan_nama . ' - ' . $bom->varian . ' (' . $bom->quantity . ' ' . $bom->satuan_nama . ')' . $ket_text . $var_text;
+            $result[] = (object) ['id' => $bom->id, 'text' => $text];
+        }
 
         // Add 'No Material' option
         array_unshift($result, (object) ['id' => '99999', 'text' => '-- Tanpa Material --']);

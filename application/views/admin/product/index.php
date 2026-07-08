@@ -4,6 +4,11 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css">
 
 <style>
+    /* Fix Select2 z-index in nested modals */
+    .select2-container--open {
+        z-index: 9999999 !important;
+    }
+
     /* ================================================================
      * PRODUCT CATALOG – Visual theme aligned with Warehouse module
      * ================================================================ */
@@ -1604,7 +1609,7 @@
 <!-- Modal Edit Routing -->
 <div class="modal fade" id="modalEditRouting" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content border-0 shadow-lg overflow-hidden" style="border-radius: 1.25rem;">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 1.25rem;">
             <div class="modal-header border-0 bg-light p-4">
                 <div class="d-flex align-items-center">
                     <div class="bg-warning bg-opacity-10 p-2 rounded-3 me-3">
@@ -3267,35 +3272,55 @@
         $('#edit_est_time').val(item.est_time);
         $('#edit_labor_cost').val(new Intl.NumberFormat('id-ID').format(item.labor_cost || 0).replace(/,/g, '.'));
 
-        // Handle BOM Selection
-        const bomId = item.bom_line_id || '99999';
-        const bomText = item.bom_material_name || '-- Tanpa Material --';
-
-        if ($('#edit_bom_line_id_routing').find("option[value='" + bomId + "']").length) {
-            $('#edit_bom_line_id_routing').val(bomId).trigger('change');
-        } else {
-            var newOption = new Option(bomText, bomId, true, true);
-            $('#edit_bom_line_id_routing').append(newOption).trigger('change');
+        // Load & Set Operator (Normal Select)
+        if ($('#edit_operator_id').hasClass('select2-hidden-accessible')) {
+            $('#edit_operator_id').select2('destroy');
         }
-
-        ['#edit_operator_id'].forEach(s => $(s).select2({
-            placeholder: '-- Pilih --', allowClear: true, width: '100%', dropdownParent: $('#modalEditRouting'),
-            ajax: { url: '<?= base_url('manufaktur/get_operator_options') ?>', dataType: 'json', delay: 250, data: p => ({ term: p.term }), processResults: d => ({ results: d.results || [] }) }
-        }));
         
-        if (item.operator_id) {
-            if ($('#edit_operator_id').find("option[value='" + item.operator_id + "']").length) {
-                $('#edit_operator_id').val(item.operator_id).trigger('change');
-            } else {
-                var opOption = new Option(item.operator_name || 'Operator', item.operator_id, true, true);
-                $('#edit_operator_id').append(opOption).trigger('change');
+        // Disable temporarily while loading
+        $('#edit_operator_id').prop('disabled', true);
+        $.ajax({
+            url: '<?= base_url('manufaktur/get_operator_options') ?>',
+            dataType: 'json',
+            data: { term: '' },
+            success: function(res) {
+                let $sel = $('#edit_operator_id');
+                $sel.empty();
+                $sel.append('<option value="">-- Pilih --</option>');
+                let data = res.results || res || [];
+                data.forEach(d => {
+                    $sel.append(`<option value="${d.id}">${d.text}</option>`);
+                });
+                if (item.operator_id) {
+                    $sel.val(item.operator_id);
+                }
+                $sel.prop('disabled', false);
             }
+        });
+
+        // Load & Set BOM Select (Normal Select)
+        if ($('#edit_bom_line_id_routing').hasClass('select2-hidden-accessible')) {
+            $('#edit_bom_line_id_routing').select2('destroy');
         }
         
-        ['#edit_bom_line_id_routing'].forEach(s => $(s).select2({
-            placeholder: '-- Semua BOM Material --', allowClear: true, width: '100%', dropdownParent: $('#modalEditRouting'),
-            ajax: { url: '<?= base_url('manufaktur/get_bom_options_by_product/') ?>' + $('#routingProductIdInput').val(), dataType: 'json', delay: 250, data: p => ({ term: p.term }), processResults: d => ({ results: d.results || [] }) }
-        }));
+        $('#edit_bom_line_id_routing').prop('disabled', true);
+        $.ajax({
+            url: '<?= base_url('manufaktur/get_bom_options_by_product/') ?>' + $('#routingProductIdInput').val(),
+            dataType: 'json',
+            data: { term: '' },
+            success: function(res) {
+                let $sel = $('#edit_bom_line_id_routing');
+                $sel.empty();
+                $sel.append('<option value="">-- Tanpa Material --</option>');
+                let data = res.results || res || [];
+                data.forEach(d => {
+                    $sel.append(`<option value="${d.id}">${d.text}</option>`);
+                });
+                const bomId = item.bom_line_id || '99999';
+                $sel.val(bomId);
+                $sel.prop('disabled', false);
+            }
+        });
 
         $('#modalEditRouting').modal('show');
     }

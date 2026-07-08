@@ -10,6 +10,7 @@ class Pengaturan extends MY_Controller
     {
         parent::__construct();
         $this->load->helper('whatsapp');
+        $this->load->model('M_master');
         $this->_check_invoice_setting_columns();
     }
 
@@ -252,7 +253,7 @@ class Pengaturan extends MY_Controller
             // Basic counts
             'store' => $this->db->get('tbl_perusahaan')->num_rows(),
             'users' => $this->db->get('users')->num_rows(),
-            'karyawan' => $this->db->get('tbl_karyawan')->num_rows(),
+            'karyawan' => $this->M_master->get_karyawan()->num_rows(),
             'konsumen' => $this->db->get('tbl_konsumen')->num_rows(),
             'bahanbaku' => $this->db->get('tbl_bahan')->num_rows(),
             'getproduct' => $this->db->get('tbl_product')->num_rows(),
@@ -543,7 +544,7 @@ WHERE table_schema = '$db_name'");
             'perusahaan' => $conf['perusahaan']['nama_perusahaan'],
             'hakakses' => $conf['hakakses']['divisi_nama'],
             'logo' => $conf['perusahaan']['logo'],
-            'karyawan' => $this->db->get('tbl_karyawan')->result(),
+            'karyawan' => $this->M_master->get_karyawan()->result(),
             'divisi' => $this->db->get('tbl_divisi')->result(),
             'roles' => $this->db->get('roles')->result(),
             'level' => $this->db->get_where('users', ['user_id' => $userid])->row_array(),

@@ -2654,7 +2654,7 @@ class Laporan extends MY_Controller
             'ewallet_list' => $this->db->get('tbl_ewallet')->result(),
             'edc_list' => $this->db->get('tbl_mesin_edc')->result(),
             'bank_list' => $this->db->get('tbl_rekening')->result(),
-            'karyawan_list' => $this->db->select('karyawan_id, nama_lengkap')->where('perusahaan_id', $perusahaan_id)->order_by('nama_lengkap', 'asc')->get('tbl_karyawan')->result(),
+            'karyawan_list' => $this->db->select('karyawan_id, nama_lengkap')->where('perusahaan_id', $perusahaan_id)->order_by('nama_lengkap', 'asc')->where('nama_lengkap NOT LIKE', '%Terminal%')->where('nama_lengkap NOT LIKE', '%OPERATOR%')->where('nama_lengkap NOT LIKE', '%DEPT%')->where('nama_lengkap NOT LIKE', '%DTG%')->where('nama_lengkap NOT LIKE', '%DTF%')->where('nama_lengkap NOT LIKE', '%WORK CENTER%')->where('nama_lengkap NOT LIKE', '%LARGE FORMAT%')->where('nama_lengkap NOT LIKE', '%A3+%')->where("nik NOT LIKE", 'STATION%')->where("nik NOT LIKE", 'TERM%')->get('tbl_karyawan')->result(),
             'current_perusahaan_id' => $perusahaan_id,
             'perusahaan' => $perusahaan_name,
             'is_admin_owner' => ($is_admin || $is_owner),

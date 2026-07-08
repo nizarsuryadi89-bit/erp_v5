@@ -309,10 +309,10 @@ $print_time = date('d/m/Y H:i');
                     <td style="font-weight: bold;">PEMBAYARAN</td>
                     <td style="font-weight: bold;">:</td>
                     <td>
-                        <?php 
+                        <?php
                         $status_bayar = isset($first_item->status_pembayaran) ? $first_item->status_pembayaran : 'pending';
-                        $sisa = isset($first_item->sisa_tagihan) ? (float)$first_item->sisa_tagihan : null;
-                        
+                        $sisa = isset($first_item->sisa_tagihan) ? (float) $first_item->sisa_tagihan : null;
+
                         // If it's explicitly 'paid' AND (we don't have payment data OR the remaining balance is <= 0)
                         if ($status_bayar == 'paid' && ($sisa === null || $sisa <= 0)) {
                             echo '<span style="font-weight: 900; border: 1px solid #000; padding: 2px 6px; border-radius: 4px; display: inline-block;">LUNAS</span>';
@@ -354,29 +354,112 @@ $print_time = date('d/m/Y H:i');
                 }
 
                 $meta = !empty($item_detail->metadata) ? json_decode($item_detail->metadata, true) : [];
+
+                // Backward Compatibility for old items that didn't save schema correctly
+                if (!isset($meta['ket_1']) && isset($item_detail->db_ket_1) && $item_detail->db_ket_1 !== '') {
+                    $meta['ket_1'] = $item_detail->db_ket_1;
+                }
+                if (!isset($meta['jenisprint_id']) && isset($item_detail->db_jenisprint_id) && $item_detail->db_jenisprint_id !== '') {
+                    $meta['jenisprint_id'] = $item_detail->db_jenisprint_id;
+                }
+                if (!isset($meta['side_id']) && isset($item_detail->side_id) && $item_detail->side_id !== '') {
+                    $meta['side_id'] = $item_detail->side_id;
+                }
+
+                // Prepare Schema mapping for proper label display
+                $cat_sch = !empty($item_detail->kategori_schema) ? json_decode($item_detail->kategori_schema, true) : [];
+                $prd_sch = !empty($item_detail->product_schema) ? json_decode($item_detail->product_schema, true) : [];
+                $merged_schema = [];
+                if (is_array($cat_sch)) {
+                    foreach ($cat_sch as $s)
+                        if (isset($s['name']))
+                            $merged_schema[$s['name']] = $s;
+                }
+                if (is_array($prd_sch)) {
+                    foreach ($prd_sch as $s)
+                        if (isset($s['name']))
+                            $merged_schema[$s['name']] = $s;
+                }
+
+                // Clean key fallback for metadata (e.g. jenisprint instead of jenisprint_id)
+                foreach ($merged_schema as $k => $field) {
+                    if (!isset($meta[$k]) || $meta[$k] === '') {
+                        $clean_k = str_replace('_id', '', $k);
+                        if (isset($meta[$clean_k]) && $meta[$clean_k] !== '') {
+                            $meta[$k] = $meta[$clean_k];
+                        }
+                    }
+                }
+
+                $get_label = function ($key, $val) use ($merged_schema) {
+                    if (isset($merged_schema[$key]['options'][$val])) {
+                        return $merged_schema[$key]['options'][$val];
+                    }
+                    return $val;
+                };
+
                 if (!empty($meta['warna'])) {
-                    $specs[] = "Warna: " . strtoupper($meta['warna']);
+                    $specs[] = "Warna: " . strtoupper($get_label('warna', $meta['warna']));
+                }
+
+                // Add Mesin / Proses (e.g. Indoor, Outdoor, Epson, Konica)
+                if (!empty($meta['jenisprint_id'])) {
+                    $val_label = $get_label('jenisprint_id', $meta['jenisprint_id']);
+                    // For Kategori 1/2 without schema, fallback hardcode if necessary, but DB mostly matches now
+                    // Some older data has raw values like "1" or "2"
+                    if ($val_label === '1' && $item_detail->kategori_id == 2)
+                        $val_label = 'Indoor Eco Solvent';
+                    if ($val_label === '2' && $item_detail->kategori_id == 2)
+                        $val_label = 'Outdoor';
+                    if ($val_label === '3' && $item_detail->kategori_id == 2)
+                        $val_label = 'Indoor UV';
+                    if ($val_label === '1' && $item_detail->kategori_id == 1)
+                        $val_label = 'Konica';
+                    if ($val_label === '3' && $item_detail->kategori_id == 1)
+                        $val_label = 'Fujixerox';
+                    $specs[] = strtoupper($val_label);
+                }
+
+                // Add Bahan / Material (except for Cat 5,9 which handle it specially below)
+                if (!empty($meta['ket_1']) && !in_array($item_detail->kategori_id, [5, 9])) {
+                    $specs[] = strtoupper($get_label('ket_1', $meta['ket_1']));
+                }
+
+                // Add Sisi / Muka
+                if (!empty($meta['sisi'])) {
+                    $specs[] = strtoupper($get_label('sisi', $meta['sisi']));
+                } elseif (!empty($meta['side_id'])) {
+                    $specs[] = strtoupper($get_label('side_id', $meta['side_id']));
+                }
+
+                // Add Finishing if exists
+                if (!empty($meta['finishing_id'])) {
+                    $specs[] = strtoupper($get_label('finishing_id', $meta['finishing_id']));
                 }
 
                 // Add LEBAR KAIN / LEBAR ROLL info from Schema if applicable (Kategori 5 / 9)
                 if (in_array($item_detail->kategori_id, [5, 9])) {
                     $widthCode = $meta['ket_1'] ?? '0';
-                    
+
                     if ($widthCode !== '0') {
                         $cat_sch = !empty($item_detail->kategori_schema) ? json_decode($item_detail->kategori_schema, true) : [];
                         $prd_sch = !empty($item_detail->product_schema) ? json_decode($item_detail->product_schema, true) : [];
-                        
+
                         $merged = [];
                         if (is_array($cat_sch)) {
-                            foreach ($cat_sch as $s) if (isset($s['name'])) $merged[$s['name']] = $s;
+                            foreach ($cat_sch as $s)
+                                if (isset($s['name']))
+                                    $merged[$s['name']] = $s;
                         }
                         if (is_array($prd_sch)) {
-                            foreach ($prd_sch as $s) if (isset($s['name'])) $merged[$s['name']] = $s;
+                            foreach ($prd_sch as $s)
+                                if (isset($s['name']))
+                                    $merged[$s['name']] = $s;
                         }
-                        
+
                         if (isset($merged['ket_1']['options'][$widthCode])) {
                             $wNameStr = strtoupper($merged['ket_1']['options'][$widthCode]);
-                            
+
                             $pStr = $p . " M";
                             $idx = array_search($pStr, $specs);
                             if ($idx !== false) {
@@ -391,6 +474,7 @@ $print_time = date('d/m/Y H:i');
                     }
                 }
 
+                $specs = array_unique($specs);
                 $spec_text = implode(', ', $specs);
                 if (!empty($item_detail->catatan)) {
                     $spec_text .= (!empty($spec_text) ? ' - ' : '') . htmlspecialchars($item_detail->catatan);
@@ -409,12 +493,12 @@ $print_time = date('d/m/Y H:i');
                     </tr>
                     <?php if (!empty($spec_text)): ?>
                         <tr>
-                            <td style="font-weight: bold; vertical-align: top;">KET</td>
-                            <td style="font-weight: bold; vertical-align: top;">:</td>
-                            <td><?= $spec_text ?></td>
+                            <td style="font-weight: bold; vertical-align: top; font-size: 0.85em;">KET</td>s
+                            <td style="font-weight: bold; vertical-align: top; font-size: 0.85em;">:</td>
+                            <td style="font-size: 0.85em;"><?= $spec_text ?></td>
                         </tr>
                     <?php endif; ?>
-                    <?php 
+                    <?php
                     $item_dl = '-';
                     if (!empty($item_detail->dateline_tgl) && $item_detail->dateline_tgl !== '0000-00-00' && $item_detail->dateline_tgl !== '0000-00-00 00:00:00') {
                         $time = !empty($item_detail->dateline_jam) ? $item_detail->dateline_jam : '00:00';

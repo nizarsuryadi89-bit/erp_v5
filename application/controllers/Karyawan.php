@@ -146,6 +146,15 @@ class Karyawan extends MY_Controller
     {
         // Total Karyawan (Excluding Owner/Directors and Dummy Accounts)
         $this->db->where("nik NOT LIKE 'STATION%'");
+        $this->db->where("nik NOT LIKE 'TERM%'");
+        $this->db->where('nama_lengkap NOT LIKE', '%Terminal%');
+        $this->db->where('nama_lengkap NOT LIKE', '%OPERATOR%');
+        $this->db->where('nama_lengkap NOT LIKE', '%DEPT%');
+        $this->db->where('nama_lengkap NOT LIKE', '%DTG%');
+        $this->db->where('nama_lengkap NOT LIKE', '%DTF%');
+        $this->db->where('nama_lengkap NOT LIKE', '%WORK CENTER%');
+        $this->db->where('nama_lengkap NOT LIKE', '%LARGE FORMAT%');
+        $this->db->where('nama_lengkap NOT LIKE', '%A3+%');
         $this->db->where('divisi_id !=', 8);
         $this->db->where_not_in('jabatan_id', [1, 2, 3]);
         if ($this->session->userdata('perusahaan_id') != 1 && $this->session->userdata('level') != 21) {
@@ -334,7 +343,7 @@ class Karyawan extends MY_Controller
         $extra_data = array(
             'performance_data' => $this->get_performance_data($bulan, $karyawan_id, $jabatan_id, $range['start'], $range['end']),
             'stats' => $this->get_performance_stats($bulan),
-            'karyawan_list' => $this->db->where('divisi_id !=', 8)->where_not_in('jabatan_id', [1, 2, 3])->get('tbl_karyawan')->result(),
+            'karyawan_list' => $this->db->where('divisi_id !=', 8)->where_not_in('jabatan_id', [1, 2, 3])->where('nama_lengkap NOT LIKE', '%Terminal%')->where('nama_lengkap NOT LIKE', '%OPERATOR%')->where('nama_lengkap NOT LIKE', '%DEPT%')->where('nama_lengkap NOT LIKE', '%DTG%')->where('nama_lengkap NOT LIKE', '%DTF%')->where('nama_lengkap NOT LIKE', '%WORK CENTER%')->where('nama_lengkap NOT LIKE', '%LARGE FORMAT%')->where('nama_lengkap NOT LIKE', '%A3+%')->where("nik NOT LIKE", 'STATION%')->where("nik NOT LIKE", 'TERM%')->get('tbl_karyawan')->result(),
             'jabatan_list' => $this->db->get('tbl_jabatan')->result(),
             'bulan' => $bulan,
             'karyawan_id' => $karyawan_id,
@@ -567,6 +576,14 @@ class Karyawan extends MY_Controller
     /**
      * Salary calculation application
      */
+    /**
+     * Laporan Payroll Bulanan (Alias/Redirect to Penggajian)
+     */
+    public function laporan_payroll_bulanan()
+    {
+        redirect('karyawan/penggajian');
+    }
+
     public function penggajian()
     {
         // Get filter parameters
@@ -720,6 +737,15 @@ class Karyawan extends MY_Controller
         $all_employees = $this->db->select('karyawan_id, nama_lengkap, nik, foto, nominal_lembur')
             ->from('tbl_karyawan')
             ->where('nama_lengkap NOT LIKE', '%Terminal%')
+            ->where('nama_lengkap NOT LIKE', '%OPERATOR%')
+            ->where('nama_lengkap NOT LIKE', '%DEPT%')
+            ->where('nama_lengkap NOT LIKE', '%DTG%')
+            ->where('nama_lengkap NOT LIKE', '%DTF%')
+            ->where('nama_lengkap NOT LIKE', '%WORK CENTER%')
+            ->where('nama_lengkap NOT LIKE', '%LARGE FORMAT%')
+            ->where('nama_lengkap NOT LIKE', '%A3+%')
+            ->where("nik NOT LIKE", 'STATION%')
+            ->where("nik NOT LIKE", 'TERM%')
             ->where('divisi_id !=', 8)
             ->where_not_in('jabatan_id', [1, 2, 3])
             ->get()->result();
@@ -960,7 +986,7 @@ class Karyawan extends MY_Controller
                 return $x->jam_efektif > 0;
             })),
             'all_karyawan' => $this->M_master->get_lembur()->result(),
-            'listkaryawan' => $this->db->get('tbl_karyawan')->result(),
+            'listkaryawan' => $this->M_master->get_karyawan()->result(),
             'configs' => $raw_configs,
             'conf' => $conf_map,
             'tanggal' => $tanggal
@@ -982,6 +1008,15 @@ class Karyawan extends MY_Controller
         $all_employees = $this->db->select('karyawan_id, nama_lengkap, nik, foto, nominal_lembur')
             ->from('tbl_karyawan')
             ->where('nama_lengkap NOT LIKE', '%Terminal%')
+            ->where('nama_lengkap NOT LIKE', '%OPERATOR%')
+            ->where('nama_lengkap NOT LIKE', '%DEPT%')
+            ->where('nama_lengkap NOT LIKE', '%DTG%')
+            ->where('nama_lengkap NOT LIKE', '%DTF%')
+            ->where('nama_lengkap NOT LIKE', '%WORK CENTER%')
+            ->where('nama_lengkap NOT LIKE', '%LARGE FORMAT%')
+            ->where('nama_lengkap NOT LIKE', '%A3+%')
+            ->where("nik NOT LIKE", 'STATION%')
+            ->where("nik NOT LIKE", 'TERM%')
             ->get()->result();
 
         // 2. Fetch SPLs for the selected date - Grouped
@@ -1152,7 +1187,7 @@ class Karyawan extends MY_Controller
                 return $x->jam_efektif > 0;
             })),
             'all_karyawan' => $this->M_master->get_lembur()->result(),
-            'listkaryawan' => $this->db->get('tbl_karyawan')->result(),
+            'listkaryawan' => $this->M_master->get_karyawan()->result(),
             'tanggal' => $tanggal
         );
 
@@ -1559,7 +1594,7 @@ class Karyawan extends MY_Controller
         $extra_data = array(
             'karyawan' => $this->M_master->karyawan_lembur()->result(),
             'jml' => $this->M_master->karyawan_lembur()->num_rows(),
-            'listkaryawan' => $this->db->get('tbl_karyawan')->result(),
+            'listkaryawan' => $this->M_master->get_karyawan()->result(),
             'karyawan_terpilih' => $this->db->get_where('tbl_karyawan', array('karyawan_id' => $karyawan_id))->row_array(),
         );
 
@@ -2166,7 +2201,7 @@ class Karyawan extends MY_Controller
     {
         $extra_data = array(
             'getlist' => $this->db->get_where('users', array('user_id' => $id))->row_array(),
-            'karyawan' => $this->db->get('tbl_karyawan')->result(),
+            'karyawan' => $this->M_master->get_karyawan()->result(),
             'perusahaan' => $this->db->get('tbl_perusahaan')->result(),
         );
 
@@ -3648,6 +3683,16 @@ class Karyawan extends MY_Controller
             die("Silakan login terlebih dahulu.");
         }
 
+        $this->db->where("nik NOT LIKE 'STATION%'");
+        $this->db->where("nik NOT LIKE 'TERM%'");
+        $this->db->where('nama_lengkap NOT LIKE', '%Terminal%');
+        $this->db->where('nama_lengkap NOT LIKE', '%OPERATOR%');
+        $this->db->where('nama_lengkap NOT LIKE', '%DEPT%');
+        $this->db->where('nama_lengkap NOT LIKE', '%DTG%');
+        $this->db->where('nama_lengkap NOT LIKE', '%DTF%');
+        $this->db->where('nama_lengkap NOT LIKE', '%WORK CENTER%');
+        $this->db->where('nama_lengkap NOT LIKE', '%LARGE FORMAT%');
+        $this->db->where('nama_lengkap NOT LIKE', '%A3+%');
         $all_karyawan = $this->db->get('tbl_karyawan')->result();
         $updated_count = 0;
 

@@ -1,5 +1,5 @@
 <?php if ($this->input->get('iframe') != '1'): ?>
-<?php $this->load->view('layout_admin/header_modul'); ?>
+    <?php $this->load->view('layout_admin/header_modul'); ?>
 <?php endif; ?>
 
 <link rel="stylesheet" href="<?= base_url('assets/css/wip_produksi.css') ?>">
@@ -19,7 +19,7 @@
     // Helper for updating URL parameters without using new URL() which can conflict
     function updateWipFilter(key, value) {
         var uri = window.location.href;
-        
+
         // Always reset to page 1 when changing filters
         if (key !== 'page') {
             var rePage = new RegExp("([?&])page=.*?(&|$)", "i");
@@ -43,17 +43,44 @@
 
 <div class="app-content mt-3">
     <?php if ($this->input->get('iframe') == '1' || $this->input->get('readonly') == '1'): ?>
-    <style>
-        <?php if ($this->input->get('iframe') == '1'): ?>
-        .app-content { margin-top: 0 !important; padding: 0 !important; }
-        .report-section-card { border-radius: 0 !important; margin-bottom: 0 !important; box-shadow: none !important; border: none !important; }
-        .section-header { display: none !important; }
-        <?php endif; ?>
-        .btn-action-container, .btn-group, .btn-primary:not(#btn-search), .btn-success, .btn-danger:not(#btn-reset) { display: none !important; }
-        .badge.bg-primary.cursor-pointer { pointer-events: none; }
-        /* Disable all action buttons in the table for PB Tracking */
-        tbody .btn, tbody .btn-action-premium, tbody button { display: none !important; }
-    </style>
+        <style>
+            <?php if ($this->input->get('iframe') == '1'): ?>
+                .app-content {
+                    margin-top: 0 !important;
+                    padding: 0 !important;
+                }
+
+                .report-section-card {
+                    border-radius: 0 !important;
+                    margin-bottom: 0 !important;
+                    box-shadow: none !important;
+                    border: none !important;
+                }
+
+                .section-header {
+                    display: none !important;
+                }
+
+            <?php endif; ?>
+            .btn-action-container,
+            .btn-group,
+            .btn-primary:not(#btn-search),
+            .btn-success,
+            .btn-danger:not(#btn-reset) {
+                display: none !important;
+            }
+
+            .badge.bg-primary.cursor-pointer {
+                pointer-events: none;
+            }
+
+            /* Disable all action buttons in the table for PB Tracking */
+            tbody .btn,
+            tbody .btn-action-premium,
+            tbody button {
+                display: none !important;
+            }
+        </style>
     <?php endif; ?>
     <!-- Main Content Card -->
     <div class="report-section-card">
@@ -67,7 +94,8 @@
                 ?>
             </h5>
             <div class="d-flex align-items-center gap-2">
-                <button onclick="openGlobalSearchModal()" class="btn btn-sm btn-primary rounded-pill px-3 fw-bold shadow-sm">
+                <button onclick="openGlobalSearchModal()"
+                    class="btn btn-sm btn-primary rounded-pill px-3 fw-bold shadow-sm">
                     <i class="fas fa-search me-1"></i> Lacak SPK Global
                 </button>
                 <button onclick="showManualGuide()"
@@ -125,17 +153,22 @@
         <?php endif; ?>
 
         <?php if (!empty($this->input->get('search_spk'))): ?>
-            <div class="alert alert-info border-info border-start border-4 mb-0 rounded-0 d-flex flex-column flex-md-row align-items-center justify-content-between px-4 py-3 bg-info bg-opacity-10">
+            <div
+                class="alert alert-info border-info border-start border-4 mb-0 rounded-0 d-flex flex-column flex-md-row align-items-center justify-content-between px-4 py-3 bg-info bg-opacity-10">
                 <div class="d-flex align-items-center gap-3 mb-2 mb-md-0">
-                    <div class="bg-info text-white rounded-circle d-flex align-items-center justify-content-center shadow-sm" style="width: 40px; height: 40px;">
+                    <div class="bg-info text-white rounded-circle d-flex align-items-center justify-content-center shadow-sm"
+                        style="width: 40px; height: 40px;">
                         <i class="fas fa-search fa-lg"></i>
                     </div>
                     <div>
                         <h6 class="mb-0 fw-bold text-dark">Mode Pencarian Aktif</h6>
-                        <p class="small mb-0 text-muted opacity-75">Menampilkan hasil pencarian untuk: <strong><?= htmlspecialchars($this->input->get('search_spk')) ?></strong>. Filter tab status dan tanggal diabaikan sementara.</p>
+                        <p class="small mb-0 text-muted opacity-75">Menampilkan hasil pencarian untuk:
+                            <strong><?= htmlspecialchars($this->input->get('search_spk')) ?></strong>. Filter tab status dan
+                            tanggal diabaikan sementara.</p>
                     </div>
                 </div>
-                <a href="<?= site_url('wip/produksi?page=1&operator=' . ($active_operator ?? 'all') . '&group_mode=' . ($group_mode ?? 'bahan') . '&status_view=' . ($filter_status_view ?? 'pending')) ?>" class="btn btn-danger btn-sm rounded-pill px-4 fw-bold shadow-sm d-flex align-items-center gap-2">
+                <a href="<?= site_url('wip/produksi?page=1&operator=' . ($active_operator ?? 'all') . '&group_mode=' . ($group_mode ?? 'bahan') . '&status_view=' . ($filter_status_view ?? 'pending')) ?>"
+                    class="btn btn-danger btn-sm rounded-pill px-4 fw-bold shadow-sm d-flex align-items-center gap-2">
                     <i class="fas fa-times-circle"></i> Reset Pencarian
                 </a>
             </div>
@@ -161,18 +194,19 @@
             <div id="container-view-item" class="<?= $is_material_view_default ? '' : 'd-none' ?>">
                 <?php $this->load->view('admin/wip/components/v_table_item_view', ['group_mode' => $group_mode ?? 'bahan']); ?>
             </div>
-            
+
             <?php if (!empty($pagination)): ?>
-            <div class="d-flex flex-column flex-md-row justify-content-between align-items-center p-3 border-top bg-light">
-                <div class="text-muted small mb-2 mb-md-0">
-                    Menampilkan <span class="fw-bold text-dark"><?= $offset + 1 ?></span> 
-                    sampai <span class="fw-bold text-dark"><?= min($offset + $per_page, $total_products) ?></span> 
-                    dari <span class="fw-bold text-dark"><?= $total_products ?></span> SPK
+                <div
+                    class="d-flex flex-column flex-md-row justify-content-between align-items-center p-3 border-top bg-light">
+                    <div class="text-muted small mb-2 mb-md-0">
+                        Menampilkan <span class="fw-bold text-dark"><?= $offset + 1 ?></span>
+                        sampai <span class="fw-bold text-dark"><?= min($offset + $per_page, $total_products) ?></span>
+                        dari <span class="fw-bold text-dark"><?= $total_products ?></span> SPK
+                    </div>
+                    <div>
+                        <?= $pagination ?>
+                    </div>
                 </div>
-                <div>
-                    <?= $pagination ?>
-                </div>
-            </div>
             <?php endif; ?>
         </div>
     </div>
@@ -422,7 +456,7 @@
             success: function (response) {
                 if (response && response.items && response.items.length > 0) {
                     let html = `<div class="text-start text-dark" style="font-size: 0.95rem; line-height: 1.6;">`;
-                    
+
                     // 1. Produk
                     html += `<b>Produk :</b><br>`;
                     response.items.forEach((item) => {
@@ -430,7 +464,7 @@
                         let sat = item.satuan_nama ? item.satuan_nama : 'Pcs';
                         html += `- ${item.product_nama} ${qtyStr} ${sat}<br>`;
                     });
-                    
+
                     // 2. Work Center
                     let wcSet = new Set();
                     response.items.forEach((item) => {
@@ -443,7 +477,7 @@
                     if (wcSet.size > 0) {
                         html += `<br><b>Work Center :</b><br>${Array.from(wcSet).join(', ')}<br>`;
                     }
-                    
+
                     // 3. Bahan
                     let bahanMap = {};
                     response.items.forEach((item) => {
@@ -452,7 +486,7 @@
                                 if (!b.bahan_nama) return;
                                 let total = parseFloat(b.bom_qty) * parseFloat(item.qty);
                                 let key = b.bahan_nama;
-                                if(bahanMap[key]) {
+                                if (bahanMap[key]) {
                                     bahanMap[key].qty += total;
                                 } else {
                                     bahanMap[key] = { qty: total, unit: b.satuan_nama || '' };
@@ -469,7 +503,7 @@
                             html += `- ${key} ${qtyFmt} ${b.unit}<br>`;
                         });
                     }
-                    
+
                     // 4. Catatan
                     let catatanSet = new Set();
                     response.items.forEach((item) => {
@@ -479,9 +513,9 @@
                         html += `<br><b>Catatan :</b> `;
                         html += Array.from(catatanSet).join(' | ') + `<br>`;
                     }
-                    
+
                     html += `</div>`;
-                    
+
                     Swal.fire({
                         title: 'Detail SPK ' + nospk,
                         html: html,
@@ -524,13 +558,13 @@
             if ($('input:focus, textarea:focus, select:focus').length > 0) {
                 return;
             }
-            
+
             // Jika aman, refresh halaman tanpa membuang filter yang sedang aktif
             location.reload();
         }, REFRESH_TIME);
     }
 
-    $(document).ready(function() {
+    $(document).ready(function () {
         startAutoRefresh();
     });
 </script>

@@ -15,11 +15,9 @@ foreach ($karyawan as $row) {
     $total++;
     if ($row->status == 'menunggu' || strtolower($row->status) == 'pending') {
         $pending++;
-    }
-    elseif ($row->status == 'disetujui') {
+    } elseif ($row->status == 'disetujui') {
         $approved++;
-    }
-    elseif ($row->status == 'ditolak') {
+    } elseif ($row->status == 'ditolak') {
         $rejected++;
     }
 }
@@ -46,7 +44,7 @@ if (!function_exists('format_durasi_lembur')) {
 }
 ?>
 
-<!-- <link rel="stylesheet" href="<?= base_url('assets/css/costume-tgm.css')?>"> -->
+<!-- <link rel="stylesheet" href="<?= base_url('assets/css/costume-tgm.css') ?>"> -->
 <!-- <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"> -->
 
 <style>
@@ -206,7 +204,7 @@ if (!function_exists('format_durasi_lembur')) {
     <div class="container-fluid pt-3">
         <!-- Header Title & Back Button -->
         <div class="d-flex align-items-center gap-3 mb-4">
-            <a href="<?= base_url('hr')?>"
+            <a href="<?= base_url('hr') ?>"
                 class="btn btn-white d-flex align-items-center justify-content-center shadow-sm"
                 style="width: 42px; height: 42px; padding: 0; border-radius: 10px; border: 1px solid var(--tgm-slate-200); background: white; color: var(--tgm-slate-700);"
                 title="Kembali ke Dashboard HR">
@@ -223,25 +221,25 @@ if (!function_exists('format_durasi_lembur')) {
             <div class="clean-card stat-box">
                 <div class="small fw-900 text-muted text-uppercase ls-1">Total Pengajuan</div>
                 <div class="h3 fw-900 font-mono text-dark mb-0">
-                    <?= $total?>
+                    <?= $total ?>
                 </div>
             </div>
             <div class="clean-card stat-box pending">
                 <div class="small fw-900 text-muted text-uppercase ls-1">Menunggu Approval</div>
                 <div class="h3 fw-900 font-mono text-warning mb-0">
-                    <?= $pending?>
+                    <?= $pending ?>
                 </div>
             </div>
             <div class="clean-card stat-box approved">
                 <div class="small fw-900 text-muted text-uppercase ls-1">Disetujui</div>
                 <div class="h3 fw-900 font-mono text-emerald mb-0">
-                    <?= $approved?>
+                    <?= $approved ?>
                 </div>
             </div>
             <div class="clean-card stat-box rejected">
                 <div class="small fw-900 text-muted text-uppercase ls-1">Ditolak</div>
                 <div class="h3 fw-900 font-mono text-rose mb-0">
-                    <?= $rejected?>
+                    <?= $rejected ?>
                 </div>
             </div>
         </div>
@@ -254,7 +252,7 @@ if (!function_exists('format_durasi_lembur')) {
                         <div class="input-group">
                             <span class="input-group-text bg-white border-end-0 text-muted small fw-bold">PERIODE</span>
                             <input type="date" name="tanggal" class="form-control border-start-0 ps-0 fw-bold"
-                                value="<?= $tanggal_selected?>" onchange="this.form.submit()">
+                                value="<?= $tanggal_selected ?>" onchange="this.form.submit()">
                         </div>
                     </form>
                 </div>
@@ -272,11 +270,11 @@ if (!function_exists('format_durasi_lembur')) {
                             class="btn btn-outline-dark rounded-pill px-4 fw-bold shadow-sm">
                             <i class="bi bi-printer me-2"></i> CETAK
                         </button>
-                        <a href="<?= base_url('karyawan/rekap_lembur_bulanan')?>"
+                        <a href="<?= base_url('karyawan/rekap_lembur_bulanan') ?>"
                             class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm">
                             <i class="bi bi-calendar-check me-2"></i> REKAP BULANAN
                         </a>
-                        <a href="<?= base_url('karyawan/pengaturan_lembur')?>"
+                        <a href="<?= base_url('karyawan/pengaturan_lembur') ?>"
                             class="btn btn-outline-primary rounded-pill px-4 fw-bold shadow-sm">
                             <i class="bi bi-gear me-2"></i> SETTING KEBIJAKAN
                         </a>
@@ -316,224 +314,224 @@ if (!function_exists('format_durasi_lembur')) {
                     </thead>
                     <tbody>
                         <?php foreach ($karyawan as $row):
-    $status_class = 'warning';
-    $status_text = 'WAITING';
-    if ($row->status == 'disetujui') {
-        $status_class = 'success';
-        $status_text = 'APPROVED';
-    }
-    elseif ($row->status == 'ditolak') {
-        $status_class = 'danger';
-        $status_text = 'REJECTED';
-    }
+                            $status_class = 'warning';
+                            $status_text = 'WAITING';
+                            if ($row->status == 'disetujui') {
+                                $status_class = 'success';
+                                $status_text = 'APPROVED';
+                            } elseif ($row->status == 'ditolak') {
+                                $status_class = 'danger';
+                                $status_text = 'REJECTED';
+                            }
 
-    $initials = substr($row->nama_lengkap, 0, 1) . substr(explode(' ', $row->nama_lengkap)[count(explode(' ', $row->nama_lengkap)) - 1], 0, 1);
-?>
-                        <tr>
-                            <td class="ps-4">
-                                <div class="employee-info-group">
-                                    <div class="avatar-mini">
-                                        <?= strtoupper($initials)?>
+                            $initials = substr($row->nama_lengkap, 0, 1) . substr(explode(' ', $row->nama_lengkap)[count(explode(' ', $row->nama_lengkap)) - 1], 0, 1);
+                            ?>
+                            <tr>
+                                <td class="ps-4">
+                                    <div class="employee-info-group">
+                                        <div class="avatar-mini">
+                                            <?= strtoupper($initials) ?>
+                                        </div>
+                                        <div>
+                                            <div class="fw-bold text-dark mb-0 d-flex align-items-center gap-1">
+                                                <?= strtoupper($row->nama_lengkap) ?>
+                                                <?php
+                                                $jam_masuk = $row->jam_masuk;
+                                                if ($jam_masuk && $jam_masuk != '00:00:00') {
+                                                    $time_val = strtotime($jam_masuk);
+                                                    $limit_red = strtotime(date('Y-m-d', $time_val) . ' 08:01:00');
+                                                    $limit_penalty = strtotime(date('Y-m-d', $time_val) . ' 08:11:00');
+
+                                                    if ($time_val >= $limit_penalty) {
+                                                        echo '<span class="penalty-badge" title="Potongan 1 Jam Lembur (Telat >= 11 Menit)">-1J</span>';
+                                                    }
+                                                }
+                                                ?>
+                                            </div>
+                                            <div class="x-small text-muted" style="font-size: 0.65rem;">
+                                                <span
+                                                    class="<?= (isset($time_val) && $time_val >= $limit_red) ? 'text-late-warning' : '' ?>">
+                                                    Masuk:
+                                                    <?= substr($row->jam_masuk, 0, 5) ?>
+                                                </span>
+                                                • NIK:
+                                                <?= $row->nik ?>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <div class="fw-bold text-dark mb-0 d-flex align-items-center gap-1">
-                                            <?= strtoupper($row->nama_lengkap)?>
+                                </td>
+                                <td class="text-start">
+                                    <?php if ($row->jam_pagi > 0 || !empty($row->all_pagi_ranges)): ?>
+                                        <?php
+                                        // Use set to avoid duplicates
+                                        $p_ranges = array_unique($row->all_pagi_ranges ?: []);
+                                        foreach ($p_ranges as $pr):
+                                            ?>
+                                            <div class="fw-bold font-mono text-indigo mb-0" style="font-size: 0.75rem;">
+                                                SPL:
+                                                <?= $pr ?>
+                                            </div>
                                             <?php
-    $jam_masuk = $row->jam_masuk;
-    if ($jam_masuk && $jam_masuk != '00:00:00') {
-        $time_val = strtotime($jam_masuk);
-        $limit_red = strtotime(date('Y-m-d', $time_val) . ' 08:01:00');
-        $limit_penalty = strtotime(date('Y-m-d', $time_val) . ' 08:11:00');
+                                        endforeach; ?>
 
-        if ($time_val >= $limit_penalty) {
-            echo '<span class="penalty-badge" title="Potongan 1 Jam Lembur (Telat >= 11 Menit)">-1J</span>';
-        }
-    }
-?>
+                                        <?php if (empty($p_ranges) && $row->jam_pagi > 0): ?>
+                                            <div class="fw-bold font-mono text-indigo mb-0" style="font-size: 0.75rem;">
+                                                Pagi:
+                                                <?= $row->jam_mulai_pagi ?> -
+                                                <?= $row->jam_selesai_pagi ?>
+                                            </div>
+                                            <?php
+                                        endif; ?>
+
+                                        <div class="x-small font-mono text-muted" style="font-size: 0.65rem;">
+                                            Absen:
+                                            <?= substr($row->jam_masuk, 0, 5) ?>
                                         </div>
-                                        <div class="x-small text-muted" style="font-size: 0.65rem;">
-                                            <span
-                                                class="<?=(isset($time_val) && $time_val >= $limit_red) ? 'text-late-warning' : ''?>">
-                                                Masuk:
-                                                <?= substr($row->jam_masuk, 0, 5)?>
-                                            </span>
-                                            • NIK:
-                                            <?= $row->nik?>
+                                        <div class="x-small fw-900 text-muted" style="font-size: 0.65rem;">
+                                            <?= format_durasi_lembur($row->jam_pagi) ?>
                                         </div>
+                                        <?php
+                                    else: ?>
+                                        <span class="text-muted opacity-50">-</span>
+                                        <?php
+                                    endif; ?>
+                                </td>
+                                <td class="text-start">
+                                    <?php if ($row->jam_wajib > 0 || !empty($row->all_wajib_ranges)): ?>
+                                        <?php
+                                        $w_ranges = array_unique($row->all_wajib_ranges ?: []);
+                                        foreach ($w_ranges as $wr):
+                                            $label = (strpos($wr, '16:') === 0 || strpos($wr, '15:') === 0) ? 'Tap' : 'SPL';
+                                            ?>
+                                            <div class="fw-bold font-mono text-dark mb-0" style="font-size: 0.75rem;">
+                                                <?= $label ?>:
+                                                <?= $wr ?>
+                                            </div>
+                                            <?php
+                                        endforeach; ?>
+
+                                        <?php if (empty($w_ranges) && $row->jam_wajib > 0): ?>
+                                            <div class="fw-bold font-mono text-dark mb-0" style="font-size: 0.75rem;">
+                                                Wajib:
+                                                <?= $row->jam_mulai_wajib ?> -
+                                                <?= $row->jam_selesai_wajib ?>
+                                            </div>
+                                            <?php
+                                        endif; ?>
+
+                                        <div class="x-small fw-900 text-muted" style="font-size: 0.65rem;">
+                                            <?= format_durasi_lembur($row->jam_wajib) ?>
+                                        </div>
+                                        <?php
+                                    else: ?>
+                                        <span class="text-muted opacity-50">-</span>
+                                        <?php
+                                    endif; ?>
+                                </td>
+                                <td class="text-start">
+                                    <?php if ($row->jam_kerjaan > 0 || !empty($row->all_kerjaan_ranges)): ?>
+                                        <?php
+                                        $k_ranges = array_unique($row->all_kerjaan_ranges ?: []);
+                                        foreach ($k_ranges as $kr):
+                                            ?>
+                                            <div class="fw-bold font-mono text-warning mb-0" style="font-size: 0.75rem;">
+                                                SPL:
+                                                <?= $kr ?>
+                                            </div>
+                                            <?php
+                                        endforeach; ?>
+
+                                        <?php if (empty($k_ranges) && $row->jam_kerjaan > 0): ?>
+                                            <div class="fw-bold font-mono text-warning mb-0" style="font-size: 0.75rem;">
+                                                SPL:
+                                                <?= $row->jam_mulai_kerjaan ?> -
+                                                <?= $row->jam_selesai_kerjaan ?>
+                                            </div>
+                                            <?php
+                                        endif; ?>
+
+                                        <div class="x-small font-mono text-muted" style="font-size: 0.65rem;">
+                                            Absen:
+                                            <?= substr($row->jam_pulang, 0, 5) ?>
+                                        </div>
+                                        <div class="x-small fw-900 text-muted" style="font-size: 0.65rem;">
+                                            <?= format_durasi_lembur($row->jam_kerjaan) ?>
+                                        </div>
+                                        <?php
+                                    else: ?>
+                                        <span class="text-muted opacity-50">-</span>
+                                        <?php
+                                    endif; ?>
+                                </td>
+                                <td class="text-center">
+
+                                    <?= format_durasi_lembur($row->jam_efektif) ?>
+
+                                </td>
+                                <td class="text-end ">
+                                    <?= isset($row->total_lembur) ? number_format($row->total_lembur, 0, ',', '.') : '-' ?>
+                                </td>
+                                <td class="text-end fw-bold font-mono text-orange">
+                                    <?= (isset($row->biaya_makan) && $row->biaya_makan > 0) ? number_format($row->biaya_makan, 0, ',', '.') : '-' ?>
+                                </td>
+                                <td>
+                                    <div class="text-wrap small text-muted" style="max-width: 250px;">
+                                        <?= $row->kegiatan ?>
                                     </div>
-                                </div>
-                            </td>
-                            <td class="text-start">
-                                <?php if ($row->jam_pagi > 0 || !empty($row->all_pagi_ranges)): ?>
-                                <?php
-        // Use set to avoid duplicates
-        $p_ranges = array_unique($row->all_pagi_ranges ?: []);
-        foreach ($p_ranges as $pr):
-?>
-                                <div class="fw-bold font-mono text-indigo mb-0" style="font-size: 0.75rem;">
-                                    SPL:
-                                    <?= $pr?>
-                                </div>
-                                <?php
-        endforeach; ?>
-
-                                <?php if (empty($p_ranges) && $row->jam_pagi > 0): ?>
-                                <div class="fw-bold font-mono text-indigo mb-0" style="font-size: 0.75rem;">
-                                    Pagi:
-                                    <?= $row->jam_mulai_pagi?> -
-                                    <?= $row->jam_selesai_pagi?>
-                                </div>
-                                <?php
-        endif; ?>
-
-                                <div class="x-small font-mono text-muted" style="font-size: 0.65rem;">
-                                    Absen:
-                                    <?= substr($row->jam_masuk, 0, 5)?>
-                                </div>
-                                <div class="x-small fw-900 text-muted" style="font-size: 0.65rem;">
-                                    <?= format_durasi_lembur($row->jam_pagi)?>
-                                </div>
-                                <?php
-    else: ?>
-                                <span class="text-muted opacity-50">-</span>
-                                <?php
-    endif; ?>
-                            </td>
-                            <td class="text-start">
-                                <?php if ($row->jam_wajib > 0 || !empty($row->all_wajib_ranges)): ?>
-                                <?php
-        $w_ranges = array_unique($row->all_wajib_ranges ?: []);
-        foreach ($w_ranges as $wr):
-            $label = (strpos($wr, '16:') === 0 || strpos($wr, '15:') === 0) ? 'Tap' : 'SPL';
-?>
-                                <div class="fw-bold font-mono text-dark mb-0" style="font-size: 0.75rem;">
-                                    <?= $label?>:
-                                    <?= $wr?>
-                                </div>
-                                <?php
-        endforeach; ?>
-
-                                <?php if (empty($w_ranges) && $row->jam_wajib > 0): ?>
-                                <div class="fw-bold font-mono text-dark mb-0" style="font-size: 0.75rem;">
-                                    Wajib:
-                                    <?= $row->jam_mulai_wajib?> -
-                                    <?= $row->jam_selesai_wajib?>
-                                </div>
-                                <?php
-        endif; ?>
-
-                                <div class="x-small fw-900 text-muted" style="font-size: 0.65rem;">
-                                    <?= format_durasi_lembur($row->jam_wajib)?>
-                                </div>
-                                <?php
-    else: ?>
-                                <span class="text-muted opacity-50">-</span>
-                                <?php
-    endif; ?>
-                            </td>
-                            <td class="text-start">
-                                <?php if ($row->jam_kerjaan > 0 || !empty($row->all_kerjaan_ranges)): ?>
-                                <?php
-        $k_ranges = array_unique($row->all_kerjaan_ranges ?: []);
-        foreach ($k_ranges as $kr):
-?>
-                                <div class="fw-bold font-mono text-warning mb-0" style="font-size: 0.75rem;">
-                                    SPL:
-                                    <?= $kr?>
-                                </div>
-                                <?php
-        endforeach; ?>
-
-                                <?php if (empty($k_ranges) && $row->jam_kerjaan > 0): ?>
-                                <div class="fw-bold font-mono text-warning mb-0" style="font-size: 0.75rem;">
-                                    SPL:
-                                    <?= $row->jam_mulai_kerjaan?> -
-                                    <?= $row->jam_selesai_kerjaan?>
-                                </div>
-                                <?php
-        endif; ?>
-
-                                <div class="x-small font-mono text-muted" style="font-size: 0.65rem;">
-                                    Absen:
-                                    <?= substr($row->jam_pulang, 0, 5)?>
-                                </div>
-                                <div class="x-small fw-900 text-muted" style="font-size: 0.65rem;">
-                                    <?= format_durasi_lembur($row->jam_kerjaan)?>
-                                </div>
-                                <?php
-    else: ?>
-                                <span class="text-muted opacity-50">-</span>
-                                <?php
-    endif; ?>
-                            </td>
-                            <td class="text-center">
-
-                                <?= format_durasi_lembur($row->jam_efektif)?>
-
-                            </td>
-                            <td class="text-end ">
-                                <?= isset($row->total_lembur) ? number_format($row->total_lembur, 0, ',', '.') : '-'?>
-                            </td>
-                            <td class="text-end fw-bold font-mono text-orange">
-                                <?=(isset($row->biaya_makan) && $row->biaya_makan > 0) ? number_format($row->biaya_makan, 0, ',', '.') : '-'?>
-                            </td>
-                            <td>
-                                <div class="text-wrap small text-muted" style="max-width: 250px;">
-                                    <?= $row->kegiatan?>
-                                </div>
-                            </td>
-                            <td class="text-center">
-                                <?php if (!empty($row->foto_kegiatan)): ?>
-                                <a href="javascript:void(0)" class="view-foto btn-action-mini m-auto"
-                                    data-foto="<?= base_url('assets/images/lembur/' . $row->foto_kegiatan)?>">
-                                    <i class="bi bi-image"></i>
-                                </a>
-                                <?php
-    else: ?>
-                                <i class="bi bi-camera-off text-muted opacity-25"></i>
-                                <?php
-    endif; ?>
-                            </td>
-                            <td>
-                                <span
-                                    class="status-pill-clean bg-<?= $status_class?> bg-opacity-10 text-<?= $status_class?>">
-                                    <?= $status_text?>
-                                </span>
-                            </td>
-                            <td class="text-center pe-4 no-print">
-                                <div class="d-flex justify-content-center gap-2">
-                                    <?php if (!empty($row->id)): ?>
-                                    <div class="dropdown">
-                                        <button class="btn-action-mini" data-bs-toggle="dropdown"><i
-                                                class="bi bi-check2-circle"></i></button>
-                                        <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0">
-                                            <li><a class="dropdown-item fw-bold text-success btn-update-status"
-                                                    href="javascript:void(0)" data-id="<?= $row->id?>"
-                                                    data-karyawan-id="<?= $row->karyawan_id?>"
-                                                    data-tanggal="<?= $row->tanggal?>"
-                                                    data-status="disetujui">SETUJUI</a></li>
-                                            <li><a class="dropdown-item fw-bold text-danger btn-update-status"
-                                                    href="javascript:void(0)" data-id="<?= $row->id?>"
-                                                    data-karyawan-id="<?= $row->karyawan_id?>"
-                                                    data-tanggal="<?= $row->tanggal?>" data-status="ditolak">TOLAK</a>
-                                            </li>
-                                        </ul>
+                                </td>
+                                <td class="text-center">
+                                    <?php if (!empty($row->foto_kegiatan)): ?>
+                                        <a href="javascript:void(0)" class="view-foto btn-action-mini m-auto"
+                                            data-foto="<?= base_url('assets/images/lembur/' . $row->foto_kegiatan) ?>">
+                                            <i class="bi bi-image"></i>
+                                        </a>
+                                        <?php
+                                    else: ?>
+                                        <i class="bi bi-camera-off text-muted opacity-25"></i>
+                                        <?php
+                                    endif; ?>
+                                </td>
+                                <td>
+                                    <span
+                                        class="status-pill-clean bg-<?= $status_class ?> bg-opacity-10 text-<?= $status_class ?>">
+                                        <?= $status_text ?>
+                                    </span>
+                                </td>
+                                <td class="text-center pe-4 no-print">
+                                    <div class="d-flex justify-content-center gap-2">
+                                        <?php if (!empty($row->id)): ?>
+                                            <div class="dropdown">
+                                                <button class="btn-action-mini" data-bs-toggle="dropdown"><i
+                                                        class="bi bi-check2-circle"></i></button>
+                                                <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0">
+                                                    <li><a class="dropdown-item fw-bold text-success btn-update-status"
+                                                            href="javascript:void(0)" data-id="<?= $row->id ?>"
+                                                            data-karyawan-id="<?= $row->karyawan_id ?>"
+                                                            data-tanggal="<?= $row->tanggal ?>"
+                                                            data-status="disetujui">SETUJUI</a></li>
+                                                    <li><a class="dropdown-item fw-bold text-danger btn-update-status"
+                                                            href="javascript:void(0)" data-id="<?= $row->id ?>"
+                                                            data-karyawan-id="<?= $row->karyawan_id ?>"
+                                                            data-tanggal="<?= $row->tanggal ?>" data-status="ditolak">TOLAK</a>
+                                                    </li>
+                                                </ul>
+                                            </div>
+                                            <button class="btn-action-mini text-primary btn-kelola-lembur"
+                                                data-karyawan-id="<?= $row->karyawan_id ?>" data-tanggal="<?= $row->tanggal ?>"
+                                                data-nama="<?= htmlspecialchars($row->nama_lengkap, ENT_QUOTES) ?>"
+                                                title="Kelola / Edit Lembur Pagi & Sore">
+                                                <i class="bi bi-pencil-square"></i>
+                                            </button>
+                                            <?php
+                                        else: ?>
+                                            <span class="text-muted opacity-50 small">-</span>
+                                            <?php
+                                        endif; ?>
                                     </div>
-                                    <button class="btn-action-mini text-primary btn-kelola-lembur"
-                                        data-karyawan-id="<?= $row->karyawan_id?>" data-tanggal="<?= $row->tanggal?>"
-                                        data-nama="<?= htmlspecialchars($row->nama_lengkap, ENT_QUOTES)?>" title="Kelola / Edit Lembur Pagi & Sore">
-                                        <i class="bi bi-pencil-square"></i>
-                                    </button>
-                                    <?php
-    else: ?>
-                                    <span class="text-muted opacity-50 small">-</span>
-                                    <?php
-    endif; ?>
-                                </div>
-                            </td>
-                        </tr>
-                        <?php
-endforeach; ?>
+                                </td>
+                            </tr>
+                            <?php
+                        endforeach; ?>
                     </tbody>
                 </table>
             </div>
@@ -553,20 +551,20 @@ endforeach; ?>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
                     aria-label="Close"></button>
             </div>
-            <form action="<?= base_url('karyawan/aksi_simpan_lembur')?>" method="post">
+            <form action="<?= base_url('karyawan/aksi_simpan_lembur') ?>" method="post">
                 <div class="modal-body p-4 bg-light">
                     <div class="mb-4">
                         <label class="form-label fw-bold text-dark small text-uppercase mb-2">Pilih Karyawan</label>
                         <select name="karyawan_id" class="form-select shadow-sm" style="border-radius: 0;" required>
                             <option value="">-- Pilih Karyawan --</option>
                             <?php foreach ($listkaryawan as $emp): ?>
-                            <option value="<?= $emp->karyawan_id?>">
-                                <?= strtoupper($emp->nama_lengkap)?>
-                                (
-                                <?= $emp->nik?>)
-                            </option>
-                            <?php
-endforeach; ?>
+                                <option value="<?= $emp->karyawan_id ?>">
+                                    <?= strtoupper($emp->nama_lengkap) ?>
+                                    (
+                                    <?= $emp->nik ?>)
+                                </option>
+                                <?php
+                            endforeach; ?>
                         </select>
                     </div>
                     <div class="row g-3 mb-4">
@@ -574,7 +572,7 @@ endforeach; ?>
                             <label class="form-label fw-bold text-dark small text-uppercase mb-2">Tanggal
                                 Pelaksanaan</label>
                             <input type="date" name="tanggal" class="form-control shadow-sm" style="border-radius: 0;"
-                                value="<?= date('Y-m-d')?>" required>
+                                value="<?= date('Y-m-d') ?>" required>
                         </div>
                         <div class="col-6">
                             <label class="form-label fw-bold text-dark small text-uppercase mb-2">Jam Mulai</label>
@@ -712,7 +710,7 @@ endforeach; ?>
             }).then((result) => {
                 if (result.isConfirmed) {
                     $.ajax({
-                        url: '<?= base_url('karyawan/update_status_ajax')?>',
+                        url: '<?= base_url('karyawan/update_status_ajax') ?>',
                         type: 'POST',
                         data: { id: id, status: status, karyawan_id: karyawan_id, tanggal: tanggal },
                         dataType: 'json',
@@ -737,41 +735,41 @@ endforeach; ?>
             });
         });
 
-    // KELOLA LEMBUR (Edit Time / Hapus Specifik)
-    $(document).on('click', '.btn-kelola-lembur', function () {
-        const karyawan_id = $(this).data('karyawan-id');
-        const tanggal = $(this).data('tanggal');
-        const nama = $(this).data('nama');
+        // KELOLA LEMBUR (Edit Time / Hapus Specifik)
+        $(document).on('click', '.btn-kelola-lembur', function () {
+            const karyawan_id = $(this).data('karyawan-id');
+            const tanggal = $(this).data('tanggal');
+            const nama = $(this).data('nama');
 
-        $('#kelolaInfoTitle').text(nama + ' - ' + tanggal);
-        const tbody = $('#tableKelolaLembur tbody');
-        tbody.html('<tr><td colspan="6" class="text-center py-4"><i class="bi bi-hourglass-split fa-spin fs-4"></i></td></tr>');
+            $('#kelolaInfoTitle').text(nama + ' - ' + tanggal);
+            const tbody = $('#tableKelolaLembur tbody');
+            tbody.html('<tr><td colspan="6" class="text-center py-4"><i class="bi bi-hourglass-split fa-spin fs-4"></i></td></tr>');
 
-        $('#modalKelolaLembur').modal('show');
+            $('#modalKelolaLembur').modal('show');
 
-        $.ajax({
-            url: '<?= base_url('karyawan/get_lembur_detail_ajax')?>',
-            type: 'POST',
-            data: { karyawan_id: karyawan_id, tanggal: tanggal },
-            dataType: 'json',
-            success: function (res) {
-                if (res.success && res.data.length > 0) {
-                    tbody.empty();
-                    res.data.forEach(item => {
-                        let waktuText = (item.jam_mulai < '12:00:00') ? '<span class="badge bg-info bg-opacity-10 text-info fw-bold">PAGI</span>' : '<span class="badge bg-warning bg-opacity-10 text-warning fw-bold">SORE/MALAM</span>';
+            $.ajax({
+                url: '<?= base_url('karyawan/get_lembur_detail_ajax') ?>',
+                type: 'POST',
+                data: { karyawan_id: karyawan_id, tanggal: tanggal },
+                dataType: 'json',
+                success: function (res) {
+                    if (res.success && res.data.length > 0) {
+                        tbody.empty();
+                        res.data.forEach(item => {
+                            let waktuText = (item.jam_mulai < '12:00:00') ? '<span class="badge bg-info bg-opacity-10 text-info fw-bold">PAGI</span>' : '<span class="badge bg-warning bg-opacity-10 text-warning fw-bold">SORE/MALAM</span>';
 
-                        let statusBadge = '';
-                        if (item.status === 'disetujui') statusBadge = '<span class="badge bg-success bg-opacity-10 text-success x-small fw-bold">APPROVED</span>';
-                        else if (item.status === 'ditolak') statusBadge = '<span class="badge bg-danger bg-opacity-10 text-danger x-small fw-bold">REJECTED</span>';
-                        else statusBadge = '<span class="badge bg-warning bg-opacity-10 text-warning x-small fw-bold">WAITING</span>';
+                            let statusBadge = '';
+                            if (item.status === 'disetujui') statusBadge = '<span class="badge bg-success bg-opacity-10 text-success x-small fw-bold">APPROVED</span>';
+                            else if (item.status === 'ditolak') statusBadge = '<span class="badge bg-danger bg-opacity-10 text-danger x-small fw-bold">REJECTED</span>';
+                            else statusBadge = '<span class="badge bg-warning bg-opacity-10 text-warning x-small fw-bold">WAITING</span>';
 
-                        let fotoHtml = item.foto_kegiatan
-                            ? `<a href="<?= base_url('assets/images/lembur/')?>${item.foto_kegiatan}" target="_blank">
-                                 <img src="<?= base_url('assets/images/lembur/')?>${item.foto_kegiatan}" style="width:32px; height:32px; object-fit:cover; border-radius:4px;">
+                            let fotoHtml = item.foto_kegiatan
+                                ? `<a href="<?= base_url('assets/images/lembur/') ?>${item.foto_kegiatan}" target="_blank">
+                                 <img src="<?= base_url('assets/images/lembur/') ?>${item.foto_kegiatan}" style="width:32px; height:32px; object-fit:cover; border-radius:4px;">
                                </a>`
-                            : '<i class="bi bi-camera-off text-muted opacity-25"></i>';
+                                : '<i class="bi bi-camera-off text-muted opacity-25"></i>';
 
-                        tbody.append(`
+                            tbody.append(`
                                 <tr id="row_lembur_${item.id}">
                                     <td class="align-middle">${waktuText}</td>
                                     <td class="align-middle">
@@ -796,96 +794,96 @@ endforeach; ?>
                                     </td>
                                 </tr>
                             `);
-                    });
-                } else {
-                    tbody.html('<tr><td colspan="6" class="text-center text-muted py-4">Sesi lembur tidak ditemukan atau sudah dihapus.</td></tr>');
-                }
-            }
-            });
-        });
-
-    $(document).on('click', '.btn-individual-status', function () {
-        const id = $(this).data('id');
-        const status = $(this).data('status');
-
-        $.ajax({
-            url: '<?= base_url('karyawan/update_status_ajax')?>',
-            type: 'POST',
-            data: { id: id, status: status },
-            dataType: 'json',
-            success: function (res) {
-                if (res.success) {
-                    Swal.fire({ icon: 'success', title: 'Status Diperbarui', toast: true, position: 'top-end', timer: 1500, showConfirmButton: false });
-                    // Re-trigger detail refresh without closing modal
-                    $('.btn-kelola-lembur[data-karyawan-id]:focus').click();
-                    // Or just re-fetch manually
-                }
-            }
-        });
-    });
-
-    $(document).on('click', '.btn-save-time', function () {
-        const id = $(this).data('id');
-        const tr = $('#row_lembur_' + id);
-        const jam_mulai = tr.find('.input-mulai').val();
-        const jam_selesai = tr.find('.input-selesai').val();
-
-        if (!jam_mulai || !jam_selesai) return Swal.fire('Error', 'Jam harus diisi!', 'error');
-
-        const btn = $(this);
-        const oh = btn.html();
-        btn.html('<i class="bi bi-arrow-repeat fa-spin"></i>').prop('disabled', true);
-
-        $.ajax({
-            url: '<?= base_url('karyawan/update_lembur_time_ajax')?>',
-            type: 'POST',
-            data: { id: id, jam_mulai: jam_mulai, jam_selesai: jam_selesai },
-            dataType: 'json',
-            success: function (res) {
-                btn.html(oh).prop('disabled', false);
-                if (res.success) {
-                    Swal.fire({ icon: 'success', title: 'Tersimpan', toast: true, position: 'top-end', timer: 1500, showConfirmButton: false });
-                }
-            }
-            });
-        });
-
-    $(document).on('click', '.btn-delete-lembur-spesifik', function () {
-        const id = $(this).data('id');
-        const tr = $('#row_lembur_' + id);
-
-        Swal.fire({
-            title: 'Hapus Sesi Lembur Ini?',
-            text: "Bagian lembur ini akan terhapus namun lembur lainnya pada hari ini akan tetap aman.",
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#e74c3c',
-            confirmButtonText: 'YA, HAPUS',
-            cancelButtonText: 'BATAL'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                $.ajax({
-                    url: '<?= base_url('karyawan/hapus_lembur_ajax')?>',
-                    type: 'POST',
-                    data: { id: id },
-                    dataType: 'json',
-                    success: function (response) {
-                        if (response.success) {
-                            tr.fadeOut(300, function () { $(this).remove(); });
-                            Swal.fire({ icon: 'success', title: 'Terhapus!', toast: true, position: 'top-end', timer: 1500, showConfirmButton: false });
-                        } else {
-                            Swal.fire('Gagal', response.message || 'Terjadi kesalahan.', 'error');
-                        }
+                        });
+                    } else {
+                        tbody.html('<tr><td colspan="6" class="text-center text-muted py-4">Sesi lembur tidak ditemukan atau sudah dihapus.</td></tr>');
                     }
-                });
-            }
+                }
+            });
         });
-    });
 
-    // Refreshes the page when the modal closes, if something has been changed
-    $('#modalKelolaLembur').on('hidden.bs.modal', function () {
-        location.reload();
-    });
+        $(document).on('click', '.btn-individual-status', function () {
+            const id = $(this).data('id');
+            const status = $(this).data('status');
+
+            $.ajax({
+                url: '<?= base_url('karyawan/update_status_ajax') ?>',
+                type: 'POST',
+                data: { id: id, status: status },
+                dataType: 'json',
+                success: function (res) {
+                    if (res.success) {
+                        Swal.fire({ icon: 'success', title: 'Status Diperbarui', toast: true, position: 'top-end', timer: 1500, showConfirmButton: false });
+                        // Re-trigger detail refresh without closing modal
+                        $('.btn-kelola-lembur[data-karyawan-id]:focus').click();
+                        // Or just re-fetch manually
+                    }
+                }
+            });
+        });
+
+        $(document).on('click', '.btn-save-time', function () {
+            const id = $(this).data('id');
+            const tr = $('#row_lembur_' + id);
+            const jam_mulai = tr.find('.input-mulai').val();
+            const jam_selesai = tr.find('.input-selesai').val();
+
+            if (!jam_mulai || !jam_selesai) return Swal.fire('Error', 'Jam harus diisi!', 'error');
+
+            const btn = $(this);
+            const oh = btn.html();
+            btn.html('<i class="bi bi-arrow-repeat fa-spin"></i>').prop('disabled', true);
+
+            $.ajax({
+                url: '<?= base_url('karyawan/update_lembur_time_ajax') ?>',
+                type: 'POST',
+                data: { id: id, jam_mulai: jam_mulai, jam_selesai: jam_selesai },
+                dataType: 'json',
+                success: function (res) {
+                    btn.html(oh).prop('disabled', false);
+                    if (res.success) {
+                        Swal.fire({ icon: 'success', title: 'Tersimpan', toast: true, position: 'top-end', timer: 1500, showConfirmButton: false });
+                    }
+                }
+            });
+        });
+
+        $(document).on('click', '.btn-delete-lembur-spesifik', function () {
+            const id = $(this).data('id');
+            const tr = $('#row_lembur_' + id);
+
+            Swal.fire({
+                title: 'Hapus Sesi Lembur Ini?',
+                text: "Bagian lembur ini akan terhapus namun lembur lainnya pada hari ini akan tetap aman.",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#e74c3c',
+                confirmButtonText: 'YA, HAPUS',
+                cancelButtonText: 'BATAL'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    $.ajax({
+                        url: '<?= base_url('karyawan/hapus_lembur_ajax') ?>',
+                        type: 'POST',
+                        data: { id: id },
+                        dataType: 'json',
+                        success: function (response) {
+                            if (response.success) {
+                                tr.fadeOut(300, function () { $(this).remove(); });
+                                Swal.fire({ icon: 'success', title: 'Terhapus!', toast: true, position: 'top-end', timer: 1500, showConfirmButton: false });
+                            } else {
+                                Swal.fire('Gagal', response.message || 'Terjadi kesalahan.', 'error');
+                            }
+                        }
+                    });
+                }
+            });
+        });
+
+        // Refreshes the page when the modal closes, if something has been changed
+        $('#modalKelolaLembur').on('hidden.bs.modal', function () {
+            location.reload();
+        });
     });
 
     $(document).on('click', '.view-foto', function () {
@@ -942,7 +940,7 @@ endforeach; ?>
                                 <div>
                                     <span class="fw-bold text-dark d-block">Sistem Tabel Dinamis</span>
                                     <span>Perhitungan Jam Efektif (1x, 1.5x, 2x) merujuk pada pengaturan di <a
-                                            href="<?= base_url('karyawan/pengaturan_lembur')?>"
+                                            href="<?= base_url('karyawan/pengaturan_lembur') ?>"
                                             class="fw-bold text-primary">Kebijakan Lembur</a> secara otomatis.</span>
                                 </div>
                             </li>
@@ -951,8 +949,9 @@ endforeach; ?>
                                 <div>
                                     <span class="fw-bold text-dark d-block">Jam Pagi Ikuti Kebijakan</span>
                                     <span>Nilai lembur pagi mengikuti sesi yang cocok di <a
-                                            href="<?= base_url('karyawan/pengaturan_lembur')?>"
-                                            class="fw-bold text-primary">Kebijakan Lembur</a>, tanpa potongan manual di luar tabel sesi.</span>
+                                            href="<?= base_url('karyawan/pengaturan_lembur') ?>"
+                                            class="fw-bold text-primary">Kebijakan Lembur</a>, tanpa potongan manual di
+                                        luar tabel sesi.</span>
                                 </div>
                             </li>
                             <li class="mb-4 d-flex">

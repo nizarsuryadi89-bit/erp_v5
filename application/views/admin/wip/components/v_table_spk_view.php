@@ -2,17 +2,12 @@
     <table id="tableSemuaProduksi" class="table premium-table table-hover align-middle mb-0 w-100" style="white-space: nowrap;">
         <thead class="bg-light text-muted">
             <tr>
-                <th class="text-center" width="50">No.</th>
-                <th>Spk</th>
-                <th>Tanggal Pesanan</th>
-                <th>Deadline</th>
-                <th>Konsumen</th>
-                <th>Deskprint</th>
+                <th class="text-center" width="40">No.</th>
+                <th width="160">Pesanan (SPK)</th>
+                <th width="150">Pelanggan & Asal</th>
                 <th>Produk</th>
-                <th>Metode Pesanan</th>
-                <th>Lokasi Pesanan</th>
-                <th class="text-center">Status Pesanan</th>
-                <th class="text-center">Tindakan</th>
+                <th width="200" class="text-center">Status Pesanan</th>
+                <th width="150" class="text-center">Tindakan</th>
                 <th class="d-none">StatusTags</th>
             </tr>
         </thead>
@@ -112,10 +107,10 @@
                         <?= $no++ ?>
                     </td>
                     
-                    <!-- Spk -->
-                    <td>
+                    <!-- Pesanan (SPK) -->
+                    <td style="vertical-align: top; padding-top: 0.75rem;">
                         <div class="d-flex flex-column gap-1">
-                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
                                 <span class="spk-code">
                                     <?= $p->nospk ?>
                                 </span>
@@ -123,50 +118,61 @@
                                     <span class="reprint-indicator"><i class="fas fa-redo"></i> REPRINT</span>
                                 <?php endif; ?>
                             </div>
-                            <div class="d-flex gap-1 mt-1">
-                                <button class="btn-action-premium btn-primary-p py-1 px-2" style="font-size: 0.65rem;"
+                            
+                            <!-- Tanggal & Deadline -->
+                            <div class="small" style="font-size: 0.75rem;">
+                                <?php if ($p->tgl_spk): ?>
+                                    <div class="text-dark"><i class="far fa-clock me-1 text-muted"></i> <?= date('d/m/Y H:i', strtotime($p->tgl_spk)) ?></div>
+                                <?php endif; ?>
+                                
+                                <?php if (!empty($p->dateline_tgl) && $p->dateline_tgl != '0000-00-00'): ?>
+                                    <div class="text-danger fw-bold mt-1"><i class="fas fa-hourglass-half me-1"></i> <?= date('d/m/Y', strtotime($p->dateline_tgl)) ?> <?= !empty($p->dateline_jam) ? date('H:i', strtotime($p->dateline_jam)) : '' ?></div>
+                                <?php endif; ?>
+                            </div>
+
+                            <div class="mt-2">
+                                <button class="btn-action-premium btn-primary-p py-1 px-2 w-100" style="font-size: 0.65rem;"
                                     onclick="previewTagSPK('<?= implode(',', array_column($group_items, 'produksi_id')) ?>')" title="Cetak Tag Seluruh SPK"><i
-                                        class="fas fa-tags me-1"></i>Cetak Tag</button>
+                                        class="fas fa-tags me-1"></i>Cetak Tag Batch</button>
                             </div>
                         </div>
                     </td>
-                    
-                    <!-- Tanggal Pesanan -->
-                    <td>
-                        <?php if ($p->tgl_spk): ?>
-                            <div class="fw-bold"><i class="far fa-clock me-1 text-primary"></i> <?= date('d/m/Y', strtotime($p->tgl_spk)) ?></div>
-                            <div class="text-muted small"><?= date('H:i', strtotime($p->tgl_spk)) ?></div>
-                        <?php else: ?>
-                            -
-                        <?php endif; ?>
-                    </td>
 
-                    <!-- Deadline -->
-                    <td>
-                        <?php if (!empty($p->dateline_tgl) && $p->dateline_tgl != '0000-00-00'): ?>
-                            <div class="fw-bold text-danger"><i class="fas fa-hourglass-half me-1"></i> <?= date('d/m/Y', strtotime($p->dateline_tgl)) ?></div>
-                            <div class="text-danger small"><?= !empty($p->dateline_jam) ? date('H:i', strtotime($p->dateline_jam)) : '-' ?></div>
-                        <?php else: ?>
-                            <span class="text-muted">-</span>
-                        <?php endif; ?>
-                    </td>
+                    <!-- Pelanggan & Asal -->
+                    <td style="vertical-align: top; padding-top: 0.75rem;">
+                        <div class="d-flex flex-column gap-2">
+                            <div class="fw-800 text-dark text-uppercase" style="font-size: 0.85rem; letter-spacing: 0.3px;">
+                                <?= $p->konsumen_nama ?: '-' ?>
+                            </div>
+                            
+                            <div>
+                                <?php if (!empty($p->nama_jenis_transaksi)): ?>
+                                    <span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25 shadow-sm fw-900" style="font-size: 0.65rem;">
+                                        <i class="fas fa-shopping-cart me-1"></i> <?= strtoupper($p->nama_jenis_transaksi) ?>
+                                    </span>
+                                <?php endif; ?>
+                            </div>
 
-                    <!-- Konsumen -->
-                    <td class="fw-800 text-dark">
-                        <?= $p->konsumen_nama ?: '-' ?>
-                    </td>
-
-                    <!-- Deskprint -->
-                    <td>
-                        <?php if (!empty($p->deskprint_nama)): ?>
-                            <span class="fw-bold text-dark"><i class="fas fa-user-edit me-1 text-secondary"></i> <?= htmlspecialchars($p->deskprint_nama) ?></span>
-                        <?php else: ?>
-                            <span class="text-muted">-</span>
-                        <?php endif; ?>
+                            <div class="mt-1">
+                                <div class="company-pill"
+                                    style="color: <?= $branchColor ?>; border: 1px solid <?= $branchColor ?>20; font-size: 0.65rem;">
+                                    <div class="company-dot" style="background: <?= $branchColor ?>"></div>
+                                    <?= $comp_name ?>
+                                </div>
+                                <?php if (!empty($p->lokasi_cetak) && $p->lokasi_cetak != 0 && $p->perusahaan_id != $p->lokasi_cetak): ?>
+                                    <span
+                                        class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-10 rounded-pill pulse-red mt-1"
+                                        style="padding: 3px 6px; font-size: 0.55rem; display: block; width: fit-content;">
+                                        <i class="fas fa-exchange-alt me-1"></i>TITIPAN DARI
+                                        <?= strtoupper($p->nama_perusahaan ?? 'CABANG LAIN') ?>
+                                    </span>
+                                <?php endif; ?>
+                            </div>
+                        </div>
                     </td>
 
                     <!-- Produk -->
-                    <td>
+                    <td style="vertical-align: top; padding-top: 0.75rem;">
                         <div class="d-flex flex-column gap-1">
                             <div class="fw-bold text-dark mb-1">
                                 <span class="badge bg-secondary rounded-pill"><?= count($group_items) ?> Item</span>
@@ -218,63 +224,38 @@
                                 }
                                 $final_catatan = trim(implode("\n", $clean_catatan));
                             ?>
-                            <?php if (!empty($final_catatan) || !empty($spk_op_cetak) || !empty($spk_op_finishing) || !empty($pb_oleh)): ?>
-                                <div class="mt-1 p-2 rounded bg-warning bg-opacity-10 border border-warning border-opacity-25"
+                            <?php if (!empty($final_catatan) || !empty($spk_op_cetak) || !empty($spk_op_finishing) || !empty($pb_oleh) || !empty($p->deskprint_nama)): ?>
+                                <div class="mt-1 ps-2 border-start border-3 border-warning py-1 bg-warning bg-opacity-10 rounded-end"
                                     style="max-width:300px; white-space: normal;">
-                                    <div class="small fw-bold text-warning-emphasis mb-1"><i
+                                    <div class="small fw-bold text-warning-emphasis mb-1" style="font-size: 0.6rem;"><i
                                             class="fas fa-sticky-note me-1"></i>KETERANGAN:</div>
                                     
-                                    <?php if (!empty($spk_op_cetak) || !empty($spk_op_finishing) || !empty($pb_oleh)): ?>
-                                        <div class="<?= !empty($final_catatan) ? 'mb-1 pb-1 border-bottom border-warning border-opacity-25' : '' ?>" style="font-size: 0.65rem;">
+                                    <?php if (!empty($spk_op_cetak) || !empty($spk_op_finishing) || !empty($pb_oleh) || !empty($p->deskprint_nama)): ?>
+                                        <div class="d-flex flex-wrap gap-2" style="font-size: 0.65rem;">
+                                            <?php if (!empty($p->deskprint_nama)): ?>
+                                                <div class="text-muted"><i class="fas fa-user-edit me-1"></i><span class="fw-bold text-dark"><?= htmlspecialchars($p->deskprint_nama) ?></span></div>
+                                            <?php endif; ?>
                                             <?php if (!empty($spk_op_cetak)): ?>
-                                                <div class="text-muted"><i class="fas fa-print me-1"></i>Dikerjakan Oleh Operator: <span class="fw-bold text-dark"><?= implode(', ', $spk_op_cetak) ?></span></div>
+                                                <div class="text-muted"><i class="fas fa-print me-1"></i><span class="fw-bold text-dark"><?= implode(', ', $spk_op_cetak) ?></span></div>
                                             <?php endif; ?>
                                             <?php if (!empty($spk_op_finishing)): ?>
-                                                <div class="text-muted"><i class="fas fa-cut me-1"></i>finishing oleh: <span class="fw-bold text-dark"><?= implode(', ', $spk_op_finishing) ?></span></div>
+                                                <div class="text-muted"><i class="fas fa-cut me-1"></i><span class="fw-bold text-dark"><?= implode(', ', $spk_op_finishing) ?></span></div>
                                             <?php endif; ?>
                                             <?php if (!empty($pb_oleh)): ?>
-                                                <div class="text-muted"><i class="fas fa-handshake me-1"></i>di berikan ke konsumen oleh: <span class="fw-bold text-dark"><?= htmlspecialchars($pb_oleh) ?> (PB)</span> melalui: <span class="fw-bold text-dark"><?= htmlspecialchars($pb_via) ?></span></div>
+                                                <div class="text-muted"><i class="fas fa-handshake me-1"></i>PB: <span class="fw-bold text-dark"><?= htmlspecialchars($pb_oleh) ?></span> (<?= htmlspecialchars($pb_via) ?>)</div>
                                                 <?php if (!empty($pb_note)): ?>
-                                                    <div class="text-muted ps-3"><i class="fas fa-comment-dots me-1"></i>Note PB: <span class="fst-italic text-dark"><?= htmlspecialchars($pb_note) ?></span></div>
+                                                    <div class="text-muted"><i class="fas fa-comment-dots me-1"></i><span class="fst-italic text-dark"><?= htmlspecialchars($pb_note) ?></span></div>
                                                 <?php endif; ?>
                                             <?php endif; ?>
                                         </div>
                                     <?php endif; ?>
 
                                     <?php if (!empty($final_catatan)): ?>
-                                        <div class="text-dark small lh-sm fst-italic"><?= nl2br(htmlspecialchars($final_catatan)) ?></div>
+                                        <div class="text-dark small lh-sm fst-italic mt-1" style="font-size: 0.75rem;"><i class="fas fa-quote-left text-warning opacity-50 me-1"></i><?= nl2br(htmlspecialchars($final_catatan)) ?></div>
                                     <?php endif; ?>
                                 </div>
                             <?php endif; ?>
                         </div>
-                    </td>
-
-                    <!-- Metode Pesanan -->
-                    <td>
-                        <?php if (!empty($p->nama_jenis_transaksi)): ?>
-                            <span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25 shadow-sm fw-900" style="font-size: 0.65rem;">
-                                <i class="fas fa-shopping-cart me-1"></i> <?= strtoupper($p->nama_jenis_transaksi) ?>
-                            </span>
-                        <?php else: ?>
-                            <span class="text-muted">-</span>
-                        <?php endif; ?>
-                    </td>
-
-                    <!-- Lokasi Pesanan -->
-                    <td>
-                        <div class="company-pill"
-                            style="color: <?= $branchColor ?>; border: 1px solid <?= $branchColor ?>20;">
-                            <div class="company-dot" style="background: <?= $branchColor ?>"></div>
-                            <?= $comp_name ?>
-                        </div>
-                        <?php if ($p->perusahaan_id != $this->session->userdata('perusahaan_id')): ?>
-                            <span
-                                class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-10 rounded-pill pulse-red"
-                                style="padding: 3px 6px; font-size: 0.55rem; display: block; width: fit-content; margin-top: 5px;">
-                                <i class="fas fa-exchange-alt me-1"></i>TITIPAN DARI
-                                <?= strtoupper($p->nama_perusahaan ?? 'CABANG LAIN') ?>
-                            </span>
-                        <?php endif; ?>
                     </td>
 
                     <!-- Status Pesanan -->

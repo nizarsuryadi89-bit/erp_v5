@@ -117,18 +117,18 @@ class Wip extends MY_Controller
                 $this->db->where("EXISTS (
                     SELECT 1 
                     FROM detail_produksi dp 
-                    JOIN routing r ON r.routing_id = dp.routing_id 
+                    LEFT JOIN routing r ON r.routing_id = dp.routing_id
                     WHERE dp.produksi_id = tbl_produksi.produksi_id 
-                    AND r.operator_id = " . (int) $active_operator . "
+                    AND (dp.operator_id = " . (int) $active_operator . " OR r.operator_id = " . (int) $active_operator . ")
                     AND dp.status_produksi = '2'
                 )", NULL, FALSE);
                 // And operator has NO incomplete steps left (so it shouldn't be in 'proses' tab)
                 $this->db->where("NOT EXISTS (
                     SELECT 1 
                     FROM detail_produksi dp2 
-                    JOIN routing r2 ON r2.routing_id = dp2.routing_id 
+                    LEFT JOIN routing r2 ON r2.routing_id = dp2.routing_id
                     WHERE dp2.produksi_id = tbl_produksi.produksi_id 
-                    AND r2.operator_id = " . (int) $active_operator . "
+                    AND (dp2.operator_id = " . (int) $active_operator . " OR r2.operator_id = " . (int) $active_operator . ")
                     AND dp2.status_produksi != '2'
                 )", NULL, FALSE);
                 $this->db->group_end();
@@ -179,10 +179,10 @@ class Wip extends MY_Controller
                 $this->db->where("EXISTS (
                     SELECT 1 
                     FROM detail_produksi dp 
-                    JOIN routing r ON r.routing_id = dp.routing_id 
+                    LEFT JOIN routing r ON r.routing_id = dp.routing_id
                     WHERE dp.produksi_id = tbl_produksi.produksi_id 
                     AND dp.status_produksi != '2' 
-                    AND r.operator_id = " . (int) $active_operator . "
+                    AND (dp.operator_id = " . (int) $active_operator . " OR r.operator_id = " . (int) $active_operator . ")
                 )", NULL, FALSE);
                 $this->db->group_end();
             } else {
@@ -191,9 +191,9 @@ class Wip extends MY_Controller
                 $this->db->where("EXISTS (
                     SELECT 1 
                     FROM detail_produksi dp 
-                    JOIN routing r ON r.routing_id = dp.routing_id 
+                    LEFT JOIN routing r ON r.routing_id = dp.routing_id
                     WHERE dp.produksi_id = tbl_produksi.produksi_id 
-                    AND r.operator_id = " . (int) $active_operator . "
+                    AND (dp.operator_id = " . (int) $active_operator . " OR r.operator_id = " . (int) $active_operator . ")
                 )", NULL, FALSE);
                 $this->db->group_end();
             }
@@ -764,14 +764,19 @@ class Wip extends MY_Controller
             }
 
             foreach ($data['raw_items'] as &$item) {
-                // Filter BOM lines dynamically by this item's specific harga_id (Variasi)
+                // Filter BOM lines dynamically by this item's specific harga_id (Variasi) - WHOLE BOM OVERRIDE
                 $filtered_bom_lines = [];
                 if (isset($bom_lines_map[$item->product_id])) {
+                    $specific_boms = [];
+                    $global_boms = [];
                     foreach ($bom_lines_map[$item->product_id] as $bd) {
-                        if (empty($bd->harga_id) || $bd->harga_id == $item->harga_id) {
-                            $filtered_bom_lines[] = $bd;
+                        if ($bd->harga_id == $item->harga_id && $bd->harga_id !== null) {
+                            $specific_boms[] = $bd;
+                        } else if ($bd->harga_id === null) {
+                            $global_boms[] = $bd;
                         }
                     }
+                    $filtered_bom_lines = count($specific_boms) > 0 ? $specific_boms : $global_boms;
                 }
                 $item->bom_lines = $filtered_bom_lines;
 
@@ -2189,7 +2194,7 @@ class Wip extends MY_Controller
 
         $nospk = $row->nospk;
 
-        $this->db->select('tbl_produksi.*, tbl_product.product_nama, tbl_product.kategori_id, tbl_kategori.kategori_nama, tbl_konsumen.konsumen_nama, tbl_satuan.satuan_nama, (CASE WHEN tbl_product.kategori_id = 1 THEN tbl_harga_product.jenisprint_id ELSE tbl_harga_product.ket_1 END) as sisi, tbl_perusahaan.nama_perusahaan as cabang_asal, tbl_perusahaan.tag_paper, tbl_perusahaan.tag_font_size, tbl_perusahaan.tag_font_family, tbl_perusahaan.tag_show_logo, tbl_perusahaan.tag_logo_width, tbl_perusahaan.tag_show_qr, tbl_perusahaan.tag_qr_width, tbl_perusahaan.tag_footer_note, tbl_perusahaan.tag_section_spacing, tbl_perusahaan.invoice_font_size, tbl_perusahaan.invoice_font_family, tbl_perusahaan.invoice_section_spacing, tbl_pemesanan.created_at as tgl_spk, tbl_pemesanan.status_pembayaran, dk.nama_lengkap as deskprint_nama, tbl_jenis_transaksi.nama_jenis_transaksi, tbl_pemesanan.resi_marketplace, tbl_product.form_schema as product_schema, tbl_kategori.form_schema as kategori_schema');
+        $this->db->select('tbl_produksi.*, tbl_product.product_nama, tbl_product.kategori_id, tbl_kategori.kategori_nama, tbl_konsumen.konsumen_nama, tbl_satuan.satuan_nama, (CASE WHEN tbl_product.kategori_id = 1 THEN tbl_harga_product.jenisprint_id ELSE tbl_harga_product.ket_1 END) as sisi, tbl_harga_product.ket_1 as db_ket_1, tbl_harga_product.jenisprint_id as db_jenisprint_id, tbl_perusahaan.nama_perusahaan as cabang_asal, tbl_perusahaan.tag_paper, tbl_perusahaan.tag_font_size, tbl_perusahaan.tag_font_family, tbl_perusahaan.tag_show_logo, tbl_perusahaan.tag_logo_width, tbl_perusahaan.tag_show_qr, tbl_perusahaan.tag_qr_width, tbl_perusahaan.tag_footer_note, tbl_perusahaan.tag_section_spacing, tbl_perusahaan.invoice_font_size, tbl_perusahaan.invoice_font_family, tbl_perusahaan.invoice_section_spacing, tbl_pemesanan.created_at as tgl_spk, tbl_pemesanan.status_pembayaran, dk.nama_lengkap as deskprint_nama, tbl_jenis_transaksi.nama_jenis_transaksi, tbl_pemesanan.resi_marketplace, tbl_product.form_schema as product_schema, tbl_kategori.form_schema as kategori_schema');
         $this->db->select('(SELECT mesin_nama FROM tbl_mesin m JOIN detail_produksi dp ON dp.mesin_id = m.mesin_id WHERE dp.produksi_id = tbl_produksi.produksi_id AND dp.mesin_id IS NOT NULL LIMIT 1) as mesin_nama');
         $this->db->select('(SELECT nama_lengkap FROM tbl_karyawan k JOIN detail_produksi dp ON dp.operator_id = k.karyawan_id WHERE dp.produksi_id = tbl_produksi.produksi_id AND dp.operator_id IS NOT NULL AND dp.status_produksi = \'2\' ORDER BY dp.detail_produksi_id DESC LIMIT 1) as nama_operator');
         $this->db->select('(SELECT (MAX(total_tagihan) - MAX(total_bayar)) FROM tbl_pembayaran WHERE nospk = tbl_produksi.nospk) as sisa_tagihan');
@@ -2247,7 +2252,7 @@ class Wip extends MY_Controller
             show_404();
         }
 
-        $this->db->select('tbl_produksi.*, tbl_product.product_nama, tbl_product.kategori_id, tbl_kategori.kategori_nama, tbl_konsumen.konsumen_nama, tbl_satuan.satuan_nama, (CASE WHEN tbl_product.kategori_id = 1 THEN tbl_harga_product.jenisprint_id ELSE tbl_harga_product.ket_1 END) as sisi, tbl_perusahaan.nama_perusahaan as cabang_asal, tbl_perusahaan.tag_paper, tbl_perusahaan.tag_font_size, tbl_perusahaan.tag_font_family, tbl_perusahaan.tag_show_logo, tbl_perusahaan.tag_logo_width, tbl_perusahaan.tag_show_qr, tbl_perusahaan.tag_qr_width, tbl_perusahaan.tag_footer_note, tbl_perusahaan.tag_section_spacing, tbl_perusahaan.invoice_font_size, tbl_perusahaan.invoice_font_family, tbl_perusahaan.invoice_section_spacing, tbl_pemesanan.created_at as tgl_spk, tbl_pemesanan.status_pembayaran, dk.nama_lengkap as deskprint_nama, tbl_jenis_transaksi.nama_jenis_transaksi, tbl_pemesanan.resi_marketplace, tbl_product.form_schema as product_schema, tbl_kategori.form_schema as kategori_schema');
+        $this->db->select('tbl_produksi.*, tbl_product.product_nama, tbl_product.kategori_id, tbl_kategori.kategori_nama, tbl_konsumen.konsumen_nama, tbl_satuan.satuan_nama, (CASE WHEN tbl_product.kategori_id = 1 THEN tbl_harga_product.jenisprint_id ELSE tbl_harga_product.ket_1 END) as sisi, tbl_harga_product.ket_1 as db_ket_1, tbl_harga_product.jenisprint_id as db_jenisprint_id, tbl_perusahaan.nama_perusahaan as cabang_asal, tbl_perusahaan.tag_paper, tbl_perusahaan.tag_font_size, tbl_perusahaan.tag_font_family, tbl_perusahaan.tag_show_logo, tbl_perusahaan.tag_logo_width, tbl_perusahaan.tag_show_qr, tbl_perusahaan.tag_qr_width, tbl_perusahaan.tag_footer_note, tbl_perusahaan.tag_section_spacing, tbl_perusahaan.invoice_font_size, tbl_perusahaan.invoice_font_family, tbl_perusahaan.invoice_section_spacing, tbl_pemesanan.created_at as tgl_spk, tbl_pemesanan.status_pembayaran, dk.nama_lengkap as deskprint_nama, tbl_jenis_transaksi.nama_jenis_transaksi, tbl_pemesanan.resi_marketplace, tbl_product.form_schema as product_schema, tbl_kategori.form_schema as kategori_schema');
         $this->db->select('(SELECT mesin_nama FROM tbl_mesin m JOIN detail_produksi dp ON dp.mesin_id = m.mesin_id WHERE dp.produksi_id = tbl_produksi.produksi_id AND dp.mesin_id IS NOT NULL LIMIT 1) as mesin_nama');
         $this->db->select('(SELECT nama_lengkap FROM tbl_karyawan k JOIN detail_produksi dp ON dp.operator_id = k.karyawan_id WHERE dp.produksi_id = tbl_produksi.produksi_id AND dp.operator_id IS NOT NULL AND dp.status_produksi = \'2\' ORDER BY dp.detail_produksi_id DESC LIMIT 1) as nama_operator');
         $this->db->select('(SELECT (MAX(total_tagihan) - MAX(total_bayar)) FROM tbl_pembayaran WHERE nospk = tbl_produksi.nospk) as sisa_tagihan');
@@ -2557,17 +2562,29 @@ class Wip extends MY_Controller
         }
 
         foreach ($produksi_items as $key => $item) {
-            $this->db->select('ts.satuan_nama, bh.bahan_nama, bl.quantity as bom_qty, bl.bahan_id');
+            $this->db->select('ts.satuan_nama, bh.bahan_nama, bl.quantity as bom_qty, bl.bahan_id, bl.harga_id');
             $this->db->from('bom_lines bl');
             $this->db->join('tbl_bahan bh', 'bh.bahan_id = bl.bahan_id', 'left');
             $this->db->join('tbl_satuan ts', 'ts.satuan_id = bh.satuan_id', 'left');
             $this->db->where('bl.product_id', $item->product_id);
             $this->db->order_by('bl.bom_line_id', 'ASC');
-            $bom_res = $this->db->get()->result();
+            $all_boms = $this->db->get()->result();
+
+            $specific_boms = [];
+            $global_boms = [];
+            foreach ($all_boms as $b) {
+                if ($b->harga_id == $item->harga_id && $b->harga_id !== null) {
+                    $specific_boms[] = $b;
+                } else if ($b->harga_id === null) {
+                    $global_boms[] = $b;
+                }
+            }
+            $bom_res = count($specific_boms) > 0 ? $specific_boms : $global_boms;
+
             $item->bom = !empty($bom_res) ? $bom_res[0] : null;
             $item->bom_lines = $bom_res;
 
-            $primary_bom = $this->db->query("SELECT bom_line_id FROM bom_lines WHERE product_id = ? AND (harga_id IS NULL OR harga_id = ?) AND bahan_id IS NOT NULL ORDER BY bom_line_id ASC LIMIT 1", [(int) $item->product_id, (int) $item->harga_id])->row();
+            $primary_bom = $this->db->query("SELECT bom_line_id FROM bom_lines WHERE product_id = ? AND (harga_id IS NULL OR harga_id = ?) AND bahan_id IS NOT NULL ORDER BY harga_id DESC, bom_line_id ASC LIMIT 1", [(int) $item->product_id, (int) $item->harga_id])->row();
             $fallback_bom_line_id = $primary_bom ? $primary_bom->bom_line_id : 0;
 
             $this->db->select('dp.*, r.routing_name, m.mesin_nama, o.operator_nama, tm.bahan_id as routing_material_id, ts.satuan_nama as routing_material_satuan');
@@ -3121,7 +3138,7 @@ class Wip extends MY_Controller
             }
 
             // A2. Get primary BOM line for fallback if routing lacks it
-            $primary_bom = $this->db->query("SELECT bom_line_id FROM bom_lines WHERE product_id = ? AND (harga_id IS NULL OR harga_id = ?) AND bahan_id IS NOT NULL ORDER BY bom_line_id ASC LIMIT 1", [(int) $item->product_id, (int) $item->harga_id])->row();
+            $primary_bom = $this->db->query("SELECT bom_line_id FROM bom_lines WHERE product_id = ? AND (harga_id IS NULL OR harga_id = ?) AND bahan_id IS NOT NULL ORDER BY harga_id DESC, bom_line_id ASC LIMIT 1", [(int) $item->product_id, (int) $item->harga_id])->row();
             $fallback_bom_line_id = $primary_bom ? $primary_bom->bom_line_id : 0;
 
             // B. Fetch Routing Steps for THIS specific item

@@ -642,7 +642,7 @@ batchProcess() {
         let isMandatory = data.is_mandatory || false;
         let userMesinIds = data.user_mesin_ids || [];
 
-        let machineOptions = isMandatory ? '<option value="">-- Pilih Mesin Wajib --</option>' : '<option value="">-- Tanpa Mesin / Manual --</option>';
+        let machineOptions = isMandatory ? '<option value="">-- Pilih Mesin Wajib --</option><option value="0">-- Tanpa Mesin (Manual) --</option>' : '<option value="0">-- Tanpa Mesin (Manual) --</option>';
         let firstMatchId = null;
         if (m && Array.isArray(m)) {
             m.forEach((mac, index) => {
@@ -845,10 +845,11 @@ openCompletionModal() {
         let sel = $('#compMesinId').empty();
         if (isMandatory) {
             sel.append('<option value="">-- Pilih Mesin Wajib --</option>');
+            sel.append('<option value="0">-- Tanpa Mesin (Manual) --</option>');
             $('#compMesinBadge').show().removeClass('bg-secondary').addClass('bg-danger').text('Wajib');
             $('#compMesinId').prop('required', true);
         } else {
-            sel.append('<option value="">-- Tanpa Mesin / Manual --</option>');
+            sel.append('<option value="0">-- Tanpa Mesin (Manual) --</option>');
             $('#compMesinBadge').show().removeClass('bg-danger').addClass('bg-secondary').text('Opsional');
             $('#compMesinId').prop('required', false);
         }
@@ -1168,10 +1169,11 @@ openFinishingModal() {
         let sel = $('#finMesinId').empty();
         if (isMandatory) {
             sel.append('<option value="">-- Pilih Mesin Wajib --</option>');
+            sel.append('<option value="0">-- Tanpa Mesin (Manual) --</option>');
             $('#finMesinBadge').show().removeClass('bg-secondary').addClass('bg-danger').text('Wajib');
             $('#finMesinId').prop('required', true);
         } else {
-            sel.append('<option value="">-- Tanpa Mesin / Manual --</option>');
+            sel.append('<option value="0">-- Tanpa Mesin (Manual) --</option>');
             $('#finMesinBadge').show().removeClass('bg-danger').addClass('bg-secondary').text('Opsional');
             $('#finMesinId').prop('required', false);
         }
@@ -1580,8 +1582,9 @@ openAppropriateCompletionModal() {
     if (!checked.length) return;
     let allFinishing = checked.toArray().every(el => {
         let stepUrutan = parseInt($(el).data('step-urutan')) || 1;
-        let stepName = $(el).closest('tr').find('.text-primary.fw-900').text().trim().toLowerCase();
-        return stepUrutan > 1 || stepName.includes('finish') || stepName.includes('potong') || stepName.includes('packing') || stepName.includes('mata ayam');
+        // Hanya anggap sebagai Finishing jika dia benar-benar berada di urutan ke-2 atau seterusnya (SEQ > 1).
+        // SEQ 1 dianggap sebagai Produksi Utama (yang memotong bahan baku).
+        return stepUrutan > 1;
     });
     if (allFinishing) {
         this.openFinishingModal();

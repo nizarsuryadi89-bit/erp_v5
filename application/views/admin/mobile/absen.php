@@ -294,7 +294,10 @@ $hasPulangRecord = (!empty($cekabsen['jam_pulang']) && $cekabsen['jam_pulang'] !
     <div class="col-3">
       <div class="stat-card p-2 text-center" style="background: #fffbeb;">
         <span class="d-block fw-bold text-warning"
-          style="font-size: 1.2rem;"><?= $statistik_bulan_ini['terlambat'] ?? 0 ?></span>
+          style="font-size: 1.2rem;"><?= $statistik_bulan_ini['terlambat'] ?? 0 ?>x</span>
+        <?php if (!empty($statistik_bulan_ini['terlambat_menit'])): ?>
+          <span style="font-size: 0.55rem; font-weight: 700; color: #92400e; display: block; margin-top: -3px; margin-bottom: 2px;">(<?= $statistik_bulan_ini['terlambat_menit'] ?>m)</span>
+        <?php endif; ?>
         <span style="font-size: 0.6rem; font-weight: 700; color: #92400e; text-transform: uppercase;">Telat</span>
       </div>
     </div>
@@ -379,9 +382,15 @@ $hasPulangRecord = (!empty($cekabsen['jam_pulang']) && $cekabsen['jam_pulang'] !
           <div class="log-details">
             <div class="log-status-row">
               <?php if ($absensi->status == 'Hadir'): ?>
-                <?php if (!empty($absensi->jam_masuk) && $absensi->jam_masuk > '08:01:00'): ?>
+                <?php 
+                  $m_telat = 0;
+                  if (!empty($absensi->jam_masuk) && $absensi->jam_masuk >= '08:01:00') {
+                      $m_telat = floor((strtotime($absensi->jam_masuk) - strtotime('08:00:00')) / 60);
+                  }
+                ?>
+                <?php if ($m_telat > 0): ?>
                   <span class="badge bg-warning-subtle text-warning border border-warning-subtle rounded-pill px-2"
-                    style="font-size: 0.6rem;">TELAT</span>
+                    style="font-size: 0.6rem;">TELAT <?= $m_telat > 0 ? "({$m_telat}m)" : "" ?></span>
                 <?php else: ?>
                   <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2"
                     style="font-size: 0.6rem;">HADIR</span>

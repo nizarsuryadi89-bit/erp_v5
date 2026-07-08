@@ -255,7 +255,8 @@ class M_master extends CI_model
 
     public function tampilsemuadata($table, $order_by = null)
     {
-        if ($order_by) $this->db->order_by($order_by, 'ASC');
+        if ($order_by)
+            $this->db->order_by($order_by, 'ASC');
         return $this->db->get($table);
     }
 
@@ -339,25 +340,80 @@ class M_master extends CI_model
 
     function routingbykode($kode, $harga_id = null)
     {
+        $this->db->where('routing.product_id', $kode);
+        $this->db->join('tbl_operator', 'tbl_operator.operator_id = routing.operator_id', 'left');
+        $this->db->join('bom_lines', 'bom_lines.bom_line_id = routing.bom_line_id', 'left');
+        $this->db->order_by('routing.routing_urutan', 'ASC');
+
         if ($harga_id !== null) {
-            $this->db->where('product_id', $kode);
-            $this->db->where('harga_id', $harga_id);
-            $count = $this->db->count_all_results('routing');
-            
-            if ($count > 0) {
-                $this->db->where('routing.harga_id', $harga_id);
-            } else {
-                $this->db->where('routing.harga_id IS NULL');
-            }
+            $this->db->group_start();
+            $this->db->where('routing.harga_id', $harga_id);
+            $this->db->or_where('routing.harga_id IS NULL');
+            $this->db->group_end();
         } else {
             $this->db->where('routing.harga_id IS NULL');
         }
 
-        $this->db->where('tbl_product.product_id', $kode);
-        $this->db->join('tbl_operator', 'tbl_operator.operator_id = routing.operator_id');
-        $this->db->join('tbl_product', 'tbl_product.product_id = routing.product_id');
-        $this->db->join('bom_lines', 'bom_lines.bom_line_id = routing.bom_line_id', 'left');
-        return $this->db->get('routing');
+        $query = $this->db->get('routing');
+        $all_routes = $query->result_array();
+
+        if ($harga_id === null || empty($all_routes)) {
+            return $query;
+        }
+
+        // Filter: WHOLE-ROUTING OVERRIDE MODE
+        // 1. If a variation has AT LEAST ONE specific route, it uses ONLY its specific routes.
+        // 2. If a variation has NO specific routes, it falls back to the global routes.
+        
+        $specific_routes = [];
+        $global_routes = [];
+
+        foreach ($all_routes as $r) {
+            if ($r['harga_id'] == $harga_id && $r['harga_id'] !== null) {
+                $specific_routes[] = $r;
+            } else if ($r['harga_id'] === null) {
+                $global_routes[] = $r;
+            }
+        }
+
+        // If we found specific routes, use ONLY them. Otherwise, use global routes.
+        $final_routes = count($specific_routes) > 0 ? $specific_routes : $global_routes;
+
+        // Ensure they are sorted by sequence number
+        usort($final_routes, function($a, $b) {
+            return $a['routing_urutan'] <=> $b['routing_urutan'];
+        });
+
+        // Create an anonymous class to match CI's standard query result
+        $result_object = new class ($final_routes) {
+            private $routes;
+            public function __construct($routes)
+            {
+                $this->routes = $routes;
+            }
+            public function result_array()
+            {
+                return $this->routes;
+            }
+            public function result()
+            {
+                $obj_array = [];
+                foreach ($this->routes as $row) {
+                    $obj_array[] = (object) $row;
+                }
+                return $obj_array;
+            }
+            public function num_rows()
+            {
+                return count($this->routes);
+            }
+            public function row()
+            {
+                return count($this->routes) > 0 ? (object) $this->routes[0] : null;
+            }
+        };
+
+        return $result_object;
     }
 
 
@@ -390,12 +446,16 @@ class M_master extends CI_model
         $this->db->join('tbl_jabatan j', 'j.jabatan_id = k.jabatan_id', 'left');
         $this->db->join('tbl_operator o', 'o.operator_id = k.divisi_id', 'left');
         $this->db->join('users u', 'u.karyawan_id = k.karyawan_id', 'left');
-        
+
         // Exclude dummy accounts (machines/terminals)
         $this->db->where("k.nik NOT LIKE 'STATION%'");
         $this->db->where("k.nik NOT LIKE 'TERM%'");
         $this->db->where('k.nama_lengkap NOT LIKE', '%Terminal%');
+        $this->db->where('k.nama_lengkap NOT LIKE', '%OPERATOR%');
+        $this->db->where('k.nama_lengkap NOT LIKE', '%DEPT%');
+        $this->db->where('k.nama_lengkap NOT LIKE', '%DTG%');
         $this->db->where('k.nama_lengkap NOT LIKE', '%DTF%');
+        $this->db->where('k.nama_lengkap NOT LIKE', '%WORK CENTER%');
         $this->db->where('k.nama_lengkap NOT LIKE', '%LARGE FORMAT%');
         $this->db->where('k.nama_lengkap NOT LIKE', '%A3+%');
 
@@ -554,7 +614,16 @@ class M_master extends CI_model
     }
     function getkaryawan($table, $order)
     {
-
+        $this->db->where('tbl_karyawan.nama_lengkap NOT LIKE', '%Terminal%');
+        $this->db->where('tbl_karyawan.nama_lengkap NOT LIKE', '%OPERATOR%');
+        $this->db->where('tbl_karyawan.nama_lengkap NOT LIKE', '%DEPT%');
+        $this->db->where('tbl_karyawan.nama_lengkap NOT LIKE', '%DTG%');
+        $this->db->where('tbl_karyawan.nama_lengkap NOT LIKE', '%DTF%');
+        $this->db->where('tbl_karyawan.nama_lengkap NOT LIKE', '%WORK CENTER%');
+        $this->db->where('tbl_karyawan.nama_lengkap NOT LIKE', '%LARGE FORMAT%');
+        $this->db->where('tbl_karyawan.nama_lengkap NOT LIKE', '%A3+%');
+        $this->db->where("tbl_karyawan.nik NOT LIKE 'STATION%'");
+        $this->db->where("tbl_karyawan.nik NOT LIKE 'TERM%'");
         $this->db->join('tbl_divisi', 'tbl_divisi.divisi_id=tbl_karyawan.divisi_id');
         $this->db->order_by($order, 'ASC');
         return $this->db->get($table);

@@ -9,6 +9,7 @@ class Warehouse extends MY_Controller
         parent::__construct();
         $this->load->model('Warehouse_model', 'warehouse');
         $this->load->model('M_gudang', 'm_gudang');
+        $this->load->model('M_master');
 
         $this->_init_warehouse_tables();
     }
@@ -2410,7 +2411,7 @@ class Warehouse extends MY_Controller
             'table' => 'tbl_kategori',
             'tampilData' => $pengambilan_data->result(),
             'total_rows' => $pengambilan_data->num_rows(),
-            'total_karyawan' => $this->db->get('tbl_karyawan')->num_rows(),
+            'total_karyawan' => $this->M_master->get_karyawan()->num_rows(),
             'total_gudang' => $this->db->get('tbl_gudang')->num_rows(),
         );
         $this->load_admin_view('admin/gudang/daftarPengambilan', $data);
@@ -2443,7 +2444,7 @@ class Warehouse extends MY_Controller
             'table' => 'tbl_kategori',
             'tampilData' => $pengambilan_data->result(),
             'total_rows' => $pengambilan_data->num_rows(),
-            'total_karyawan' => $this->db->get('tbl_karyawan')->num_rows(),
+            'total_karyawan' => $this->M_master->get_karyawan()->num_rows(),
             'total_gudang' => $this->db->get('tbl_gudang')->num_rows(),
             'gudang' => $this->db->get('tbl_gudang')->result(),
         );
@@ -2497,9 +2498,9 @@ class Warehouse extends MY_Controller
             'tampilData' => $pengambilan_data,
             'total_rows' => count($pengambilan_data),
             'pengambilan_bulan_ini' => $pengambilan_bulan_ini,
-            'total_karyawan' => $this->db->get('tbl_karyawan')->num_rows(),
+            'total_karyawan' => $this->M_master->get_karyawan()->num_rows(),
             'total_gudang' => $this->db->get('tbl_gudang')->num_rows(),
-            'karyawan_list' => $this->db->select('DISTINCT(tbl_karyawan.karyawan_id), nama_lengkap')->join('tbl_pengambilan', 'tbl_pengambilan.karyawan_id = tbl_karyawan.karyawan_id')->get('tbl_karyawan')->result(),
+            'karyawan_list' => $this->db->select('DISTINCT(tbl_karyawan.karyawan_id), nama_lengkap')->join('tbl_pengambilan', 'tbl_pengambilan.karyawan_id = tbl_karyawan.karyawan_id')->where('nama_lengkap NOT LIKE', '%Terminal%')->where('nama_lengkap NOT LIKE', '%OPERATOR%')->where('nama_lengkap NOT LIKE', '%DEPT%')->where('nama_lengkap NOT LIKE', '%DTG%')->where('nama_lengkap NOT LIKE', '%DTF%')->where('nama_lengkap NOT LIKE', '%WORK CENTER%')->where('nama_lengkap NOT LIKE', '%LARGE FORMAT%')->where('nama_lengkap NOT LIKE', '%A3+%')->where("nik NOT LIKE", 'STATION%')->where("nik NOT LIKE", 'TERM%')->get('tbl_karyawan')->result(),
             'gudang_list' => $this->db->select('DISTINCT(tbl_gudang.gudang_id), gudang_nama')->join('tbl_pengambilan', 'tbl_pengambilan.gudang_id = tbl_gudang.gudang_id')->get('tbl_gudang')->result(),
         );
         $this->load_admin_view('admin/gudang/daftarPengambilan', $data);
@@ -2511,7 +2512,7 @@ class Warehouse extends MY_Controller
             'controller' => $this->uri->segment(1),
             'function' => $this->uri->segment(2),
             'title' => 'Pengambilan Material ke Produksi',
-            'karyawan' => $this->db->get('tbl_karyawan')->result(),
+            'karyawan' => $this->M_master->get_karyawan()->result(),
             'temp' => $this->m_gudang->getTemp('tbl_temp_pengambilan')->result(),
             'cabang' => $this->db->get('tbl_perusahaan')->result(),
             'gudang' => $this->db->get('tbl_gudang')->result(),

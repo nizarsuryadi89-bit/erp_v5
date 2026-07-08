@@ -81,7 +81,7 @@ class Mobile extends MY_Controller
 
         $data['karyawan'] = $this->M_master->karyawan_lembur()->result();
         $data['jml'] = $this->M_master->karyawan_lembur()->num_rows();
-        $data['listkaryawan'] = $this->db->get('tbl_karyawan')->result();
+        $data['listkaryawan'] = $this->M_master->get_karyawan()->result();
 
         $has_dashboard_role = $this->db->where(['role_id' => $this->session->userdata('level'), 'menu_id' => 1])->get('tbl_menu_access')->num_rows() > 0;
         $has_dashboard_user = $this->db->where(['user_id' => $this->user_id, 'menu_id' => 1])->get('tbl_user_menu_access')->num_rows() > 0;
@@ -202,7 +202,7 @@ class Mobile extends MY_Controller
 
         $data['karyawan'] = $this->M_master->karyawan_lembur()->result();
         $data['jml'] = $this->M_master->karyawan_lembur()->num_rows();
-        $data['listkaryawan'] = $this->db->get('tbl_karyawan')->result();
+        $data['listkaryawan'] = $this->M_master->get_karyawan()->result();
         $data['karyawan_terpilih'] = $this->db->get_where('tbl_karyawan', ['karyawan_id' => $this->karyawan_id])->row_array();
 
         $data['cekabsen'] = $this->db->get_where('absensi', ['karyawan_id' => $this->karyawan_id, 'tanggal' => $tanggal])->row_array();
@@ -226,9 +226,19 @@ class Mobile extends MY_Controller
         $this->db->where("DATE_FORMAT(tanggal, '%Y-%m') =", $bulan_ini);
         $this->db->where('status', 'Hadir');
         $this->db->join('tbl_jam_kerja jk', 'jk.urutan = (DAYOFWEEK(absensi.tanggal) + 5) % 7 + 1', 'left');
-        // Kesiangan dihitung jika absen lebih dari jam masuk + 15 menit
-        $this->db->where('absensi.jam_masuk > ADDTIME(jk.jam_masuk, "00:15:00")', null, false);
-        $terlambat_count = $this->db->count_all_results('absensi');
+        // Kesiangan dihitung jika absen >= 08:01 (lewat 1 menit dari jam masuk)
+        $this->db->select('absensi.jam_masuk, jk.jam_masuk as rule_jam_masuk');
+        $this->db->where('absensi.jam_masuk >= ADDTIME(jk.jam_masuk, "00:01:00")', null, false);
+        $late_records = $this->db->get('absensi')->result();
+        
+        $terlambat_count = count($late_records);
+        $terlambat_menit = 0;
+        foreach ($late_records as $lr) {
+            $diff = strtotime($lr->jam_masuk) - strtotime($lr->rule_jam_masuk);
+            if ($diff > 0) {
+                $terlambat_menit += floor($diff / 60);
+            }
+        }
 
         $start_date = date('Y-m-01', strtotime($bulan_ini . '-01'));
         $end_date = date('Y-m-t', strtotime($start_date));
@@ -291,7 +301,8 @@ class Mobile extends MY_Controller
             'sakit' => $total_sakit,
             'izin' => $total_izin,
             'alpha' => $calculated_alpha,
-            'terlambat' => $terlambat_count
+            'terlambat' => $terlambat_count,
+            'terlambat_menit' => $terlambat_menit
         ];
 
         // Ambil Aturan Jam Kerja dari Database
@@ -679,7 +690,7 @@ class Mobile extends MY_Controller
         // Data tambahan utk view
         $data['karyawan'] = $this->M_master->karyawan_lembur()->result();
         $data['jml'] = $this->M_master->karyawan_lembur()->num_rows();
-        $data['listkaryawan'] = $this->db->get('tbl_karyawan')->result();
+        $data['listkaryawan'] = $this->M_master->get_karyawan()->result();
         $data['karyawan_terpilih'] = $this->db->get_where('tbl_karyawan', ['karyawan_id' => $this->karyawan_id])->row_array();
 
         $this->load->view('admin/mobile/head', $data);
@@ -756,7 +767,7 @@ class Mobile extends MY_Controller
         $data['title'] = 'Profile';
         $data['perusahaan'] = $data['perusahaan']['nama_perusahaan'];
 
-        $data['listkaryawan'] = $this->db->get('tbl_karyawan')->result();
+        $data['listkaryawan'] = $this->M_master->get_karyawan()->result();
         $data['karyawan_terpilih'] = $this->M_profile->getprofilebyid($this->karyawan_id)->row_array();
         $data['profile'] = $this->M_profile->getprofile()->row_array();
 
@@ -838,7 +849,7 @@ class Mobile extends MY_Controller
 
         $data['karyawan'] = $this->M_master->karyawan_lembur()->result();
         $data['jml'] = $this->M_master->karyawan_lembur()->num_rows();
-        $data['listkaryawan'] = $this->db->get('tbl_karyawan')->result();
+        $data['listkaryawan'] = $this->M_master->get_karyawan()->result();
 
         $data['karyawan_terpilih'] = $this->db->select('k.*, d.divisi_nama, j.nama_jabatan')
             ->from('tbl_karyawan k')
@@ -944,7 +955,7 @@ class Mobile extends MY_Controller
 
         $data['karyawan'] = $this->M_master->karyawan_lembur()->result();
         $data['jml'] = $this->M_master->karyawan_lembur()->num_rows();
-        $data['listkaryawan'] = $this->db->get('tbl_karyawan')->result();
+        $data['listkaryawan'] = $this->M_master->get_karyawan()->result();
         $data['karyawan_terpilih'] = $this->db->get_where('tbl_karyawan', ['karyawan_id' => $this->karyawan_id])->row_array();
 
         $data['cekabsen'] = $this->db->get_where('absensi', ['karyawan_id' => $this->karyawan_id, 'tanggal' => $tanggal])->row_array();
@@ -1295,9 +1306,14 @@ class Mobile extends MY_Controller
         $this->db->where("tbl_karyawan.nama_lengkap NOT LIKE '%DUMMY%'");
         $this->db->where("tbl_karyawan.nama_lengkap NOT LIKE '%Terminal%'");
         $this->db->where("tbl_karyawan.nama_lengkap NOT LIKE '%DTF%'");
-        $this->db->where("tbl_karyawan.nama_lengkap NOT LIKE 'Operator %'");
+        $this->db->where("tbl_karyawan.nama_lengkap NOT LIKE '%DTG%'");
+        $this->db->where("tbl_karyawan.nama_lengkap NOT LIKE '%OPERATOR%'");
         $this->db->where("tbl_karyawan.nama_lengkap NOT LIKE '%DEPT%'");
+        $this->db->where("tbl_karyawan.nama_lengkap NOT LIKE '%WORK CENTER%'");
+        $this->db->where("tbl_karyawan.nama_lengkap NOT LIKE '%LARGE FORMAT%'");
+        $this->db->where("tbl_karyawan.nama_lengkap NOT LIKE '%A3+%'");
         $this->db->where("tbl_karyawan.nik NOT LIKE 'STATION%'");
+        $this->db->where("tbl_karyawan.nik NOT LIKE 'TERM%'");
         $this->db->join('tbl_jabatan', 'tbl_karyawan.jabatan_id = tbl_jabatan.jabatan_id', 'left');
         $data['belum_hadir'] = $this->db->get('tbl_karyawan')->result();
 

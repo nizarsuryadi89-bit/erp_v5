@@ -12,17 +12,12 @@
                             style="cursor: pointer; width: 1.1rem; height: 1.1rem; margin-left: 0;">
                     </div>
                 </th>
-                <th class="text-center" width="50">No.</th>
-                <th>Spk</th>
-                <th>Tanggal Pesanan</th>
-                <th>Deadline</th>
-                <th>Konsumen</th>
-                <th>Deskprint</th>
+                <th class="text-center" width="40">No.</th>
+                <th width="140">Pesanan (SPK)</th>
+                <th width="150">Pelanggan & Asal</th>
                 <th>Produk</th>
-                <th>Metode Pesanan</th>
-                <th>Lokasi Pesanan</th>
-                <th class="text-center">Status Pesanan</th>
-                <th class="text-center">Tindakan</th>
+                <th width="200" class="text-center">Status Pesanan</th>
+                <th width="120" class="text-center">Tindakan</th>
             </tr>
         </thead>
         <tbody>
@@ -355,15 +350,6 @@
                                 </div>
                                 <div class="d-flex gap-1 flex-wrap justify-content-end">
                                     <?php if ($can_execute): ?>
-                                        <?php if ($is_spk_group): ?>
-                                            <button type="button"
-                                                class="btn btn-sm btn-outline-info fw-900 rounded-pill px-2 py-1 shadow-sm"
-                                                style="font-size: 0.6rem;"
-                                                onclick="ProductionApp.printGroupTag('<?= htmlspecialchars(addslashes($currentGroupKey), ENT_QUOTES, 'UTF-8') ?>')">
-                                                <i class="fas fa-tag me-1"></i> CETAK TAG
-                                            </button>
-                                        <?php endif; ?>
-
                                         <?php if ($gMeta['auth_done'] > 0): ?>
                                             <button type="button"
                                                 class="btn btn-outline-success fw-900 rounded-pill px-4 py-2 shadow-sm"
@@ -504,112 +490,74 @@
                     <td class="text-center fw-semibold text-muted" style="vertical-align: middle; font-size: 0.95rem;">
                         <?= $noItem++ ?>
                     </td>
-                    <td style="vertical-align: middle;">
+                    <!-- Pesanan (SPK) -->
+                    <td style="vertical-align: top; padding-top: 0.75rem;">
                         <div class="d-flex flex-column gap-1">
-                            <div class="spk-id-text text-nowrap">
+                            <div class="spk-id-text text-nowrap mb-1">
                                 <a href="javascript:void(0)" onclick="previewSPK('<?= $item->nospk ?>')" class="text-decoration-none text-primary" title="Lihat Detail SPK">
                                     <?= $item->nospk ?>
                                 </a>
                             </div>
+                            <?php if (!empty($item->is_reprint) || strpos(($item->catatan ?? ''), '[RIJEK]') !== false): ?>
+                                <span class="badge bg-danger rounded-pill pulse-red" style="padding: 2px 6px; font-size: 0.55rem; width: fit-content;"><i class="fas fa-redo me-1"></i>REPRINT</span>
+                            <?php endif; ?>
+                            
+                            <?php
+                            // Date calculation already exists in code above this, but we'll re-declare just in case it's needed locally
+                            $datetime = new DateTime($item->tgl_spk);
+                            $sekarang = new DateTime();
+                            $hari_nama = [
+                                'Sunday' => 'Minggu', 'Monday' => 'Senin', 'Tuesday' => 'Selasa', 'Wednesday' => 'Rabu',
+                                'Thursday' => 'Kamis', 'Friday' => 'Jumat', 'Saturday' => 'Sabtu'
+                            ][$datetime->format('l')];
+                            $bulan_nama = [
+                                'January' => 'Jan', 'February' => 'Feb', 'March' => 'Mar', 'April' => 'Apr',
+                                'May' => 'Mei', 'June' => 'Jun', 'July' => 'Jul', 'August' => 'Ags',
+                                'September' => 'Sep', 'October' => 'Okt', 'November' => 'Nov', 'December' => 'Des'
+                            ][$datetime->format('F')];
 
+                            $tanggal = $datetime->format('d');
+                            $jam = $datetime->format('H:i');
+                            
+                            $kemarin = clone $sekarang;
+                            $kemarin->modify('-1 day');
+                            
+                            $tanggal_str = $datetime->format('Y-m-d');
+                            $is_today = $tanggal_str === $sekarang->format('Y-m-d');
+                            $is_yesterday = $tanggal_str === $kemarin->format('Y-m-d');
+                            ?>
 
-
-                            <div class="d-flex flex-column gap-1 align-items-start mt-1">
-                                <!-- Lokasi pesanan moved to separate column -->
-                            </div>
-                        </div>
-                    </td>
-                    <td style="vertical-align: middle;">
-                        <?php
-                        // Set timezone ke Indonesia (WIB)
-                        $timezone_jakarta = new DateTimeZone('Asia/Jakarta');
-                        try {
-                            $raw_date = $item->tgl_spk;
-                            if (!empty($raw_date)) {
-                                $datetime = new DateTime($raw_date, $timezone_jakarta);
-                            } else {
-                                throw new Exception('Empty date');
-                            }
-                        } catch (Exception $e) {
-                            $datetime = new DateTime('now', $timezone_jakarta);
-                        }
-
-                        $hari = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-                        $bulan = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-
-                        $tanggal = $datetime->format('d');
-                        $bulan_nama = $bulan[(int) $datetime->format('m')];
-                        $tahun = $datetime->format('Y');
-                        $hari_nama = $hari[(int) $datetime->format('w')];
-                        $jam = $datetime->format('H:i');
-                        $detik = $datetime->format('s');
-
-                        // Cek apakah hari ini atau kemarin
-                        $sekarang = new DateTime('now', $timezone_jakarta);
-                        $kemarin = clone $sekarang;
-                        $kemarin->modify('-1 day');
-
-                        $tanggal_str = $datetime->format('Y-m-d');
-                        $is_today = $tanggal_str === $sekarang->format('Y-m-d');
-                        $is_yesterday = $tanggal_str === $kemarin->format('Y-m-d');
-
-                        // Hitung selisih waktu
-                        $diff = $sekarang->diff($datetime);
-                        $diff_total_minutes = ($diff->days * 24 * 60) + ($diff->h * 60) + $diff->i;
-                        $diff_hours = floor($diff_total_minutes / 60);
-                        $diff_minutes = $diff_total_minutes % 60;
-                        $show_relative = ($diff_total_minutes >= 0 && $diff_total_minutes < 1440);
-                        ?>
-
-                        <div class="d-flex flex-column gap-1" style="min-width: 140px;">
-                            <div class="d-flex align-items-center gap-2 flex-wrap">
-                                <span class="text-dark fw-bold"
-                                    style="font-size: 0.8rem; display: flex; align-items: center; gap: 4px;">
-                                    <i class="far fa-calendar-alt text-muted" style="font-size: 0.85rem;"></i>
-                                    <span><?= $hari_nama ?>, <?= $tanggal ?>     <?= $bulan_nama ?></span>
-                                </span>
+                            <div class="small" style="font-size: 0.75rem;">
+                                <div class="text-dark d-flex flex-column gap-1">
+                                    <span><i class="far fa-calendar-alt text-muted"></i> <?= $hari_nama ?>, <?= $tanggal ?> <?= $bulan_nama ?></span>
+                                    <span class="d-flex align-items-center gap-1">
+                                        <i class="far fa-clock text-muted"></i> <strong><?= $jam ?></strong> <span class="fw-bold text-primary" style="font-size: 0.65rem;">WIB</span>
+                                    </span>
+                                </div>
                                 <?php if ($is_today): ?>
-                                    <span class="badge badge-hari-ini text-uppercase" style="white-space: nowrap;">
-                                        <i class="fas fa-calendar-day"></i> HARI INI
-                                    </span>
+                                    <span class="badge badge-hari-ini text-uppercase mt-1" style="font-size: 0.55rem;"><i class="fas fa-calendar-day"></i> HARI INI</span>
                                 <?php elseif ($is_yesterday): ?>
-                                    <span class="badge badge-kemarin text-uppercase" style="white-space: nowrap;">
-                                        <i class="fas fa-calendar"></i> KEMARIN
-                                    </span>
+                                    <span class="badge badge-kemarin text-uppercase mt-1" style="font-size: 0.55rem;"><i class="fas fa-calendar"></i> KEMARIN</span>
                                 <?php endif; ?>
                             </div>
 
-                            <div class="text-muted d-flex align-items-center gap-1 flex-wrap" style="font-size: 0.75rem;">
-                                <span class="d-flex align-items-center gap-1">
-                                    <i class="far fa-clock text-muted"></i>
-                                    <strong class="text-dark"><?= $jam ?></strong>
-                                    <span class="fw-bold text-primary" style="font-size: 0.7rem;">WIB</span>
-                                </span>
-                                <?php if ($show_relative && $diff_total_minutes < 60): ?>
-                                    <span class="badge badge-relative-time bg-success ms-1" style="white-space: nowrap;">
-                                        <?= strtoupper($diff_minutes > 0 ? $diff_minutes . ' MNT LALU' : 'BARU SAJA') ?>
-                                    </span>
-                                <?php elseif ($show_relative && $diff_hours > 0 && $diff_hours < 24): ?>
-                                    <span class="badge badge-relative-time bg-info ms-1" style="white-space: nowrap;">
-                                        <?= strtoupper($diff_hours . ' JAM LALU') ?>
-                                    </span>
-                                <?php endif; ?>
-                            </div>
+                            <?php if (!empty($item->dateline_tgl) && $item->dateline_tgl != '0000-00-00'): ?>
+                                <div class="text-danger fw-bold mt-1" style="font-size: 0.75rem;"><i class="fas fa-hourglass-half me-1"></i> <?= date('d/m/Y', strtotime($item->dateline_tgl)) ?> <?= !empty($item->dateline_jam) ? date('H:i', strtotime($item->dateline_jam)) : '' ?></div>
+                            <?php endif; ?>
 
-
+                            <?php if (isset($filter_status_view) && $filter_status_view === 'konsumen'): ?>
+                                <div class="mt-2 text-center">
+                                    <span class="badge bg-secondary text-white shadow-sm border border-secondary border-opacity-25" style="font-size: 0.65rem; padding: 3px 6px;">
+                                        <i class="fas fa-barcode me-1"></i> <?= htmlspecialchars($item->produksi_id) ?>
+                                    </span>
+                                </div>
+                            <?php endif; ?>
                         </div>
                     </td>
-                    <!-- Deadline -->
-                    <td style="vertical-align: middle;">
-                        <?php if (!empty($item->dateline_tgl) && $item->dateline_tgl != '0000-00-00'): ?>
-                            <div class="fw-bold text-danger"><i class="fas fa-hourglass-half me-1"></i> <?= date('d/m/Y', strtotime($item->dateline_tgl)) ?></div>
-                            <div class="text-danger small"><?= !empty($item->dateline_jam) ? date('H:i', strtotime($item->dateline_jam)) : '-' ?></div>
-                        <?php else: ?>
-                            <span class="text-muted">-</span>
-                        <?php endif; ?>
-                    </td>
-                    <td style="vertical-align: middle;">
-                        <div class="d-flex flex-column gap-1">
+
+                    <!-- Pelanggan & Asal -->
+                    <td style="vertical-align: top; padding-top: 0.75rem;">
+                        <div class="d-flex flex-column gap-2">
                             <div class="fw-bold text-dark text-uppercase"
                                 style="font-size: 0.85rem; letter-spacing: 0.3px;"><?= $item->konsumen_nama ?></div>
                             <?php if (!empty($item->konsumen_nohp)): ?>
@@ -618,18 +566,59 @@
                                     <span><?= $item->konsumen_nohp ?></span>
                                 </div>
                             <?php endif; ?>
+                            
+                            <div>
+                                <?php if (!empty($item->nama_jenis_transaksi)): ?>
+                                    <?php 
+                                        $is_marketplace = (strtoupper($item->nama_jenis_transaksi) === 'MARKETPLACE' && !empty($item->marketplace_nama));
+                                        $display_metode = $is_marketplace ? $item->marketplace_nama : $item->nama_jenis_transaksi;
+                                        $icon = 'fa-shopping-cart';
+                                        $color = 'secondary';
+                                        
+                                        if ($is_marketplace) {
+                                            $icon = 'fa-store';
+                                            $mp_lower = strtolower($item->marketplace_nama);
+                                            if (strpos($mp_lower, 'shopee') !== false) {
+                                                $color = 'danger';
+                                            } else if (strpos($mp_lower, 'tokopedia') !== false) {
+                                                $color = 'success';
+                                            } else if (strpos($mp_lower, 'tiktok') !== false) {
+                                                $color = 'dark';
+                                            } else {
+                                                $color = 'warning';
+                                            }
+                                        }
+                                    ?>
+                                    <span class="badge bg-<?= $color ?> bg-opacity-10 text-<?= $color ?> border border-<?= $color ?> border-opacity-25 shadow-sm fw-900" style="font-size: 0.65rem;">
+                                        <i class="fas <?= $icon ?> me-1"></i> <?= strtoupper($display_metode) ?>
+                                    </span>
+                                <?php endif; ?>
+                            </div>
 
-
+                            <div class="mt-1">
+                                <?php
+                                $comp_name = $item->nama_perusahaan ?: 'N/A';
+                                $hash = array_sum(array_map('ord', str_split($comp_name)));
+                                $branchColors = ['#2196f3', '#9c27b0', '#4caf50', '#ff9800', '#e91e63', '#8bc34a', '#009688', '#ffc107', '#673ab7', '#3f51b5'];
+                                $branchColor = $branchColors[$hash % count($branchColors)];
+                                ?>
+                                <div class="company-pill"
+                                    style="color: <?= $branchColor ?>; border: 1px solid <?= $branchColor ?>20; font-size: 0.65rem;">
+                                    <div class="company-dot" style="background: <?= $branchColor ?>"></div>
+                                    <?= $comp_name ?>
+                                </div>
+                                <?php if (!empty($item->lokasi_cetak) && $item->lokasi_cetak != 0 && $item->perusahaan_id != $item->lokasi_cetak): ?>
+                                    <span
+                                        class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-10 rounded-pill pulse-red mt-1"
+                                        style="padding: 3px 6px; font-size: 0.55rem; display: block; width: fit-content;">
+                                        <i class="fas fa-exchange-alt me-1"></i>TITIPAN DARI
+                                        <?= strtoupper($item->nama_perusahaan ?? 'CABANG LAIN') ?>
+                                    </span>
+                                <?php endif; ?>
+                            </div>
                         </div>
                     </td>
-                    <!-- Deskprint -->
-                    <td style="vertical-align: middle;">
-                        <?php if (!empty($item->deskprint_nama)): ?>
-                            <span class="fw-bold text-dark"><i class="fas fa-user-edit me-1 text-secondary"></i> <?= htmlspecialchars($item->deskprint_nama) ?></span>
-                        <?php else: ?>
-                            <span class="text-muted">-</span>
-                        <?php endif; ?>
-                    </td>
+
                     <td style="vertical-align: top; padding-top: 0.75rem; padding-bottom: 0.75rem;">
                         <div class="d-flex flex-column gap-1">
                             <!-- 1. Header Row (Product Name + BOM Button + URGENT) -->
@@ -692,38 +681,18 @@
                                         ?>
                                     <?php endif; ?>
                                 </div>
-                                
-                                <!-- BOM Button -->
-                                <?php if (!empty($item->bom_lines)): ?>
-                                    <?php
-                                    $bom_json_data = [];
-                                    foreach ($item->bom_lines as $bl) {
-                                        $total_qty = $bl->bom_qty * $qty;
-                                        $bom_json_data[] = [
-                                            'name' => $bl->bahan_nama ?? 'Unknown',
-                                            'qty' => number_format($total_qty, 2),
-                                            'unit' => $bl->satuan_nama ?? 'Unit'
-                                        ];
-                                    }
-                                    ?>
-                                    <button type="button"
-                                        class="btn btn-sm bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 shadow-sm btn-show-bom-modal flex-shrink-0"
-                                        style="font-size: 0.65rem; cursor: pointer; padding: 2px 6px;" data-product="<?= htmlspecialchars($item->product_nama) ?>"
-                                        data-bom="<?= htmlspecialchars(json_encode($bom_json_data), ENT_QUOTES, 'UTF-8') ?>">
-                                        <i class="fas fa-box-open me-1"></i> BOM
-                                    </button>
-                                <?php endif; ?>
                             </div>
 
                             <!-- 2. Primary Metrics: QTY & Dimensions -->
                             <div class="d-flex flex-wrap align-items-center gap-1 mb-1">
-                                <span class="badge bg-secondary shadow-sm" style="font-size: 0.65rem;">QTY: <?= $qty ?> PCS</span>
+                                <?php $uniform_badge_style = "padding: 4px 10px; font-size: 0.65rem; border-radius: 6px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; line-height: 1.2;"; ?>
+                                <span class="badge bg-secondary shadow-sm" style="<?= $uniform_badge_style ?>">QTY: <?= $qty ?> PCS</span>
                                 <?php if ($item->kategori_id == 5): ?>
-                                    <span class="badge bg-light text-dark border" style="font-size: 0.6rem;"><?= $p ?>M x <?= htmlspecialchars($l > 0 ? $l : ($meta['ket_1'] ?? $item->db_ket_1 ?? (isset($curMachine['raw_width']) ? $curMachine['raw_width'] : '?'))) ?></span>
+                                    <span class="badge bg-light text-dark border" style="<?= $uniform_badge_style ?>"><?= $p ?>M x <?= htmlspecialchars($l > 0 ? $l : ($meta['ket_1'] ?? $item->db_ket_1 ?? (isset($curMachine['raw_width']) ? $curMachine['raw_width'] : '?'))) ?></span>
                                 <?php elseif ($item->kategori_id == 9): ?>
-                                    <span class="badge bg-light text-dark border" style="font-size: 0.6rem;">Pjg: <?= $p ?> ML</span>
+                                    <span class="badge bg-light text-dark border" style="<?= $uniform_badge_style ?>">Pjg: <?= $p ?> ML</span>
                                 <?php elseif ($item->panjang > 0 && $item->lebar > 0): ?>
-                                    <span class="badge bg-light text-dark border" style="font-size: 0.6rem;"><?= $p ?> x <?= $l ?></span>
+                                    <span class="badge bg-light text-dark border" style="<?= $uniform_badge_style ?>"><?= $p ?> x <?= $l ?></span>
                                 <?php endif; ?>
                             </div>
 
@@ -731,11 +700,11 @@
                                 <!-- 3. Tags / Attributes -->
                                 <div class="d-flex align-items-center gap-1 flex-wrap">
                                     <?php if ($isReprintItem): ?>
-                                        <span class="badge bg-danger fw-bold shadow-sm" style="font-size: 0.55rem;"><i class="fas fa-redo me-1"></i>REPRINT / RIJEK</span>
+                                        <span class="badge bg-danger shadow-sm" style="<?= $uniform_badge_style ?>"><i class="fas fa-redo me-1"></i>REPRINT / RIJEK</span>
                                     <?php endif; ?>
                                     
                                     <?php if (!empty($item->ripping_group)): ?>
-                                        <span class="badge bg-primary text-white shadow-sm fw-bold" style="font-size: 0.55rem; padding: 3px 6px;">
+                                        <span class="badge bg-primary text-white shadow-sm" style="<?= $uniform_badge_style ?>">
                                             <i class="fas fa-object-group me-1"></i> RIPPING GROUP: <?= substr(strtoupper(str_replace('rip_', '', $item->ripping_group)), 0, 5) ?>
                                         </span>
                                     <?php endif; ?>
@@ -743,34 +712,65 @@
                                     <?php $this->load->view('admin/wip/components/v_render_metadata', ['item' => $item, 'category_schemas' => $category_schemas, 'only_instructions' => false, 'only_badges' => true]); ?>
                                 </div>
                                 
-                                <!-- 4. Routing Sequence -->
-                                <?php if (!empty($item->routing_steps)): ?>
-                                    <div class="mt-1 d-flex flex-wrap align-items-center gap-1" style="font-size: 0.6rem;">
-                                        <span class="text-muted fw-bold" style="font-size: 0.55rem;">Routing:</span>
-                                        <?php foreach ($item->routing_steps as $idx => $step): ?>
-                                            <?php 
-                                            $isActive = ($step->status_produksi == '1'); 
-                                            $isDone = ($step->status_produksi == '2');
-                                            
-                                            $bgClass = 'bg-light text-secondary border border-secondary border-opacity-25';
-                                            $icon = '';
-                                            if ($isDone) {
-                                                $bgClass = 'bg-success bg-opacity-75 text-white';
-                                                $icon = '<i class="fas fa-check me-1"></i>';
-                                            } elseif ($isActive) {
-                                                $bgClass = 'bg-primary text-white shadow-sm';
-                                                $icon = '<i class="fas fa-cog fa-spin me-1"></i>';
-                                            }
-                                            ?>
-                                            <span class="badge <?= $bgClass ?> fw-normal" style="padding: 2px 4px; letter-spacing: 0.2px;" title="Urutan: <?= $step->routing_urutan ?>">
-                                                <?= $icon ?><?= htmlspecialchars($step->routing_name) ?>
-                                            </span>
-                                            <?php if ($idx < count($item->routing_steps) - 1): ?>
-                                                <i class="fas fa-caret-right text-muted opacity-50" style="font-size: 0.55rem;"></i>
-                                            <?php endif; ?>
-                                        <?php endforeach; ?>
-                                    </div>
-                                <?php endif; ?>
+                                <!-- 4. Action Buttons & Routing Sequence -->
+                                <div class="mt-2 d-flex flex-wrap align-items-center gap-2">
+                                    <!-- Tag button (Yellow) -->
+                                    <button type="button" class="btn btn-sm text-white shadow-sm d-flex align-items-center justify-content-center"
+                                        style="background-color: #ffb703; <?= $uniform_badge_style ?> border: none;"
+                                        onclick="ProductionApp.previewTag('<?= $item->produksi_id ?>')" title="Cetak Tag">
+                                        <i class="fas fa-tag me-1"></i> TAG
+                                    </button>
+
+                                    <!-- BOM Button -->
+                                    <?php if (!empty($item->bom_lines)): ?>
+                                        <?php
+                                        $bom_json_data = [];
+                                        foreach ($item->bom_lines as $bl) {
+                                            $total_qty = $bl->bom_qty * $qty;
+                                            $bom_json_data[] = [
+                                                'name' => $bl->bahan_nama ?? 'Unknown',
+                                                'qty' => number_format($total_qty, 2),
+                                                'unit' => $bl->satuan_nama ?? 'Unit'
+                                            ];
+                                        }
+                                        ?>
+                                        <button type="button"
+                                            class="btn btn-sm bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 shadow-sm btn-show-bom-modal d-flex align-items-center justify-content-center"
+                                            style="<?= $uniform_badge_style ?> cursor: pointer;" data-product="<?= htmlspecialchars($item->product_nama) ?>"
+                                            data-bom="<?= htmlspecialchars(json_encode($bom_json_data), ENT_QUOTES, 'UTF-8') ?>">
+                                            <i class="fas fa-box-open me-1"></i> BOM
+                                        </button>
+                                    <?php endif; ?>
+
+                                    <!-- Routing Sequence -->
+                                    <?php if (!empty($item->routing_steps)): ?>
+                                        <div class="d-flex flex-wrap align-items-center gap-1 ms-1" style="font-size: 0.6rem;">
+                                            <span class="text-muted fw-bold" style="font-size: 0.65rem;">Rute Proses:</span>
+                                            <?php foreach ($item->routing_steps as $idx => $step): ?>
+                                                <?php 
+                                                $isActive = ($step->status_produksi == '1'); 
+                                                $isDone = ($step->status_produksi == '2');
+                                                
+                                                $bgClass = 'bg-light text-secondary border border-secondary border-opacity-25';
+                                                $icon = '';
+                                                if ($isDone) {
+                                                    $bgClass = 'bg-success bg-opacity-75 text-white';
+                                                    $icon = '<i class="fas fa-check me-1"></i>';
+                                                } elseif ($isActive) {
+                                                    $bgClass = 'bg-primary text-white shadow-sm';
+                                                    $icon = '<i class="fas fa-cog fa-spin me-1"></i>';
+                                                }
+                                                ?>
+                                                <span class="badge <?= $bgClass ?> fw-normal" style="<?= $uniform_badge_style ?>" title="Urutan: <?= $step->routing_urutan ?>">
+                                                    <?= $icon ?><?= htmlspecialchars($step->routing_name) ?>
+                                                </span>
+                                                <?php if ($idx < count($item->routing_steps) - 1): ?>
+                                                    <i class="fas fa-caret-right text-muted opacity-50" style="font-size: 0.65rem;"></i>
+                                                <?php endif; ?>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
                             <?php endif; ?>
 
                             <!-- 5. Instructions -->
@@ -802,27 +802,27 @@
                             <?php if (!empty($final_catatan) || !empty($item->deskprint_nama) || !empty($item->assigned_user) || !empty($item->op_cetak_name) || !empty($item->op_finishing_name) || !empty($pb_oleh)): ?>
                                 <div class="mt-1 ps-2 border-start border-3 border-warning py-1 bg-warning bg-opacity-10 rounded-end">
                                     <div class="small fw-bold text-warning-emphasis mb-1" style="font-size: 0.6rem;"><i class="fas fa-sticky-note me-1"></i>KETERANGAN:</div>
-                                    <div class="d-flex flex-wrap gap-2" style="font-size: 0.65rem;">
+                                    <div class="d-flex flex-column gap-1" style="font-size: 0.65rem;">
                                         <?php if (!empty($item->deskprint_nama)): ?>
-                                            <div class="text-muted"><i class="fas fa-user-edit me-1"></i><span class="fw-bold text-dark"><?= htmlspecialchars($item->deskprint_nama) ?></span></div>
+                                            <div class="text-muted">Dibuat Oleh (Deskprint): <span class="fw-bold text-dark"><?= htmlspecialchars($item->deskprint_nama) ?></span></div>
                                         <?php endif; ?>
 
                                         <?php if ($st === 'proses'): ?>
                                             <?php if (!empty($item->assigned_user)): ?>
-                                                <div class="text-muted"><i class="fas fa-user-cog me-1"></i><span class="fw-bold text-dark"><?= htmlspecialchars($item->assigned_user) ?></span></div>
+                                                <div class="text-muted">Dikerjakan Oleh Operator: <span class="fw-bold text-dark"><?= htmlspecialchars($item->assigned_user) ?></span></div>
                                             <?php endif; ?>
                                         <?php elseif ($st === 'done' || $st === 'on_pb' || $st === 'on_costumer'): ?>
                                             <?php if (!empty($item->op_cetak_name)): ?>
-                                                <div class="text-muted"><i class="fas fa-print me-1"></i><span class="fw-bold text-dark"><?= htmlspecialchars($item->op_cetak_name) ?></span></div>
+                                                <div class="text-muted">Dikerjakan Oleh Operator: <span class="fw-bold text-dark"><?= htmlspecialchars($item->op_cetak_name) ?></span></div>
                                             <?php endif; ?>
                                             <?php if (!empty($item->op_finishing_name)): ?>
-                                                <div class="text-muted"><i class="fas fa-cut me-1"></i><span class="fw-bold text-dark"><?= htmlspecialchars($item->op_finishing_name) ?></span></div>
+                                                <div class="text-muted">Finishing oleh: <span class="fw-bold text-dark"><?= htmlspecialchars($item->op_finishing_name) ?></span></div>
                                             <?php endif; ?>
                                             
                                             <?php if ($st === 'on_costumer' && !empty($pb_oleh)): ?>
-                                                <div class="text-muted"><i class="fas fa-handshake me-1"></i>PB: <span class="fw-bold text-dark"><?= htmlspecialchars($pb_oleh) ?></span> (<?= htmlspecialchars($pb_via) ?>)</div>
+                                                <div class="text-muted">Diberikan ke konsumen oleh: <span class="fw-bold text-dark"><?= htmlspecialchars($pb_oleh) ?> (PB)</span> melalui: <span class="fw-bold text-dark"><?= htmlspecialchars($pb_via) ?></span></div>
                                                 <?php if (!empty($pb_note)): ?>
-                                                    <div class="text-muted"><i class="fas fa-comment-dots me-1"></i><span class="fst-italic text-dark"><?= htmlspecialchars($pb_note) ?></span></div>
+                                                    <div class="text-muted fst-italic"><i class="fas fa-comment-dots me-1"></i>Catatan PB: <span class="text-dark"><?= htmlspecialchars($pb_note) ?></span></div>
                                                 <?php endif; ?>
                                             <?php endif; ?>
                                         <?php endif; ?>
@@ -836,92 +836,7 @@
                                 </div>
                             <?php endif; ?>                        </div>
                     </td>
-                    <td class="text-center" style="vertical-align: middle;">
-                        <?php if (!empty($item->nama_jenis_transaksi)): ?>
-                            <?php 
-                                $is_marketplace = (strtoupper($item->nama_jenis_transaksi) === 'MARKETPLACE' && !empty($item->marketplace_nama));
-                                $display_metode = $is_marketplace ? $item->marketplace_nama : $item->nama_jenis_transaksi;
-                                $icon = 'fa-shopping-cart';
-                                $bg_class = 'bg-info';
-                                $border_class = 'border-info';
-                                $text_class = 'text-info-emphasis';
 
-                                if ($is_marketplace) {
-                                    $mn = strtolower($display_metode);
-                                    if (strpos($mn, 'shopee') !== false) {
-                                        $icon = 'fa-shopping-bag';
-                                        $bg_class = 'bg-danger';
-                                        $border_class = 'border-danger';
-                                        $text_class = 'text-danger';
-                                    } else if (strpos($mn, 'toko') !== false || strpos($mn, 'tokopedia') !== false) {
-                                        $icon = 'fa-store';
-                                        $bg_class = 'bg-success';
-                                        $border_class = 'border-success';
-                                        $text_class = 'text-success';
-                                    } else if (strpos($mn, 'tiktok') !== false) {
-                                        $icon = 'fa-music';
-                                        $bg_class = 'bg-dark';
-                                        $border_class = 'border-dark';
-                                        $text_class = 'text-dark';
-                                    } else if (strpos($mn, 'lazada') !== false) {
-                                        $icon = 'fa-heart';
-                                        $bg_class = 'bg-primary';
-                                        $border_class = 'border-primary';
-                                        $text_class = 'text-primary';
-                                    } else {
-                                        $icon = 'fa-store-alt';
-                                    }
-                                } else if (strtoupper($item->nama_jenis_transaksi) === 'ONLINE') {
-                                    $icon = 'fa-globe';
-                                    $bg_class = 'bg-primary';
-                                    $border_class = 'border-primary';
-                                    $text_class = 'text-primary';
-                                } else if (strtoupper($item->nama_jenis_transaksi) === 'EMAIL') {
-                                    $icon = 'fa-envelope';
-                                    $bg_class = 'bg-secondary';
-                                    $border_class = 'border-secondary';
-                                    $text_class = 'text-secondary';
-                                }
-                            ?>
-                            <span class="badge <?= $bg_class ?> bg-opacity-10 <?= $text_class ?> border <?= $border_class ?> border-opacity-25 shadow-sm fw-900 text-uppercase" style="font-size: 0.75rem;">
-                                <i class="fas <?= $icon ?> me-1"></i> <?= $display_metode ?>
-                            </span>
-                        <?php else: ?>
-                            <span class="badge bg-light text-dark border border-dark border-opacity-25 shadow-sm fw-900 text-uppercase" style="font-size: 0.75rem;">
-                                <i class="fas fa-store me-1"></i> OFFLINE
-                            </span>
-                        <?php endif; ?>
-                    </td>
-                    <!-- Lokasi Pesanan -->
-                    <td style="vertical-align: middle;">
-                        <?php
-                        $lokasi_cetak = $item->lokasi_cetak ?? 0;
-                        $lokasi_nama = 'CABANG LAIN';
-                        $branchColor = '#607d8b';
-                        if ($lokasi_cetak == 2) {
-                            $lokasi_nama = 'TGM OFFICIAL (PUSAT)';
-                            $branchColor = '#2196f3';
-                        } elseif ($lokasi_cetak == 3) {
-                            $lokasi_nama = 'TGM MERCH (CABANG)';
-                            $branchColor = '#ff9800';
-                        } else {
-                            $lokasi_nama = 'OFFLINE/CABANG';
-                        }
-                        ?>
-                        <div class="company-pill"
-                            style="color: <?= $branchColor ?>; border: 1px solid <?= $branchColor ?>20;">
-                            <div class="company-dot" style="background: <?= $branchColor ?>"></div>
-                            <?= $lokasi_nama ?>
-                        </div>
-                        <?php if ($item->perusahaan_id != $this->session->userdata('perusahaan_id')): ?>
-                            <span
-                                class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-10 rounded-pill pulse-red"
-                                style="padding: 3px 6px; font-size: 0.55rem; display: block; width: fit-content; margin-top: 5px;">
-                                <i class="fas fa-exchange-alt me-1"></i>TITIPAN DARI
-                                <?= strtoupper($item->nama_perusahaan ?? 'CABANG LAIN') ?>
-                            </span>
-                        <?php endif; ?>
-                    </td>
                     <td class="text-center" style="vertical-align: middle;">
                         <div class="d-flex flex-column align-items-center gap-1">
                             <?php
@@ -1064,49 +979,7 @@
                                 <?php endif; ?>
                             <?php endif; ?>
 
-                            <!-- Steps dropdown -->
-                            <?php if (!empty($item->routing_steps)): ?>
-                                <div class="dropdown">
-                                    <button class="btn-action-premium" style="background-color: #64748b; color: white;"
-                                        type="button" id="stepsDropdown<?= $item->produksi_id ?>" data-bs-toggle="dropdown"
-                                        aria-expanded="false" title="STEPS">
-                                        <i class="fas fa-route text-white"></i>
-                                    </button>
-                                    <ul class="dropdown-menu dropdown-menu-end shadow-lg border-0"
-                                        aria-labelledby="stepsDropdown<?= $item->produksi_id ?>"
-                                        style="max-height:220px; overflow-y:auto; border-radius: 8px; z-index: 1050;">
-                                        <?php foreach ($item->routing_steps as $step): ?>
-                                            <?php
-                                            $stepClass = 'bg-light text-muted border';
-                                            $icon = 'fa-circle text-muted opacity-50';
-                                            if ($step->status_produksi == '1') {
-                                                $stepClass = 'bg-warning text-dark border-warning shadow-sm pulse-orange';
-                                                $icon = 'fa-play-circle text-dark';
-                                            } elseif ($step->status_produksi == '2') {
-                                                $stepClass = 'bg-success text-white border-success opacity-75';
-                                                $icon = 'fa-check-circle text-white';
-                                            }
-                                            ?>
-                                            <li><a class="dropdown-item d-flex align-items-center py-2" href="#"
-                                                    style="font-size:0.75rem;">
-                                                    <span class="badge <?= $stepClass ?> me-2"
-                                                        style="font-size:0.55rem;padding:4px 6px;">
-                                                        <i class="fas <?= $icon ?> me-1"></i><?= strtoupper($step->routing_name) ?>
-                                                    </span>
-                                                </a></li>
-                                        <?php endforeach; ?>
-                                    </ul>
-                                </div>
-                            <?php endif; ?>
 
-                            <!-- Tag button -->
-                            <?php if ($item->kategori_id != 1): ?>
-                                <button type="button" class="btn-action-premium"
-                                    style="background-color: #ffb703; color: white;"
-                                    onclick="ProductionApp.previewTag('<?= $item->produksi_id ?>')" title="TAG">
-                                    <i class="fas fa-tag text-white"></i>
-                                </button>
-                            <?php endif; ?>
 
                             <!-- KE PB button -->
                             <?php if ($st === 'done' && $can_execute): ?>

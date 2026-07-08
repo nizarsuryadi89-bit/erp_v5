@@ -102,6 +102,16 @@ class Akun extends MY_Controller
         $data['karyawan'] = $this->db->get()->result();
 
         // Get all employees for edit form
+        $this->db->where("nik NOT LIKE 'STATION%'");
+        $this->db->where("nik NOT LIKE 'TERM%'");
+        $this->db->where('nama_lengkap NOT LIKE', '%Terminal%');
+        $this->db->where('nama_lengkap NOT LIKE', '%OPERATOR%');
+        $this->db->where('nama_lengkap NOT LIKE', '%DEPT%');
+        $this->db->where('nama_lengkap NOT LIKE', '%DTG%');
+        $this->db->where('nama_lengkap NOT LIKE', '%DTF%');
+        $this->db->where('nama_lengkap NOT LIKE', '%WORK CENTER%');
+        $this->db->where('nama_lengkap NOT LIKE', '%LARGE FORMAT%');
+        $this->db->where('nama_lengkap NOT LIKE', '%A3+%');
         $data['list_karyawan'] = $this->db->get('tbl_karyawan')->result();
 
         // Get other required data

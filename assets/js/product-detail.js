@@ -231,6 +231,9 @@ function displayRoutingData(data) {
                     </td>
                     <td class="text-center fw-bold text-primary-pro">${item.est_time || 0} Min</td>
                     <td class="text-end fw-bold text-success-pro">${formatPrice(item.labor_cost)}</td>
+                    <td class="text-center small text-muted">
+                        ${item.bom_material_name ? `<i class="bi bi-link-45deg text-primary"></i> ${item.bom_material_name}` : '-'}
+                    </td>
                     <td class="text-center">
                         <div class="d-flex justify-content-center gap-1">
                             <button type="button" class="btn btn-sm btn-light border" onclick='openEditRoutingModal(${JSON.stringify(item)})'><i class="bi bi-pencil"></i></button>
@@ -246,13 +249,25 @@ function displayRoutingData(data) {
 }
 
 function initializeRoutingSelect2() {
-    const modal = $('#modalEditRouting').is(':visible') ? $('#modalEditRouting') : null;
-    ['#operator_id', '#edit_operator_id'].forEach(s => $(s).select2({
-        placeholder: '-- Pilih --', allowClear: true, width: '100%', dropdownParent: modal,
+    // Select2 for Add Form (No Dropdown Parent)
+    ['#operator_id'].forEach(s => $(s).select2({
+        placeholder: '-- Pilih --', allowClear: true, width: '100%',
         ajax: { url: `${BASE_URL}manufaktur/get_operator_options`, dataType: 'json', delay: 250, data: p => ({ term: p.term }), processResults: d => ({ results: d.results || [] }) }
     }));
-    ['#bom_line_id', '#edit_bom_line_id_routing'].forEach(s => $(s).select2({
-        placeholder: '-- Pilih BOM --', allowClear: true, width: '100%', dropdownParent: modal,
+    ['#bom_line_id'].forEach(s => $(s).select2({
+        placeholder: '-- Pilih BOM --', allowClear: true, width: '100%',
+        ajax: { url: `${BASE_URL}manufaktur/get_bom_options`, dataType: 'json', delay: 250, data: p => ({ term: p.term, product_id: PRODUCT_ID }), processResults: d => ({ results: d.results || [] }) }
+    }));
+
+    // Select2 for Edit Modal
+    ['#edit_operator_id'].forEach(s => $(s).select2({
+        placeholder: '-- Pilih --', allowClear: true, width: '100%',
+        dropdownParent: $('#modalEditRouting'),
+        ajax: { url: `${BASE_URL}manufaktur/get_operator_options`, dataType: 'json', delay: 250, data: p => ({ term: p.term }), processResults: d => ({ results: d.results || [] }) }
+    }));
+    ['#edit_bom_line_id_routing'].forEach(s => $(s).select2({
+        placeholder: '-- Pilih BOM --', allowClear: true, width: '100%',
+        dropdownParent: $('#modalEditRouting'),
         ajax: { url: `${BASE_URL}manufaktur/get_bom_options`, dataType: 'json', delay: 250, data: p => ({ term: p.term, product_id: PRODUCT_ID }), processResults: d => ({ results: d.results || [] }) }
     }));
 }
@@ -303,6 +318,21 @@ function openEditRoutingModal(item) {
     } else {
         var newOption = new Option(bomText, bomId, true, true);
         $('#edit_bom_line_id_routing').append(newOption).trigger('change');
+    }
+
+    // Handle Operator Selection
+    const operatorId = item.operator_id || '';
+    const operatorText = item.operator_name || '-- Pilih --';
+    
+    if (operatorId) {
+        if ($('#edit_operator_id').find("option[value='" + operatorId + "']").length) {
+            $('#edit_operator_id').val(operatorId).trigger('change');
+        } else {
+            var opOption = new Option(operatorText, operatorId, true, true);
+            $('#edit_operator_id').append(opOption).trigger('change');
+        }
+    } else {
+        $('#edit_operator_id').val(null).trigger('change');
     }
 
     $('#modalEditRouting').modal('show');
