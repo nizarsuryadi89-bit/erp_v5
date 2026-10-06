@@ -592,10 +592,14 @@
                                 <div class="border-bottom pb-4 mb-4 d-flex justify-content-between align-items-center">
                                     <div>
                                         <h4 class="fw-bold mb-1 text-primary">INVOICE</h4>
-                                        <p class="text-muted mb-0 small">No. SPK: <span class="fw-bold text-dark">#${data.nospk}</span></p>
+                                        <p class="text-muted mb-0 small d-flex align-items-center gap-1">No. SPK: 
+                                            <span class="fw-bold text-dark cursor-pointer badge bg-light text-dark border p-1 d-inline-flex align-items-center gap-1 hover-shadow" onclick="navigator.clipboard.writeText('${data.nospk}').then(()=>Swal.fire({icon:'success',title:'Tersalin!',showConfirmButton:false,timer:1000}))" title="Klik untuk copy">
+                                                #${data.nospk} <i class="fas fa-copy text-muted"></i>
+                                            </span>
+                                        </p>
                                     </div>
                                     <div class="text-end">
-                                        <h5 class="fw-bold mb-0 text-dark"><?= isset($perusahaan) ? $perusahaan : 'TGM PRINT' ?></h5>
+                                        <h5 class="fw-bold mb-0 text-dark">${data.perusahaan_nama || '<?= isset($perusahaan) ? $perusahaan : 'TGM PRINT' ?>'}</h5>
                                         <small class="text-muted">Digital Printing Solutions</small>
                                     </div>
                                 </div>
@@ -632,6 +636,10 @@
                                     <td class="ps-3 py-3">
                                         <div class="fw-bold text-dark">${item.nama}</div>
                                         ${item.dimensi ? `<div class="small text-primary mt-1">${item.dimensi}</div>` : ''}
+                                        ${item.variasi && item.variasi.length > 0 ? 
+                                            `<div class="small text-muted mt-1 d-flex flex-wrap gap-1">
+                                                ${item.variasi.map(v => `<span class="badge bg-light text-dark border shadow-sm">${v.label}: <strong>${v.value}</strong></span>`).join('')}
+                                            </div>` : ''}
                                     </td>
                                     <td class="text-center py-3 fw-semibold">${item.qty}</td>
                                     <td class="text-end pe-3 py-3 fw-bold text-dark">${formatRupiah(item.subtotal)}</td>
@@ -665,23 +673,43 @@
                 }, 'json');
             }
 
+            function buildInvoiceMessage(data) {
+                let text = `${data.perusahaan_nama}\n`;
+                text += `*NOMOR INVOICE*\n*${data.nospk}*\n`;
+                text += `Pelanggan Yth : *${data.konsumen}*\n`;
+                text += `====================== \n`;
+                text += `Detail pesanan:\n`;
+                text += `Layanan:\n`;
+
+                let grandTotal = 0;
+                data.items.forEach(item => {
+                    grandTotal += (item.subtotal || 0);
+                    let dim = item.dimensi ? `, ${item.dimensi}` : '';
+                    let varText = item.variasi && item.variasi.length > 0 ? ' - ' + item.variasi.map(v => `${v.label}: ${v.value}`).join(' - ') : '';
+                    let rawSatuan = (item.satuan || 'pcs').toLowerCase().trim();
+                    let satuan = (['m', 'meter', 'meteran', 'm2', 'cm', 'cm2'].includes(rawSatuan) || item.dimensi) ? 'pcs' : (item.satuan || 'pcs');
+                    text += `✅ *${item.nama}* (${item.qty} ${satuan})${dim}${varText}\n`;
+                    text += `@ ${formatRupiah(item.harga)}, Total *${formatRupiah(item.subtotal)}*\n\n`;
+                });
+
+                const totalTagihan = (data.total_tagihan && data.total_tagihan > 0) ? data.total_tagihan : grandTotal;
+
+                text += `====================== \n`;
+                text += `Total tagihan : *${formatRupiah(totalTagihan)}*\n\n`;
+
+                // URL portal terpisah
+                const portal_tracking_url = 'https://tracking.tgmprint.com';
+                text += `Cek detail dan cetak invoice di:\n${portal_tracking_url}?spk=${data.nospk_encrypted_safe}\n\n`;
+
+                text += `Terima kasih sudah berbelanja di TGM MERCH & TGM PRINT\n\n`;
+                text += `#BikinMerchLebihMore`;
+
+                return text;
+            }
+
             window.copyInvoiceText = function () {
                 if (!currentPreviewData) return;
-                const data = currentPreviewData;
-                let text = `*INVOICE #${data.nospk}*\n`;
-                text += `Pelanggan: ${data.konsumen}\n`;
-                text += `--------------------------------\n`;
-                data.items.forEach(item => {
-                    text += `• ${item.nama} (x${item.qty}) - ${formatRupiah(item.subtotal)}\n`;
-                    if (item.dimensi) {
-                        text += `  ${item.dimensi}\n`;
-                    }
-                });
-                text += `--------------------------------\n`;
-                text += `*Total: ${data.grandTotalFormatted}*\n`;
-                text += `\nLink Invoice: <?= base_url() ?>cekpesanan/spk/${data.nospk_encrypted_safe}\n`;
-                text += `Terima Kasih - <?= isset($perusahaan) ? $perusahaan : 'TGM PRINT' ?>`;
-
+                const text = buildInvoiceMessage(currentPreviewData);
                 navigator.clipboard.writeText(text).then(() => {
                     Swal.fire({ icon: 'success', title: 'Tersalin!', showConfirmButton: false, timer: 1000 });
                 });
@@ -689,17 +717,8 @@
 
             window.kirimWA = function () {
                 if (!currentPreviewData) return;
-                const data = currentPreviewData;
-                let text = `*Halo ${data.konsumen},*\n\nBerikut rincian pesanan Anda:\n*No SPK:* #${data.nospk}\n\n`;
-                data.items.forEach(item => {
-                    text += `• ${item.nama} (x${item.qty}): ${formatRupiah(item.subtotal)}\n`;
-                    if (item.dimensi) {
-                        text += `  ${item.dimensi}\n`;
-                    }
-                });
-                text += `\n*Total Tagihan: ${data.grandTotalFormatted}*\n\n`;
-                text += `Cek detail di: <?= base_url() ?>cekpesanan/spk/${data.nospk_encrypted_safe}\n\nTerima kasih!`;
-                window.open(`https://api.whatsapp.com/send?phone=${data.nohp}&text=${encodeURIComponent(text)}`, '_blank');
+                const text = buildInvoiceMessage(currentPreviewData);
+                window.open(`https://api.whatsapp.com/send?phone=${currentPreviewData.nohp}&text=${encodeURIComponent(text)}`, '_blank');
             }
 
             window.hapusSPK = function (nospk) {

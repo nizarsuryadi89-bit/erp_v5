@@ -34,41 +34,79 @@ class M_penjualan extends CI_Model
      */
     public function getSalesCalendarData($year, $month, $access_params = null)
     {
-        $this->db->select('DATE(tgl_bayar) as tanggal, COUNT(*) as jumlah_transaksi, SUM(total_bayar) as total_penjualan');
-        $this->db->from('tbl_pembayaran');
-        $this->db->where('YEAR(tgl_bayar)', $year);
-        $this->db->where('MONTH(tgl_bayar)', $month);
-        $this->db->where('status_lunas', '1'); // Only completed transactions
+        $this->db->select('DATE(p.tgl_bayar) as tanggal, p.perusahaan_id, c.nama_perusahaan, COUNT(*) as jumlah_transaksi, SUM(p.total_bayar) as total_penjualan');
+        $this->db->from('tbl_pembayaran p');
+        $this->db->join('tbl_perusahaan c', 'c.id_perusahaan = p.perusahaan_id', 'left');
+        $this->db->where('YEAR(p.tgl_bayar)', $year);
+        $this->db->where('MONTH(p.tgl_bayar)', $month);
+        $this->db->where('p.status_lunas', '1'); // Only completed transactions
 
         // Apply access control if provided
         if ($access_params && $access_params['filter_branch']) {
             if (isset($access_params['filter_by_user']) && $access_params['filter_by_user']) {
                 // Filter by user (kasir can only see their own transactions)
-                $this->db->where('kasir_id', $access_params['branch_id']);
+                $this->db->where('p.kasir_id', $access_params['branch_id']);
             } else if (isset($access_params['filter_by_branch']) && $access_params['filter_by_branch']) {
                 // Filter by branch (admin/owner can only see their company's transactions)
-                $this->db->where('perusahaan_id', $access_params['branch_id']);
+                $this->db->where('p.perusahaan_id', $access_params['branch_id']);
             }
         }
 
-        $this->db->group_by('DATE(tgl_bayar)');
+        $this->db->group_by(array('DATE(p.tgl_bayar)', 'p.perusahaan_id'));
         $this->db->order_by('tanggal', 'ASC');
 
         $result = $this->db->get()->result();
 
         // Format data for FullCalendar
         $events = [];
+        $show_all = isset($access_params['show_all_branches']) && $access_params['show_all_branches'];
+        
+        // Define colors for each branch if showing all
+        $branch_colors = [
+            '2' => '#0d6efd', // Blue
+            '3' => '#fd7e14', // Orange
+            '4' => '#6f42c1', // Purple
+            '5' => '#198754', // Green
+        ];
+
         foreach ($result as $row) {
+            $color = $this->getColorByAmount($row->total_penjualan);
+            $title = number_format($row->total_penjualan, 0, ',', '.');
+            $short_name = '';
+
+            if ($show_all) {
+                // Determine distinct color based on branch ID
+                if (isset($branch_colors[$row->perusahaan_id])) {
+                    $color = $branch_colors[$row->perusahaan_id];
+                } else {
+                    $color = '#6c757d'; // Default gray if ID not in map
+                }
+
+                if (!empty($row->nama_perusahaan)) {
+                    if (stripos($row->nama_perusahaan, 'Official') !== false || stripos($row->nama_perusahaan, 'Pusat') !== false) {
+                        $short_name = 'Pst';
+                    } elseif (stripos($row->nama_perusahaan, 'Merch') !== false || stripos($row->nama_perusahaan, 'Cabang') !== false) {
+                        $short_name = 'Cbg';
+                    } else {
+                        // fallback to first word
+                        $words = explode(' ', trim($row->nama_perusahaan));
+                        $short_name = substr($words[0], 0, 3);
+                    }
+                    $title = $short_name . ': ' . $title;
+                }
+            }
+
             $events[] = [
-                'title' => number_format($row->total_penjualan, 0, ',', '.'),
+                'title' => $title,
                 'start' => $row->tanggal,
                 'jumlah_transaksi' => $row->jumlah_transaksi,
                 'total_penjualan' => $row->total_penjualan,
-                'backgroundColor' => $this->getColorByAmount($row->total_penjualan),
-                'borderColor' => $this->getColorByAmount($row->total_penjualan),
+                'backgroundColor' => $color,
+                'borderColor' => $color,
                 'extendedProps' => [
                     'transactions' => $row->jumlah_transaksi,
-                    'amount' => $row->total_penjualan
+                    'amount' => $row->total_penjualan,
+                    'branch' => $row->nama_perusahaan
                 ]
             ];
         }

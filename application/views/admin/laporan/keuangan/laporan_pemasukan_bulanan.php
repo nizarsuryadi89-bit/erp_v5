@@ -491,7 +491,12 @@ $bulan_ini = $this->input->get('bulan') ?: date('Y-m');
                     <div class="p-4 border-bottom d-flex justify-content-between align-items-center bg-white">
                         <h6 class="fw-900 text-dark mb-0 ls-n1"><i class="fas fa-history me-2 text-primary"></i>AUDIT
                             TRANSACTION LOG</h6>
-                        <span class="badge bg-light text-muted fw-bold"><?= count($pemasukan_list) ?> ENTRIES</span>
+                        <div class="d-flex align-items-center" style="gap: 10px;">
+                            <span class="badge bg-light text-muted fw-bold p-2"><?= count($pemasukan_list) ?> ENTRIES</span>
+                            <a href="<?= base_url('laporan/cetak_transaksi_bulanan?perusahaan_id=' . $current_perusahaan_id . '&bulan=' . $bulan_ini) ?>" target="_blank" class="btn btn-sm btn-danger fw-900 px-3 py-1 shadow-sm rounded-3">
+                                <i class="fas fa-file-pdf me-1"></i> PDF
+                            </a>
+                        </div>
                     </div>
 
                     <div class="p-3 bg-light border-bottom no-print">
@@ -524,8 +529,12 @@ $bulan_ini = $this->input->get('bulan') ?: date('Y-m');
                                         </td>
                                         <td>
                                             <div class="fw-900 text-dark"><?= $trx['nospk'] ?></div>
-                                            <div class="small fw-bold text-muted">
-                                                <?= $trx['konsumen'] ?: 'UMUM/NON-MEMBER' ?></div>
+                                            <div class="small fw-bold text-muted mb-1">
+                                                <i class="fas fa-user text-primary opacity-75 me-1"></i> <?= $trx['konsumen'] ?: 'UMUM/NON-MEMBER' ?>
+                                            </div>
+                                            <div class="small text-muted" style="font-size: 0.7rem; line-height: 1.2;">
+                                                <i class="fas fa-box text-secondary opacity-75 me-1"></i> <?= $trx['produk'] ?: '-' ?>
+                                            </div>
                                         </td>
                                         <td class="text-end fw-bold monospaced">Rp
                                             <?= number_format($trx['total_tagihan'], 0, ',', '.') ?></td>

@@ -239,12 +239,30 @@ class ErrorLog extends MY_Controller
                     $logs[] = $current_log;
                 }
 
-                $analysis = $this->_translate_error($matches[3]);
+                $raw_message = $matches[3];
+                $error_file = $filename; // default to log filename
+                $error_line = '';
+
+                // Try to extract actual file and line number if present at the end of the message (Standard CI Warning/Notice format)
+                // Format: Message ... /path/to/file.php 123
+                if (preg_match('/(.*?)(\/[^\s]+\.php)\s+(\d+)$/i', $raw_message, $path_matches)) {
+                    $raw_message = trim($path_matches[1]);
+                    // Only keep the application part for cleaner display
+                    $app_pos = strpos($path_matches[2], 'application/');
+                    if ($app_pos !== false) {
+                        $error_file = substr($path_matches[2], $app_pos) . ':' . $path_matches[3];
+                    } else {
+                        $error_file = basename($path_matches[2]) . ':' . $path_matches[3];
+                    }
+                }
+
+                $analysis = $this->_translate_error($raw_message);
                 $current_log = array(
                     'datetime' => $matches[1],
                     'severity' => (isset($matches[2]) && !empty($matches[2])) ? $matches[2] : 'Error',
-                    'message' => $matches[3],
-                    'filename' => $filename,
+                    'message' => $raw_message,
+                    'filename' => $error_file,
+                    'log_file' => $filename,
                     'full_line' => $line,
                     'indo_message' => $analysis['message'],
                     'simple_level' => $analysis['level'],
@@ -254,6 +272,18 @@ class ErrorLog extends MY_Controller
                 // If the line doesn't start with ERROR -, it's likely a continuation (stack trace or multiline query)
                 $current_log['message'] .= "\n" . $line;
                 $current_log['full_line'] .= "\n" . $line;
+                
+                // Try to extract Filename: and Line Number: from continuation lines (CI DB Error format)
+                if (preg_match('/Filename:\s+(.+)/i', $line, $fmatch)) {
+                    $app_pos = strpos($fmatch[1], 'application/');
+                    $fpath = ($app_pos !== false) ? substr($fmatch[1], $app_pos) : basename($fmatch[1]);
+                    $current_log['filename'] = $fpath;
+                }
+                if (preg_match('/Line Number:\s+(\d+)/i', $line, $lmatch)) {
+                    if (strpos($current_log['filename'], ':') === false) {
+                        $current_log['filename'] .= ':' . $lmatch[1];
+                    }
+                }
 
                 // Update analysis for longer messages
                 $analysis = $this->_translate_error($current_log['message']);
@@ -386,18 +416,26 @@ class ErrorLog extends MY_Controller
         ];
 
         // 1. Critical Errors (System Break / Database)
-        if (stripos($msg, 'Query error') !== false || stripos($msg, 'Database error') !== false) {
-            $res['message'] = 'Gagal memproses data ke database. Kemungkinan struktur tabel tidak cocok atau database sibuk.';
+        if (stripos($msg, 'Query error') !== false || stripos($msg, 'Database error') !== false || stripos($msg, "doesn't exist") !== false || stripos($msg, 'Unknown column') !== false) {
+            $res['message'] = 'Gagal memproses data ke database. Kemungkinan struktur tabel tidak cocok, kolom tidak ditemukan, atau database bermasalah.';
             $res['level'] = 'KRITIS';
-            $res['solution'] = 'Periksa apakah ada perubahan tabel terbaru atau kolom yang kurang.';
+            $res['solution'] = 'Periksa kode query dan pastikan struktur tabel/kolom di database sudah sesuai (sync).';
         } elseif (stripos($msg, 'Undefined variable') !== false || stripos($msg, 'Undefined index') !== false) {
-            $res['message'] = 'Sistem mencoba memanggil data yang tidak ada atau belum terisi.';
+            $res['message'] = 'Sistem mencoba memanggil data variabel yang tidak ada atau belum dideklarasikan.';
             $res['level'] = 'RINGAN';
-            $res['solution'] = 'Pastikan semua formulir diisi dengan lengkap sebelum disimpan.';
+            $res['solution'] = 'Pastikan semua form diisi lengkap, dan variabel terkait diset nilai default-nya pada kode.';
         } elseif (stripos($msg, 'syntax error') !== false || stripos($msg, 'Parse error') !== false) {
-            $res['message'] = 'Terjadi kesalahan pengetikan pada struktur kode sistem.';
+            $res['message'] = 'Terjadi kesalahan pengetikan pada struktur kode sistem (Syntax Error).';
             $res['level'] = 'KRITIS';
-            $res['solution'] = 'Segera lapor ke pengembang (Nizar) untuk perbaikan baris kode tersebut.';
+            $res['solution'] = 'Segera lapor ke pengembang (Nizar) untuk perbaikan struktur baris kode tersebut.';
+        } elseif (stripos($msg, 'Invalid argument supplied for foreach()') !== false) {
+            $res['message'] = 'Data yang seharusnya berisi daftar (array) untuk dilakukan perulangan (foreach) ternyata kosong, null, atau tidak berformat array.';
+            $res['level'] = 'RINGAN';
+            $res['solution'] = 'Pastikan data yang ingin diulang (tabel/list) tersedia di database. Tambahkan validasi is_array() sebelum foreach di baris kode terkait.';
+        } elseif (stripos($msg, 'Call to a member function') !== false || stripos($msg, 'Undefined property') !== false || stripos($msg, 'Trying to get property') !== false) {
+            $res['message'] = 'Sistem mencoba memanggil fungsi atau properti dari objek yang kosong (null/tidak valid).';
+            $res['level'] = 'KRITIS';
+            $res['solution'] = 'Kemungkinan gagal memuat data referensi dari database. Cek logika relasi objek pada kode sumber.';
         }
 
         // 2. Navigation / Access (Usually Minor)

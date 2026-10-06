@@ -265,9 +265,13 @@ $total_semua = (isset($stats['antrian']) ? $stats['antrian'] : 0) + (isset($stat
                 Proses Produksi <span
                     class="badge-count"><?= isset($stats['produksi']) ? $stats['produksi'] : 0 ?></span>
             </div>
+            <div class="status-tab tab-proses <?= ($fs_view === 'finishing') ? 'active' : '' ?>"
+                onclick="updateWipFilter('status_view', 'finishing')">
+                Finishing <span class="badge-count"><?= (int) ($stats['finishing'] ?? 0) ?></span>
+            </div>
             <div class="status-tab tab-selesai <?= ($fs_view === 'ready_pb') ? 'active' : '' ?>"
                 onclick="updateWipFilter('status_view', 'ready_pb')">
-                Proses Finishing (QC) <span
+                Siap Serah Terima PB <span
                     class="badge-count"><?= isset($stats['selesai']) ? $stats['selesai'] : 0 ?></span>
             </div>
             <div class="status-tab tab-pb <?= ($fs_view === 'pb') ? 'active' : '' ?>"

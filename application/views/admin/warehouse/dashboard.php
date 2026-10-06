@@ -43,9 +43,17 @@
 
     /* NEW Feature Badge */
     @keyframes glow-new {
-        0%, 100% { box-shadow: 0 0 6px rgba(99,102,241,0.6), 0 0 0 0 rgba(99,102,241,0.4); }
-        50%       { box-shadow: 0 0 12px rgba(99,102,241,0.9), 0 0 8px rgba(99,102,241,0.3); }
+
+        0%,
+        100% {
+            box-shadow: 0 0 6px rgba(99, 102, 241, 0.6), 0 0 0 0 rgba(99, 102, 241, 0.4);
+        }
+
+        50% {
+            box-shadow: 0 0 12px rgba(99, 102, 241, 0.9), 0 0 8px rgba(99, 102, 241, 0.3);
+        }
     }
+
     .badge-new-feature {
         display: inline-block;
         background: linear-gradient(135deg, #6366f1, #4338ca);
@@ -70,9 +78,11 @@
     .warehouse-dashboard {
         background: var(--primary-gradient);
         color: white;
-        padding: 1.5rem 0 3.25rem 0; /* Compact padding */
+        padding: 1.5rem 0 3.25rem 0;
+        /* Compact padding */
         margin-bottom: 0;
-        border-radius: 0 0 24px 24px; /* Tighter curves */
+        border-radius: 0 0 24px 24px;
+        /* Tighter curves */
         box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
         position: relative;
         overflow: hidden;
@@ -99,7 +109,8 @@
     }
 
     .dashboard-icon {
-        width: 52px; /* Compact icon container */
+        width: 52px;
+        /* Compact icon container */
         height: 52px;
         background: rgba(255, 255, 255, 0.12);
         border-radius: 16px;
@@ -114,7 +125,8 @@
     }
 
     .dashboard-title {
-        font-size: 1.75rem; /* Smaller premium title */
+        font-size: 1.75rem;
+        /* Smaller premium title */
         font-weight: 900;
         margin: 0;
         letter-spacing: -0.5px;
@@ -122,7 +134,8 @@
     }
 
     .dashboard-subtitle {
-        font-size: 0.85rem; /* Compact subtitle */
+        font-size: 0.85rem;
+        /* Compact subtitle */
         font-weight: 700;
         margin: 0 0 2px 0;
         opacity: 0.7;
@@ -141,11 +154,14 @@
     }
 
     .btn-premium {
-        border-radius: 10px; /* More compact curves */
-        padding: 0.45rem 1rem; /* Sleeker padding */
+        border-radius: 10px;
+        /* More compact curves */
+        padding: 0.45rem 1rem;
+        /* Sleeker padding */
         font-weight: 800;
         text-transform: uppercase;
-        font-size: 0.7rem; /* Smaller premium text */
+        font-size: 0.7rem;
+        /* Smaller premium text */
         letter-spacing: 0.5px;
         transition: all 0.3s;
         text-decoration: none !important;
@@ -160,7 +176,8 @@
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
         gap: 1.75rem;
-        margin-top: -2.5rem; /* Compact alignment */
+        margin-top: -2.5rem;
+        /* Compact alignment */
         position: relative;
         z-index: 10;
         padding-bottom: 2.5rem;
@@ -894,25 +911,30 @@
     <div class="container-fluid px-4">
         <!-- ================= HIGH-LEVEL STATS ================= -->
         <div class="stats-overview">
-            <div class="stat-card">
+            <div class="stat-card" data-bs-toggle="modal" data-bs-target="#modalTodayTransactions"
+                onclick="loadTodayTransactions('inbound')" style="cursor: pointer;">
                 <div class="stat-header">
-                    <div class="stat-icon warehouse"><i class="fa fa-warehouse"></i></div>
+                    <div class="stat-icon warehouse" style="background: var(--info-gradient);"><i
+                            class="fa fa-truck-loading"></i></div>
                     <div class="stat-info">
-                        <h3 id="stat-total-gudang">0</h3>
-                        <p>Total Gudang</p>
+                        <h3 id="stat-inbound-today">0</h3>
+                        <p>Barang Masuk (Hari Ini)</p>
                     </div>
                 </div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card" data-bs-toggle="modal" data-bs-target="#modalTodayTransactions"
+                onclick="loadTodayTransactions('outbound')" style="cursor: pointer;">
                 <div class="stat-header">
-                    <div class="stat-icon materials"><i class="fa fa-boxes"></i></div>
+                    <div class="stat-icon materials" style="background: var(--primary-gradient);"><i
+                            class="fa fa-paper-plane"></i></div>
                     <div class="stat-info">
-                        <h3 id="stat-total-material">0</h3>
-                        <p>Item Material</p>
+                        <h3 id="stat-outbound-today">0</h3>
+                        <p>Barang Keluar (Hari Ini)</p>
                     </div>
                 </div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card" onclick="location.href='<?= base_url('warehouse/laporan_stok_kritis') ?>'"
+                style="cursor: pointer;">
                 <div class="stat-header">
                     <div class="stat-icon low-stock"><i class="fa fa-exclamation-triangle"></i></div>
                     <div class="stat-info">
@@ -940,85 +962,147 @@
                     </div>
                 </div>
             </div>
+            <div class="stat-card" onclick="location.href='<?= base_url('warehouse/audit_log') ?>'"
+                style="cursor: pointer;">
+                <div class="stat-header">
+                    <div class="stat-icon bg-secondary text-white"><i class="fa fa-history"></i></div>
+                    <div class="stat-info">
+                        <h3>Audit</h3>
+                        <p>Rekam Jejak & Log</p>
+                    </div>
+                </div>
+            </div>
+            <div class="stat-card" onclick="location.href='<?= base_url('warehouse/laporan_pembelian') ?>'"
+                style="cursor: pointer;">
+                <div class="stat-header">
+                    <div class="stat-icon" style="background: var(--success-gradient); color: white;"><i
+                            class="fa fa-money-bill-wave"></i></div>
+                    <div class="stat-info">
+                        <h3 id="stat-monthly-spending" style="font-size: 1.2rem;">Rp 0</h3>
+                        <p>Total Belanja Bulan Ini</p>
+                    </div>
+                </div>
+            </div>
+            <div class="stat-card" onclick="location.href='<?= base_url('warehouse/stock_report') ?>'"
+                style="cursor: pointer;">
+                <div class="stat-header">
+                    <div class="stat-icon" style="background: var(--warning-gradient); color: white;"><i
+                            class="fa fa-boxes"></i></div>
+                    <div class="stat-info">
+                        <h3 id="stat-inventory-value" style="font-size: 1.2rem;">Rp 0</h3>
+                        <p>Nilai Aset Gudang</p>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- ================= PRODUCT REGISTRATION WORKFLOW ================= -->
         <div class="registration-workflow mb-5">
-            <div class="card border-0 shadow-sm overflow-hidden" style="border-radius: 28px; background: white;">
+            <div class="card border-0 shadow-sm overflow-hidden"
+                style="border-radius: 28px; background: white; border: 1px solid var(--border-color) !important;">
                 <div class="row g-0">
-                    <div class="col-lg-3 bg-primary p-4 d-flex flex-column justify-content-center text-white">
-                        <h4 class="fw-900 mb-2 mt-0"><i class="fas fa-project-diagram me-2"></i>SOP GUDANG</h4>
-                        <p class="small opacity-75 mb-0">Ikuti 6 langkah sistematis ini untuk manajemen stok yang akurat
-                            dan tanpa selisih.</p>
+                    <div class="col-lg-3 p-4 d-flex flex-column justify-content-center text-white"
+                        style="background: #334155;">
+                        <h4 class="fw-900 mb-2 mt-0"><i class="fa fa-clipboard-check text-warning me-2"></i>SOP HARIAN
+                        </h4>
+                        <p class="small opacity-75 mb-0" style="line-height: 1.5;">Ikuti 6 rutinitas ini setiap hari
+                            (Pagi - Sore) untuk memastikan tidak ada selisih stok gudang.</p>
                     </div>
-                    <div class="col-lg-9 p-0">
+                    <div class="col-lg-9 p-0 bg-white">
                         <div class="row g-0 h-100">
                             <!-- STEP 1 -->
-                            <div class="col border-end">
-                                <a href="<?= base_url('warehouse/materials_jasa') ?>"
+                            <div class="col border-end position-relative">
+                                <a href="<?= base_url('warehouse/requests') ?>"
                                     class="text-decoration-none p-3 d-block h-100 workflow-step">
-                                    <div class="text-center">
-                                        <div class="step-number mx-auto mb-2">1</div>
-                                        <h6 class="fw-900 text-dark mb-1 small">MASTER INDUK</h6>
-                                        <p class="text-muted mb-0" style="font-size: 0.6rem;">Satuan Dasar (Lembar/Pcs)
-                                        </p>
+                                    <div
+                                        class="text-center position-relative h-100 d-flex flex-column justify-content-center">
+                                        <div class="step-number mx-auto mb-2"
+                                            style="background:#fee2e2; color:#ef4444; border: 2px solid #fca5a5;">1
+                                        </div>
+                                        <h6 class="fw-900 mb-1 small" style="color: #ef4444;">PENGAJUAN</h6>
+                                        <p class="text-muted mb-0" style="font-size: 0.6rem;">Validasi Permintaan</p>
+                                        <i class="fa fa-chevron-right position-absolute top-50 end-0 translate-middle-y text-muted opacity-25 me-2"
+                                            style="font-size: 0.7rem;"></i>
                                     </div>
                                 </a>
                             </div>
                             <!-- STEP 2 -->
-                            <div class="col border-end">
-                                <a href="<?= base_url('warehouse/materials') ?>"
+                            <div class="col border-end position-relative">
+                                <a href="<?= base_url('warehouse/laporan_stok_kritis') ?>"
                                     class="text-decoration-none p-3 d-block h-100 workflow-step">
-                                    <div class="text-center">
-                                        <div class="step-number mx-auto mb-2">2</div>
-                                        <h6 class="fw-900 text-dark mb-1 small">VARIAN UNIT</h6>
-                                        <p class="text-muted mb-0" style="font-size: 0.6rem;">Konversi Kemasan
-                                            (Box/Roll)</p>
+                                    <div
+                                        class="text-center position-relative h-100 d-flex flex-column justify-content-center">
+                                        <div class="step-number mx-auto mb-2"
+                                            style="background:#fef3c7; color:#f59e0b; border: 2px solid #fde68a;">2
+                                        </div>
+                                        <h6 class="fw-900 mb-1 small" style="color: #f59e0b;">STOK KRITIS</h6>
+                                        <p class="text-muted mb-0" style="font-size: 0.6rem;">Cek Batas Minimum</p>
+                                        <i class="fa fa-chevron-right position-absolute top-50 end-0 translate-middle-y text-muted opacity-25 me-2"
+                                            style="font-size: 0.7rem;"></i>
                                     </div>
                                 </a>
                             </div>
                             <!-- STEP 3 -->
-                            <div class="col border-end">
-                                <a href="<?= base_url('warehouse/opname') ?>"
-                                    class="text-decoration-none p-3 d-block h-100 workflow-step step-danger">
-                                    <div class="text-center">
-                                        <div class="step-number mx-auto mb-2" style="background:#fee2e2; color:#ef4444; border-color:#fca5a5;">3</div>
-                                        <h6 class="fw-900 text-danger mb-1 small">KOREKSI OPNAME</h6>
-                                        <p class="text-danger mb-0" style="font-size: 0.6rem;">Audit/Koreksi Fisik</p>
+                            <div class="col border-end position-relative">
+                                <a href="<?= base_url('warehouse/purchase') ?>"
+                                    class="text-decoration-none p-3 d-block h-100 workflow-step">
+                                    <div
+                                        class="text-center position-relative h-100 d-flex flex-column justify-content-center">
+                                        <div class="step-number mx-auto mb-2"
+                                            style="background:#e0f2fe; color:#0ea5e9; border: 2px solid #bae6fd;">3
+                                        </div>
+                                        <h6 class="fw-900 mb-1 small" style="color: #0ea5e9;">INBOUND</h6>
+                                        <p class="text-muted mb-0" style="font-size: 0.6rem;">Penerimaan Supplier</p>
+                                        <i class="fa fa-chevron-right position-absolute top-50 end-0 translate-middle-y text-muted opacity-25 me-2"
+                                            style="font-size: 0.7rem;"></i>
                                     </div>
                                 </a>
                             </div>
                             <!-- STEP 4 -->
-                            <div class="col border-end">
-                                <a href="<?= base_url('warehouse/purchase') ?>"
+                            <div class="col border-end position-relative">
+                                <a href="<?= base_url('warehouse/dispatch') ?>"
                                     class="text-decoration-none p-3 d-block h-100 workflow-step">
-                                    <div class="text-center">
-                                        <div class="step-number mx-auto mb-2">4</div>
-                                        <h6 class="fw-900 text-dark mb-1 small">STOK MASUK</h6>
-                                        <p class="text-muted mb-0" style="font-size: 0.6rem;">Pembelian / Restock Supplier
-                                        </p>
+                                    <div
+                                        class="text-center position-relative h-100 d-flex flex-column justify-content-center">
+                                        <div class="step-number mx-auto mb-2"
+                                            style="background:#e0e7ff; color:#3b82f6; border: 2px solid #bfdbfe;">4
+                                        </div>
+                                        <h6 class="fw-900 mb-1 small" style="color: #3b82f6;">OUTBOUND</h6>
+                                        <p class="text-muted mb-0" style="font-size: 0.6rem;">Kirim ke Produksi</p>
+                                        <i class="fa fa-chevron-right position-absolute top-50 end-0 translate-middle-y text-muted opacity-25 me-2"
+                                            style="font-size: 0.7rem;"></i>
                                     </div>
                                 </a>
                             </div>
                             <!-- STEP 5 -->
-                            <div class="col border-end">
-                                <a href="<?= base_url('warehouse/dispatch') ?>"
+                            <div class="col border-end position-relative">
+                                <a href="<?= base_url('warehouse/ledger') ?>"
                                     class="text-decoration-none p-3 d-block h-100 workflow-step">
-                                    <div class="text-center">
-                                        <div class="step-number mx-auto mb-2">5</div>
-                                        <h6 class="fw-900 text-dark mb-1 small">DISPATCH</h6>
-                                        <p class="text-muted mb-0" style="font-size: 0.6rem;">Kirim Stok Ke Produksi</p>
+                                    <div
+                                        class="text-center position-relative h-100 d-flex flex-column justify-content-center">
+                                        <div class="step-number mx-auto mb-2"
+                                            style="background:#f1f5f9; color:#64748b; border: 2px solid #e2e8f0;">5
+                                        </div>
+                                        <h6 class="fw-900 mb-1 small" style="color: #475569;">KARTU STOK</h6>
+                                        <p class="text-muted mb-0" style="font-size: 0.6rem;">Sinkronisasi Akhir</p>
+                                        <i class="fa fa-chevron-right position-absolute top-50 end-0 translate-middle-y text-muted opacity-25 me-2"
+                                            style="font-size: 0.7rem;"></i>
                                     </div>
                                 </a>
                             </div>
                             <!-- STEP 6 -->
-                            <div class="col">
-                                <a href="<?= base_url('warehouse/stock') ?>"
+                            <div class="col position-relative">
+                                <a href="<?= base_url('warehouse/opname') ?>"
                                     class="text-decoration-none p-3 d-block h-100 workflow-step">
-                                    <div class="text-center">
-                                        <div class="step-number mx-auto mb-2">6</div>
-                                        <h6 class="fw-900 text-dark mb-1 small">MONITORING</h6>
-                                        <p class="text-muted mb-0" style="font-size: 0.6rem;">Live Stok & Sisa Bahan</p>
+                                    <div
+                                        class="text-center position-relative h-100 d-flex flex-column justify-content-center">
+                                        <div class="step-number mx-auto mb-2"
+                                            style="background:#d1fae5; color:#10b981; border: 2px solid #a7f3d0;">6
+                                        </div>
+                                        <h6 class="fw-900 mb-1 small" style="color: #10b981;">OPNAME</h6>
+                                        <p class="text-muted mb-0" style="font-size: 0.6rem;">Cek Fisik Harian</p>
+                                        <i class="fa fa-chevron-right position-absolute top-50 end-0 translate-middle-y text-muted opacity-25 me-2"
+                                            style="font-size: 0.7rem;"></i>
                                     </div>
                                 </a>
                             </div>
@@ -1085,19 +1169,19 @@
                 </a>
                 <a href="<?= base_url('warehouse/order') ?>" class="action-btn">
                     <i class="fa fa-shopping-cart" style="color: #6366f1;"></i>
-                    <span>2. Pemesanan</span>
+                    <span>2. Dokumen PO</span>
                 </a>
                 <a href="<?= base_url('warehouse/purchase') ?>" class="action-btn">
                     <i class="fa fa-truck-loading" style="color: #ec4899;"></i>
-                    <span>3. Pembelian</span>
+                    <span>3. Inbound (Penerimaan)</span>
                 </a>
                 <a href="<?= base_url('warehouse/stock') ?>" class="action-btn">
                     <i class="fa fa-boxes" style="color: #8b5cf6;"></i>
-                    <span>4. Update Stok</span>
+                    <span>4. Penyesuaian Stok</span>
                 </a>
                 <a href="<?= base_url('warehouse/dispatch') ?>" class="action-btn">
                     <i class="fa fa-paper-plane" style="color: #06b6d4;"></i>
-                    <span>5. Dispatch</span>
+                    <span>5. Outbound (Pengeluaran)</span>
                 </a>
                 <a href="<?= base_url('warehouse/opname') ?>" class="action-btn">
                     <i class="fa fa-check-double" style="color: #10b981;"></i>
@@ -1115,6 +1199,11 @@
                     <i class="fa fa-desktop" style="color: #3b82f6;"></i>
                     <span>9. Stok Gudang Utama</span>
                 </a>
+                <a href="<?= base_url('wip/konsumsi_bahan') ?>" class="action-btn">
+                    <i class="fa fa-boxes" style="color: #f97316;"></i>
+                    <span>10. Rekap Konsumsi Bahan</span>
+                </a>
+
             </div>
         </div>
 
@@ -1135,18 +1224,24 @@
                 text-decoration: none; margin-bottom: 1.25rem;
                 border: 1px solid rgba(99,102,241,0.3);
                 transition: all 0.3s ease; position: relative; overflow: hidden;
-            " onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 15px 35px rgba(99,102,241,0.25)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
-                <div style="position:absolute;top:-40px;right:-40px;width:150px;height:150px;background:radial-gradient(circle,rgba(99,102,241,0.15) 0%,transparent 70%);border-radius:50%;"></div>
+            " onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 15px 35px rgba(99,102,241,0.25)'"
+                onmouseout="this.style.transform='';this.style.boxShadow=''">
+                <div
+                    style="position:absolute;top:-40px;right:-40px;width:150px;height:150px;background:radial-gradient(circle,rgba(99,102,241,0.15) 0%,transparent 70%);border-radius:50%;">
+                </div>
                 <div style="display:flex;align-items:center;gap:1.25rem;">
-                    <div style="width:52px;height:52px;background:rgba(99,102,241,0.2);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;border:1px solid rgba(99,102,241,0.4);">
+                    <div
+                        style="width:52px;height:52px;background:rgba(99,102,241,0.2);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;border:1px solid rgba(99,102,241,0.4);">
                         <i class="fa fa-chart-bar" style="color:#818cf8;"></i>
                     </div>
                     <div>
                         <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
-                            <span style="color:white;font-size:1rem;font-weight:800;">Pusat Laporan & Analitik Gudang</span>
+                            <span style="color:white;font-size:1rem;font-weight:800;">Pusat Laporan & Analitik
+                                Gudang</span>
                             <span class="badge-new-feature">✨ BARU</span>
                         </div>
-                        <p style="margin:0;color:#64748b;font-size:0.8rem;">8 laporan: Nilai Inventaris, Stok Kritis, Dead Stock, Tren Pembelian, dan lainnya</p>
+                        <p style="margin:0;color:#64748b;font-size:0.8rem;">8 laporan: Nilai Inventaris, Stok Kritis,
+                            Dead Stock, Tren Pembelian, dan lainnya</p>
                     </div>
                 </div>
                 <div style="color:#6366f1;font-size:1.5rem;flex-shrink:0;">
@@ -1170,16 +1265,23 @@
                     <i class="fa fa-th text-info"></i>
                     <span>Master Rak</span>
                 </a>
-                <a href="<?= base_url('warehouse/analytics') ?>" class="action-btn" style="background: linear-gradient(135deg,#1e293b,#0f172a);color:white;border:none;position:relative;">
-                    <span class="badge-new-feature" style="position:absolute;top:-8px;right:-8px;">BARU</span>
-                    <i class="fa fa-chart-bar" style="color:#818cf8;"></i>
-                    <span style="color:white;">Laporan Analitik</span>
+
+                <a href="<?= base_url('warehouse/laporan_pembelian') ?>" class="action-btn" style="background: white;">
+                    <i class="fa fa-chart-line" style="color: #14b8a6;"></i>
+                    <span>Laporan Inbound</span>
                 </a>
-                <a href="<?= base_url('warehouse/system_reset') ?>" class="action-btn"
+
+                <a href="<?= base_url('warehouse/laporan_barang_keluar') ?>" class="action-btn"
+                    style="background: white;">
+                    <i class="fa fa-chart-area" style="color: #ef4444;"></i>
+                    <span>Laporan Outbound</span>
+                </a>
+
+                <!-- <a href="<?= base_url('warehouse/system_reset') ?>" class="action-btn"
                     style="background: white; border: 1px solid #fecaca;">
                     <i class="fa fa-trash-alt text-danger"></i>
                     <span class="text-danger">Full Reset Data</span>
-                </a>
+                </a> -->
             </div>
         </div>
 
@@ -1187,8 +1289,9 @@
         <div class="row">
             <!-- ================= LIVE TRANSACTION MONITOR ================= -->
             <div class="col-md-8">
-                <div id="transaction-monitor-container">
-                    <div class="text-center py-5 bg-white rounded-4 shadow-sm">
+                <div id="transaction-monitor-container" class="h-100">
+                    <div
+                        class="text-center py-5 bg-white rounded-4 shadow-sm h-100 d-flex flex-column justify-content-center align-items-center">
                         <div class="spinner-border text-primary" role="status">
                             <span class="visually-hidden">Loading...</span>
                         </div>
@@ -1199,15 +1302,15 @@
 
             <!-- ================= UNIFIED LIVE MONITOR ================= -->
             <div class="col-md-4">
-                <div class="card border-0 shadow-sm p-4 h-100 monitor-center-card"
+                <div class="card border-0 shadow-sm p-4 h-100 monitor-center-card d-flex flex-column"
                     style="border-radius: 28px; background: white;">
-                    <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div class="d-flex justify-content-between align-items-center mb-4 flex-shrink-0">
                         <h4 class="m-0 fw-900 text-dark"><i class="fas fa-desktop text-primary me-2"></i>Warehouse
                             Monitor</h4>
                         <span class="badge badge-live-pulse px-3 py-1 rounded-pill fw-bold">LIVE MONITOR</span>
                     </div>
-                    <div id="recent-activity-container">
-                        <div class="text-center py-5">
+                    <div id="recent-activity-container" class="flex-grow-1 d-flex flex-column">
+                        <div class="text-center py-5 flex-grow-1 d-flex flex-column justify-content-center">
                             <div class="spinner-border text-primary" role="status">
                                 <span class="visually-hidden">Loading...</span>
                             </div>
@@ -1231,8 +1334,8 @@
         $.getJSON('<?= base_url('warehouse/ajax_dashboard_stats') ?>', function (res) {
             $('.stat-info h3').each(function () {
                 const id = $(this).attr('id');
-                if (id == 'stat-total-gudang') $(this).text(res.total_gudang);
-                if (id == 'stat-total-material') $(this).text(res.total_material);
+                if (id == 'stat-inbound-today') $(this).text(res.inbound_today);
+                if (id == 'stat-outbound-today') $(this).text(res.outbound_today);
                 if (id == 'stat-low-stock') {
                     $(this).text(res.low_stock_count);
                     if (res.low_stock_count > 0) $(this).addClass('text-danger');
@@ -1249,6 +1352,8 @@
                         $(this).closest('.stat-card').removeClass('border-danger shadow-sm');
                     }
                 }
+                if (id == 'stat-monthly-spending') $(this).text(res.monthly_spending);
+                if (id == 'stat-inventory-value') $(this).text(res.total_inventory_value);
             });
         });
 
@@ -1272,6 +1377,44 @@
         // Set Interval for Auto-Refresh (Every 30 seconds)
         setInterval(refreshLiveMonitor, 30000);
     });
+
+    function loadTodayTransactions(type) {
+        // Show loading indicator in modal body
+        $('#modalTodayTransactionsBody').html('<div class="text-center py-4"><div class="spinner-border text-primary" role="status"></div><p class="mt-2 text-muted">Memuat data transaksi...</p></div>');
+
+        // Use base_url in JS if available, else hardcode for now based on domain
+        const baseUrl = '<?= base_url() ?>';
+        const url = baseUrl + 'warehouse/ajax_today_transactions/' + type;
+
+        $.ajax({
+            url: url,
+            method: 'GET',
+            success: function (html) {
+                $('#modalTodayTransactionsBody').html(html);
+                const title = type === 'inbound' ? 'Transaksi Masuk (Hari Ini)' : 'Transaksi Keluar (Hari Ini)';
+                $('#modalTodayTransactionsLabel').text(title);
+            },
+            error: function () {
+                $('#modalTodayTransactionsBody').html('<div class="alert alert-danger">Gagal memuat data transaksi hari ini.</div>');
+            }
+        });
+    }
 </script>
+
+<!-- Modal for Today Transactions -->
+<div class="modal fade" id="modalTodayTransactions" tabindex="-1" aria-labelledby="modalTodayTransactionsLabel"
+    aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header border-0 shadow-sm" style="background: var(--slate-soft);">
+                <h5 class="modal-title fw-bold text-dark" id="modalTodayTransactionsLabel">Transaksi Hari Ini</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0" id="modalTodayTransactionsBody">
+                <!-- AJAX loaded content will appear here -->
+            </div>
+        </div>
+    </div>
+</div>
 
 <?php $this->load->view('admin/warehouse/components/v_modal_warehouse_guide'); ?>

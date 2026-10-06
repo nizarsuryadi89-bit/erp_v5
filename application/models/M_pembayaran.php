@@ -26,22 +26,23 @@ class M_pembayaran extends CI_Model
         $ket_1 = isset($item->ket_1) ? (string) $item->ket_1 : '';
 
         if ($satuan_id === 11) {
-            return $qty * $panjang * $harga_satuan;
+            $subtotal = $qty * $panjang * $harga_satuan;
+        } else if ($kategori_id === 9 && $ket_1 === '5') {
+            $subtotal = $qty * $panjang * $harga_satuan;
+        } else if ($panjang != 0 && $lebar != 0) {
+            $subtotal = $qty * $panjang * $lebar * $harga_satuan;
+        } else if ($panjang != 0 && $lebar == 0) {
+            $subtotal = $qty * $panjang * $harga_satuan;
+        } else {
+            $subtotal = $qty * $harga_satuan;
         }
 
-        if ($kategori_id === 9 && $ket_1 === '5') {
-            return $qty * $panjang * $harga_satuan;
+        $harga_minimal = isset($item->harga_minimal) ? (float) $item->harga_minimal : 0;
+        if ($harga_minimal > 0 && $subtotal < $harga_minimal) {
+            return $harga_minimal;
         }
 
-        if ($panjang != 0 && $lebar != 0) {
-            return $qty * $panjang * $lebar * $harga_satuan;
-        }
-
-        if ($panjang != 0 && $lebar == 0) {
-            return $qty * $panjang * $harga_satuan;
-        }
-
-        return $qty * $harga_satuan;
+        return $subtotal;
     }
 
     private function buildPembayaranProdukSnapshot($item)
@@ -135,6 +136,7 @@ class M_pembayaran extends CI_Model
         $total_bayar += rupiahToInt($post['bayar_debit'] ?? 0);
         $total_bayar += rupiahToInt($post['bayar_ewallet'] ?? 0);
         $total_bayar += rupiahToInt($post['bayar_dp'] ?? 0); // For piutang method
+        $total_bayar += rupiahToInt($post['bayar_qris'] ?? 0);
 
         // Determine if payment is complete
         $total_tagihan = rupiahToInt($post['grandtotal']);
@@ -151,6 +153,7 @@ class M_pembayaran extends CI_Model
             'perusahaan_id' => $perusahaan,
             'konsumen_id' => $post['konsumen_id'],
             'diskon_total' => isset($post['diskon']) ? rupiahToInt($post['diskon']) : 0,
+            'ongkir' => isset($post['ongkir']) ? rupiahToInt($post['ongkir']) : 0,
         ];
 
         // Check if pembayaran for this nospk already exists
@@ -233,6 +236,22 @@ class M_pembayaran extends CI_Model
                         'edc_id' => null,
                         'ewallet_id' => $ewallet_id,
                         'keterangan' => 'Pembayaran E-Wallet'
+                    ];
+                }
+                break;
+
+            case 'qris':
+                if (!empty($post['bayar_qris']) && rupiahToInt($post['bayar_qris']) > 0) {
+                    $bank_id = (!empty($post['rekening_qris_id']) && $post['rekening_qris_id'] != "0") ? $post['rekening_qris_id'] : null;
+                    $details[] = [
+                        'pembayaran_id' => $pembayaran_id,
+                        'metode' => 'qris',
+                        'jumlah' => rupiahToInt($post['bayar_qris']),
+                        'referensi' => null,
+                        'bank_id' => $bank_id,
+                        'edc_id' => null,
+                        'ewallet_id' => null,
+                        'keterangan' => 'Pembayaran QRIS'
                     ];
                 }
                 break;
@@ -424,9 +443,9 @@ class M_pembayaran extends CI_Model
             'update_time' => date('Y-m-d H:i:s'),
             'approve' => $item->approve,
             'catatan' => $item->keterangan ?? null,
-            'status_produksi' => 'draft', // default status sesuai enum
+            'status_produksi' => (empty($routings)) ? 'done' : 'approved',
             'lokasi_cetak' => $item->lokasi_cetak,
-            'tgl_selesai' => '0000-00-00 00:00:00',
+            'tgl_selesai' => (empty($routings)) ? date('Y-m-d H:i:s') : '0000-00-00 00:00:00',
             'tgl_kirim_pb' => '0000-00-00 00:00:00',
             'foto_handover' => '',
             'metadata' => $item->metadata ?? null
@@ -528,11 +547,126 @@ class M_pembayaran extends CI_Model
                 }
             }
         } else {
-            log_message('warning', 'No routings found for product_id: ' . $item->product_id);
+            log_message('warning', 'No routings found for product_id: ' . $item->product_id . '. Attempting Auto-Deduct Stok Barang Jadi.');
+            $this->autoDeductStock($item, $perusahaan, $produksi_id);
         }
 
         log_message('debug', '=== END insertProduksi ===');
         return true;
+    }
+
+    /**
+     * [NEW] Auto-Deduct Stock for Finished Goods (Barang Jadi) bypassing WIP
+     */
+    private function autoDeductStock($item, $perusahaan, $produksi_id)
+    {
+        log_message('debug', 'START autoDeductStock for Produksi ID: ' . $produksi_id);
+        $this->load->model('M_gudang');
+
+        // Fetch BOMs for this product and variation (if applicable)
+        $this->db->where('product_id', $item->product_id);
+        if (!empty($item->harga_id)) {
+            $this->db->group_start();
+            $this->db->where('harga_id', $item->harga_id);
+            $this->db->or_where('harga_id IS NULL', null, false);
+            $this->db->or_where('harga_id', 0);
+            $this->db->group_end();
+        }
+        $boms = $this->db->get('bom_lines')->result();
+
+        if (empty($boms) && !empty($item->harga_id)) {
+            // [NEW] Fallback Logic: Check if another price tier of the SAME variation has a BOM
+            $current_harga = $this->db->get_where('tbl_harga_product', ['harga_id' => $item->harga_id])->row();
+            if ($current_harga && !empty($current_harga->metadata)) {
+                $sibling_hargas = $this->db->select('harga_id')
+                    ->where('product_id', $item->product_id)
+                    ->where('metadata', $current_harga->metadata)
+                    ->where('harga_id !=', $item->harga_id)
+                    ->get('tbl_harga_product')->result_array();
+                
+                if (!empty($sibling_hargas)) {
+                    $sibling_ids = array_column($sibling_hargas, 'harga_id');
+                    $this->db->where('product_id', $item->product_id);
+                    $this->db->where_in('harga_id', $sibling_ids);
+                    $boms = $this->db->get('bom_lines')->result();
+                }
+            }
+        }
+
+        if (empty($boms)) {
+            log_message('debug', 'No BOM found for auto-deduct. Skipping.');
+            return;
+        }
+
+        foreach ($boms as $bom) {
+            $bom_qty = (float) $bom->quantity;
+            $order_qty = (float) $item->qty;
+            $panjang = (float) ($item->panjang ?: 0);
+            $lebar = (float) ($item->lebar ?: 0);
+            $berat = 0;
+
+            $calc_type = isset($bom->calc_type) ? $bom->calc_type : 'fixed';
+            $qty_usage = 0;
+
+            switch ($calc_type) {
+                case 'area':
+                    $qty_usage = ($panjang * $lebar) * $bom_qty * $order_qty;
+                    break;
+                case 'length':
+                    $qty_usage = $panjang * $bom_qty * $order_qty;
+                    break;
+                case 'weight':
+                    $qty_usage = $berat * $bom_qty * $order_qty;
+                    break;
+                case 'fixed':
+                default:
+                    $qty_usage = $bom_qty * $order_qty;
+                    break;
+            }
+
+            // Apply scrap factor
+            $scrap = isset($bom->scrap_factor) ? (float) $bom->scrap_factor : 0;
+            if ($scrap > 0) {
+                $qty_usage = $qty_usage * (1 + ($scrap / 100));
+            }
+
+            if ($qty_usage > 0 && !empty($bom->bahan_id)) {
+                $gudang_id = $item->lokasi_cetak ?: 1;
+
+                // Ambil informasi material untuk konversi Satuan Produksi -> Satuan Gudang
+                $mat = $this->db->select('m.konversi, m.varian, s.satuan_nama as satuan_gudang, sp.satuan_nama as satuan_produksi')
+                    ->from('tbl_material m')
+                    ->join('tbl_bahan b', 'm.bahan_id = b.bahan_id', 'left')
+                    ->join('tbl_satuan s', 'm.satuan_gudang_id = s.satuan_id', 'left')
+                    ->join('tbl_satuan sp', 'b.satuan_id = sp.satuan_id', 'left')
+                    ->where('m.material_id', $bom->bahan_id)
+                    ->get()->row();
+
+                $konversi = ($mat && (float)$mat->konversi > 0) ? (float)$mat->konversi : 1;
+                $sat_prod = ($mat && $mat->satuan_produksi) ? $mat->satuan_produksi : 'unit';
+                $sat_gudang = ($mat && $mat->satuan_gudang) ? $mat->satuan_gudang : 'unit';
+
+                // Konversi pengurangan stok ke Satuan Gudang karena update_stock_with_log mengalikan $qty * $konversi
+                $warehouse_reduction = (float) $qty_usage / $konversi;
+
+                $catatan = "Auto-Deduct Barang Jadi SPK: {$item->nospk}. Pakai: {$qty_usage} {$sat_prod}";
+                if ($konversi != 1) {
+                    $catatan .= " [Konversi: " . round($warehouse_reduction, 4) . " {$sat_gudang}]";
+                }
+
+                $this->M_gudang->update_stock_with_log(
+                    $bom->bahan_id, // This is material_id despite the column name bahan_id in bom_lines
+                    $gudang_id,
+                    -$warehouse_reduction, // negative to deduct in Satuan Gudang
+                    'Produksi',
+                    $produksi_id,
+                    $catatan
+                );
+                log_message('debug', "Auto-Deducted {$qty_usage} {$sat_prod} (WH: {$warehouse_reduction} {$sat_gudang}) for material_id: {$bom->bahan_id}");
+            }
+        }
+        
+        log_message('debug', 'END autoDeductStock');
     }
 
 
@@ -1210,5 +1344,87 @@ class M_pembayaran extends CI_Model
             log_message('error', 'Error in getPiutangPaymentHistory: ' . $e->getMessage());
             return false;
         }
+    }
+
+    /**
+     * Get datatables data for mutasi rekening
+     */
+    public function get_datatables_mutasi($request, $rekening_id)
+    {
+        $columns = [
+            0 => 'p.tgl_bayar',
+            1 => 'p.nospk',
+            2 => 'pd.keterangan',
+            3 => 'k.konsumen_nama',
+            4 => 'pd.jumlah'
+        ];
+
+        $search = $request['search']['value'] ?? '';
+        $limit = $request['length'] ?? 10;
+        $start = $request['start'] ?? 0;
+        $filter_month = $request['filter_month'] ?? '';
+
+        $this->db->select('pd.*, p.nospk, p.tgl_bayar, p.jam_bayar, pd.referensi, k.konsumen_nama, u.username as kasir');
+        $this->db->from('tbl_pembayaran_detail pd');
+        $this->db->join('tbl_pembayaran p', 'pd.pembayaran_id = p.pembayaran_id');
+        $this->db->join('tbl_konsumen k', 'p.konsumen_id = k.konsumen_id', 'left');
+        $this->db->join('users u', 'p.kasir_id = u.user_id', 'left');
+        $this->db->where('pd.bank_id', $rekening_id);
+
+        if (!empty($filter_month)) {
+            $this->db->where("DATE_FORMAT(p.tgl_bayar, '%Y-%m') = ", $filter_month);
+        }
+
+        if (!empty($search)) {
+            $this->db->group_start();
+            $this->db->like('p.nospk', $search);
+            $this->db->or_like('k.konsumen_nama', $search);
+            $this->db->or_like('pd.keterangan', $search);
+            $this->db->or_like('pd.referensi', $search);
+            $this->db->group_end();
+        }
+
+        // Count filtered records
+        $totalFiltered = $this->db->count_all_results('', false);
+
+        if (!empty($request['order'])) {
+            $order_col_idx = $request['order']['0']['column'];
+            $order_dir = $request['order']['0']['dir'];
+            $order_column = $columns[$order_col_idx] ?? 'p.tgl_bayar';
+            $this->db->order_by($order_column, $order_dir);
+            if ($order_column === 'p.tgl_bayar') {
+                $this->db->order_by('p.jam_bayar', $order_dir);
+            }
+        } else {
+            $this->db->order_by('p.tgl_bayar', 'DESC');
+            $this->db->order_by('p.jam_bayar', 'DESC');
+        }
+
+        $this->db->limit($limit, $start);
+        $query = $this->db->get();
+
+        $data = [];
+        foreach ($query->result() as $row) {
+            $data[] = [
+                'tgl_bayar' => $row->tgl_bayar,
+                'jam_bayar' => $row->jam_bayar,
+                'nospk' => $row->nospk,
+                'referensi' => $row->referensi,
+                'keterangan' => $row->keterangan,
+                'kasir' => strtoupper($row->kasir),
+                'konsumen_nama' => strtoupper($row->konsumen_nama),
+                'jumlah' => $row->jumlah
+            ];
+        }
+
+        $this->db->where('bank_id', $rekening_id);
+        $totalData = $this->db->count_all_results('tbl_pembayaran_detail');
+
+        return [
+            "draw" => isset($request['draw']) ? intval($request['draw']) : 0,
+            "recordsTotal" => $totalData,
+            "recordsFiltered" => $totalFiltered,
+            "data" => $data
+        ];
     }
 }

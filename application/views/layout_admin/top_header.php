@@ -10,23 +10,43 @@ $allowed_menu_ids = [];
 
 if (isset($layout_mode) && $layout_mode == 'top_nav') {
     // Dynamic fetch from menu and submenu for Top Nav layout
-    $parent_menus = $this->db->query("SELECT * FROM menu WHERE status = '1' ORDER BY urutan ASC")->result();
-    $sub_results = $this->db->query("SELECT * FROM submenu WHERE status = '1' ORDER BY urutan ASC")->result();
+    // Use the menu array from MY_Controller to respect all permissions (including tbl_user_menu_access)
+    $parent_menus = isset($menu) ? $menu : $this->db->query("SELECT * FROM menu WHERE status = '1' ORDER BY urutan ASC")->result();
+    
+    $col_role_sub = $this->db->field_exists('role_id', 'tbl_submenu_access') ? 'role_id' : 'level_id';
+    $user_id = $this->session->userdata('id');
+    
+    $this->db->select('submenu.*');
+    $this->db->from('submenu');
+    if (!$is_developer && $user_role_id != 1) {
+        $this->db->group_start();
+        $this->db->where("submenu.id IN (SELECT submenu_id FROM tbl_submenu_access WHERE $col_role_sub = " . (int) $user_role_id . ")", NULL, FALSE);
+        if ($this->db->table_exists('tbl_user_submenu_access')) {
+            $this->db->or_where("submenu.id IN (SELECT submenu_id FROM tbl_user_submenu_access WHERE user_id = " . (int) $user_id . ")", NULL, FALSE);
+        }
+        $this->db->group_end();
+    }
+    $this->db->where('submenu.status', 1);
+    $this->db->order_by('submenu.urutan', 'ASC');
+    $sub_results = $this->db->get()->result();
+    
     foreach ($sub_results as $sub) {
         $all_submenus[$sub->id_menu][] = $sub;
     }
 
-    if (!$is_developer) {
-        $access = $this->db->query("SELECT menu_id FROM tbl_menu_access WHERE role_id = ?", [$user_role_id])->result();
-        foreach ($access as $a)
-            $allowed_menu_ids[] = (int) $a->menu_id;
-    }
+    // We don't need allowed_menu_ids because $parent_menus is already filtered by MY_Controller
 }
+
+// Fetch Notifications
+$this->db->where('user_id', $this->session->userdata('id'))->where('is_read', 0)->order_by('created_at', 'DESC')->limit(10);
+$my_notifs = $this->db->get('tbl_notifikasi')->result();
+$notif_count = count($my_notifs);
 ?>
 
 <!-- Main Header -->
+<div class="tgm-top-header-shell">
 <nav
-    class="main-header navbar <?= (isset($layout_mode) && $layout_mode == 'top_nav') ? 'navbar-expand-lg navbar-dark bg-dark top-header-nav sticky-top' : 'navbar-expand navbar-white navbar-light bg-white border-bottom shadow-sm' ?>">
+    class="main-header navbar tgm-top-header <?= (isset($layout_mode) && $layout_mode == 'top_nav') ? 'navbar-expand-lg navbar-dark bg-dark top-header-nav sticky-top' : 'navbar-expand navbar-white navbar-light bg-white border-bottom shadow-sm' ?>">
     <div class="container-fluid">
         <!-- Brand & Toggle Section -->
         <div class="d-flex align-items-center">
@@ -45,7 +65,7 @@ if (isset($layout_mode) && $layout_mode == 'top_nav') {
                     style="height: 24px; width: auto;">
                 <span
                     class="brand-text fw-bold <?= (isset($layout_mode) && $layout_mode == 'top_nav') ? 'text-white' : 'text-dark' ?>">
-                    TGM CORE <a href="<?= base_url('log_audit/changelog') ?>" class="text-decoration-none"><small class="opacity-50 fw-normal ms-1">v<?= isset($app_version) ? $app_version : '5.0' ?></small></a>
+                    <?= get_app_name() ?> <a href="<?= base_url('log_audit/changelog') ?>" class="text-decoration-none"><small class="opacity-50 fw-normal ms-1">v<?= isset($app_version) ? $app_version : '5.0' ?></small></a>
                 </span>
             </a>
 
@@ -66,34 +86,148 @@ if (isset($layout_mode) && $layout_mode == 'top_nav') {
                 class="navbar-nav me-auto align-items-center <?= (isset($layout_mode) && $layout_mode == 'top_nav') ? 'main-module-nav' : '' ?>">
                 <!-- TOP NAV DYNAMIC MENU -->
                 <?php if (isset($layout_mode) && $layout_mode == 'top_nav'): ?>
-                    <?php if (!empty($parent_menus)): ?>
-                        <?php foreach ($parent_menus as $mn):
-                            $is_dashboard = (stripos($mn->link, 'dashboard') !== false || $mn->id == 1);
-                            $has_access = $is_developer || $is_dashboard || in_array($mn->id, $allowed_menu_ids);
+                    <?php if (!empty($parent_menus)): 
+                        // User-requested custom grouping to save horizontal space
+                        $custom_mapping = [
+                            'pembayaran kasir' => 'Point of Sale',
+                            'pembayaran - kasir' => 'Point of Sale',
+                            'transaksi manual' => 'Point of Sale',
+                            'transaksi belum di proses' => 'Point of Sale',
+                            'order / spk' => 'Point of Sale',
+                            'pos' => 'Point of Sale',
+                            'point of sale' => 'Point of Sale',
 
-                            if (!$has_access)
-                                continue;
+                            'database konsumen' => 'Konsumen',
+                            'piutang konsumen' => 'Konsumen',
+                            'piutang' => 'Konsumen',
+                            'konsumen' => 'Konsumen',
 
+                            'mutasi cash' => 'Keuangan',
+                            'mutasi transfer' => 'Keuangan',
+                            'mutasi edc' => 'Keuangan',
+                            'mutasi ewallet' => 'Keuangan',
+                            'pengeluaran' => 'Keuangan',
+                            'mutasi bahan' => 'Keuangan',
+                            'mutasi' => 'Keuangan',
+                            'keuangan' => 'Keuangan',
+
+                            'absensi karyawan' => 'Absensi',
+                            'lembur' => 'Absensi',
+                            'overtime / lembur' => 'Absensi',
+                            'absensi' => 'Absensi',
+                        ];
+
+                        $rendered_items = [];
+                        $custom_groups = [];
+
+                        // 1. Process all menus and submenus
+                        foreach ($parent_menus as $mn) {
                             $submenus = isset($all_submenus[$mn->id]) ? $all_submenus[$mn->id] : [];
-                            $is_active = ($this->uri->segment(1) == $mn->link);
-                            $menu_icon = !empty($mn->icon_fa) ? $mn->icon_fa : (!empty($mn->icon_menu) ? $mn->icon_menu : 'bi-circle');
-                            $menu_name = !empty($mn->alias) ? $mn->alias : $mn->nama_menu;
+                            $is_header = (empty($mn->link) || $mn->link === '#' || $mn->link === '//') && empty($submenus);
+                            if ($is_header) continue;
 
-                            if (!empty($submenus)): ?>
+                            $mn_label = !empty($mn->alias) ? $mn->alias : $mn->nama_menu;
+                            $mn_icon = !empty($mn->icon_fa) ? $mn->icon_fa : (!empty($mn->icon_menu) ? $mn->icon_menu : 'bi-circle');
+                            $parent_key = strtolower(trim($mn_label));
+
+                            if (empty($submenus)) {
+                                // Standalone parent menu
+                                if (isset($custom_mapping[$parent_key])) {
+                                    $group_name = $custom_mapping[$parent_key];
+                                    $custom_groups[$group_name][] = [
+                                        'label' => $mn_label,
+                                        'link' => base_url($mn->link),
+                                        'icon' => $mn_icon
+                                    ];
+                                } else {
+                                    $rendered_items[] = [
+                                        'type' => 'link',
+                                        'label' => $mn_label,
+                                        'link' => base_url($mn->link),
+                                        'icon' => $mn_icon
+                                    ];
+                                }
+                            } else {
+                                // Parent menu with submenus
+                                $unmapped_children = [];
+                                
+                                foreach ($submenus as $sub) {
+                                    $sub_label = $sub->nama_submenu;
+                                    $sub_key = strtolower(trim($sub_label));
+                                    
+                                    // If submenu matches, use it. Else if parent matches, group everything there.
+                                    $target_group = isset($custom_mapping[$sub_key]) ? $custom_mapping[$sub_key] : (isset($custom_mapping[$parent_key]) ? $custom_mapping[$parent_key] : null);
+                                    
+                                    if ($target_group) {
+                                        $custom_groups[$target_group][] = [
+                                            'label' => $sub_label,
+                                            'link' => base_url($mn->link . '/' . $sub->link_submenu),
+                                            'icon' => 'bi-circle'
+                                        ];
+                                    } else {
+                                        $unmapped_children[] = [
+                                            'label' => $sub_label,
+                                            'link' => base_url($mn->link . '/' . $sub->link_submenu),
+                                            'icon' => 'bi-circle'
+                                        ];
+                                    }
+                                }
+
+                                if (!empty($unmapped_children)) {
+                                    $rendered_items[] = [
+                                        'type' => 'dropdown',
+                                        'id' => $mn->id,
+                                        'label' => $mn_label,
+                                        'icon' => $mn_icon,
+                                        'children' => $unmapped_children
+                                    ];
+                                }
+                            }
+                        }
+
+                        // 2. Render Custom Groups First
+                        $group_icons = [
+                            'Point of Sale' => 'bi-cart',
+                            'Konsumen' => 'bi-people',
+                            'Keuangan' => 'bi-wallet2',
+                            'Absensi' => 'bi-clock-history'
+                        ];
+
+                        foreach ($custom_groups as $g_name => $g_items) {
+                            $g_icon = isset($group_icons[$g_name]) ? $group_icons[$g_name] : 'bi-folder';
+                            $g_id = 'group-' . md5($g_name);
+                            ?>
+                            <li class="nav-item dropdown">
+                                <a class="nav-link dropdown-toggle text-white" href="#" id="<?= $g_id ?>" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="bi <?= $g_icon ?> me-1"></i> <?= $g_name ?>
+                                </a>
+                                <ul class="dropdown-menu border-0 shadow-lg mt-0" aria-labelledby="<?= $g_id ?>">
+                                    <?php foreach ($g_items as $item): ?>
+                                        <li>
+                                            <a class="dropdown-item p-2 px-3" href="<?= $item['link'] ?>">
+                                                <i class="bi <?= $item['icon'] ?> opacity-50 me-2" style="font-size: 0.7rem;"></i>
+                                                <?= $item['label'] ?>
+                                            </a>
+                                        </li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            </li>
+                            <?php
+                        }
+
+                        // 3. Render Remaining Items
+                        foreach ($rendered_items as $item) {
+                            if ($item['type'] === 'dropdown'): ?>
                                 <li class="nav-item dropdown">
-                                    <a class="nav-link dropdown-toggle <?= $is_active ? 'active text-warning' : '' ?>" href="#"
-                                        id="dropdown-<?= $mn->id ?>" role="button" data-bs-toggle="dropdown" data-toggle="dropdown"
-                                        aria-expanded="false">
-                                        <i class="bi <?= $menu_icon ?> me-1"></i> <?= $menu_name ?>
+                                    <a class="nav-link dropdown-toggle text-white" href="#" id="dropdown-<?= $item['id'] ?>" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                        <i class="bi <?= $item['icon'] ?> me-1"></i> <?= $item['label'] ?>
                                     </a>
-                                    <ul class="dropdown-menu border-0 shadow-lg mt-0" aria-labelledby="dropdown-<?= $mn->id ?>">
-                                        <?php foreach ($submenus as $sub):
-                                            $sub_active = ($this->uri->segment(1) == $mn->link && $this->uri->segment(2) == $sub->link_submenu); ?>
+                                    <ul class="dropdown-menu border-0 shadow-lg mt-0" aria-labelledby="dropdown-<?= $item['id'] ?>">
+                                        <?php foreach ($item['children'] as $child): ?>
                                             <li>
-                                                <a class="dropdown-item p-2 px-3 <?= $sub_active ? 'active' : '' ?>"
-                                                    href="<?= base_url($mn->link . '/' . $sub->link_submenu) ?>">
-                                                    <i class="bi bi-chevron-right opacity-50 me-2" style="font-size: 0.7rem;"></i>
-                                                    <?= $sub->nama_submenu ?>
+                                                <a class="dropdown-item p-2 px-3" href="<?= $child['link'] ?>">
+                                                    <i class="bi <?= $child['icon'] ?> opacity-50 me-2" style="font-size: 0.7rem;"></i>
+                                                    <?= $child['label'] ?>
                                                 </a>
                                             </li>
                                         <?php endforeach; ?>
@@ -101,18 +235,17 @@ if (isset($layout_mode) && $layout_mode == 'top_nav') {
                                 </li>
                             <?php else: ?>
                                 <li class="nav-item">
-                                    <a class="nav-link <?= $is_active ? 'active text-warning' : '' ?>"
-                                        href="<?= base_url($mn->link) ?>">
-                                        <i class="bi <?= $menu_icon ?> me-1"></i> <?= $menu_name ?>
+                                    <a class="nav-link text-white" href="<?= $item['link'] ?>">
+                                        <i class="bi <?= $item['icon'] ?> me-1"></i> <?= $item['label'] ?>
                                     </a>
                                 </li>
-                            <?php endif; ?>
-                        <?php endforeach; ?>
+                            <?php endif; 
+                        } ?>
                     <?php endif; ?>
                 <?php else: ?>
                     <!-- SIDEBAR MODE TITLE -->
                     <li class="nav-item d-none d-sm-inline-block">
-                        <span class="nav-link fw-bold text-dark ms-2">
+                        <span class="nav-link fw-bold text-dark ms-2 text-nowrap">
                             <?= isset($title) ? $title : 'Dashboard' ?>
                         </span>
                     </li>
@@ -145,7 +278,7 @@ if (isset($layout_mode) && $layout_mode == 'top_nav') {
                         class="btn btn-outline-info btn-sm rounded-pill px-3 shadow-none border d-flex align-items-center position-relative"
                         title="Tracking Lokasi SPK">
                         <i class="bi bi-search me-1"></i>
-                        <span class="fw-bold small d-none d-lg-inline">Tracking SPK</span>
+                        <span class="fw-bold small d-none d-xl-inline text-nowrap">Tracking SPK</span>
                     </a>
                 </li>
 
@@ -155,7 +288,7 @@ if (isset($layout_mode) && $layout_mode == 'top_nav') {
                         class="btn btn-outline-primary btn-sm rounded-pill px-3 shadow-none border d-flex align-items-center position-relative"
                         title="Obrolan Tim">
                         <i class="bi bi-chat-dots-fill me-1"></i>
-                        <span class="fw-bold small d-none d-lg-inline">Chatting Tim</span>
+                        <span class="fw-bold small d-none d-xl-inline text-nowrap">Chatting Tim</span>
                         <span id="chat-header-badge"
                             class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger shadow-sm d-none"
                             style="font-size: 0.65rem;">
@@ -182,7 +315,7 @@ if (isset($layout_mode) && $layout_mode == 'top_nav') {
                         class="btn btn-outline-warning btn-sm rounded-pill px-3 shadow-none border d-flex align-items-center position-relative"
                         title="Lapor BUG / Ajukan Fitur">
                         <i class="bi bi-headset me-1"></i>
-                        <span class="fw-bold small d-none d-lg-inline">Bantuan</span>
+                        <span class="fw-bold small d-none d-xl-inline text-nowrap">Bantuan</span>
                         <?php if ($ticket_count > 0): ?>
                             <span
                                 class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger shadow-sm"
@@ -192,6 +325,32 @@ if (isset($layout_mode) && $layout_mode == 'top_nav') {
                             </span>
                         <?php endif; ?>
                     </a>
+                </li>
+
+                <!-- Notification Bell -->
+                <li class="nav-item dropdown me-2 d-flex align-items-center">
+                    <a class="nav-link btn btn-light btn-sm rounded-circle shadow-none border d-flex align-items-center justify-content-center position-relative" data-bs-toggle="dropdown" href="#" style="width: 32px; height: 32px;">
+                        <i class="bi bi-bell-fill text-dark"></i>
+                        <?php if ($notif_count > 0): ?>
+                            <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger shadow-sm" style="font-size: 0.6rem;">
+                                <?= $notif_count ?>
+                            </span>
+                        <?php endif; ?>
+                    </a>
+                    <div class="dropdown-menu dropdown-menu-lg dropdown-menu-end border-0 shadow-lg mt-2">
+                        <span class="dropdown-item dropdown-header bg-light fw-bold text-dark border-bottom"><?= $notif_count ?> Notifikasi Baru</span>
+                        <?php if (empty($my_notifs)): ?>
+                            <div class="p-3 text-center text-muted small">Tidak ada notifikasi</div>
+                        <?php else: ?>
+                            <?php foreach ($my_notifs as $ntf): ?>
+                                <div class="dropdown-divider m-0"></div>
+                                <a href="<?= base_url('notifikasi/baca/' . $ntf->id) ?>" class="dropdown-item py-2 px-3">
+                                    <div class="fw-bold small text-dark"><?= htmlspecialchars($ntf->judul) ?></div>
+                                    <span class="text-muted small" style="white-space: normal;"><?= htmlspecialchars($ntf->pesan) ?></span>
+                                </a>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </div>
                 </li>
 
                 <!-- Date Widget -->
@@ -206,7 +365,7 @@ if (isset($layout_mode) && $layout_mode == 'top_nav') {
                         <a class="nav-link btn btn-light btn-sm rounded-pill px-3 shadow-none border dropdown-toggle d-flex align-items-center"
                             data-bs-toggle="dropdown" data-toggle="dropdown" href="#">
                             <i class="bi bi-geo-alt-fill text-danger me-1"></i>
-                            <span class="fw-bold text-dark small">
+                            <span class="fw-bold text-dark small d-inline-block text-truncate" style="max-width: 150px; vertical-align: middle;">
                                 <?php
                                 foreach ($available_branches as $ab) {
                                     if ($ab->id_perusahaan == $current_perusahaan_id)
@@ -273,11 +432,12 @@ if (isset($layout_mode) && $layout_mode == 'top_nav') {
         </div>
     </div>
 </nav>
+</div>
 
 <style>
     /* 1. FAIL-SAFE: Pure CSS Hover Dropdown (Desktop Only) */
     @media (min-width: 992px) {
-        .top-header-nav .nav-item.dropdown:hover>.dropdown-menu {
+        .tgm-top-header.top-header-nav .nav-item.dropdown:hover>.dropdown-menu {
             display: block !important;
             visibility: visible !important;
             opacity: 1 !important;
@@ -287,20 +447,20 @@ if (isset($layout_mode) && $layout_mode == 'top_nav') {
         }
 
         /* Khusus untuk menu di sebelah kanan agar tidak terpotong */
-        .top-header-nav .nav-item.dropdown.user-menu:hover>.dropdown-menu,
-        .top-header-nav .nav-item.dropdown:hover>.dropdown-menu-end {
+        .tgm-top-header.top-header-nav .nav-item.dropdown.user-menu:hover>.dropdown-menu,
+        .tgm-top-header.top-header-nav .nav-item.dropdown:hover>.dropdown-menu-end {
             right: 0 !important;
             left: auto !important;
         }
 
         /* Default alignment untuk menu kiri */
-        .top-header-nav .nav-item.dropdown:hover>.dropdown-menu:not(.dropdown-menu-end) {
+        .tgm-top-header.top-header-nav .nav-item.dropdown:hover>.dropdown-menu:not(.dropdown-menu-end) {
             left: 0 !important;
             right: auto !important;
         }
 
         /* Mencegah kursor 'lepas' saat berpindah ke menu */
-        .top-header-nav .dropdown-menu::before {
+        .tgm-top-header.top-header-nav .dropdown-menu::before {
             content: "";
             position: absolute;
             top: -10px;
@@ -312,17 +472,18 @@ if (isset($layout_mode) && $layout_mode == 'top_nav') {
     }
 
     /* 2. Global Layout & Visibility Fixes */
-    .top-header-nav,
-    .navbar-collapse,
-    .main-module-nav,
-    .navbar-nav,
-    .nav-item.dropdown,
-    .main-header {
+    .tgm-top-header-shell,
+    .tgm-top-header,
+    .tgm-top-header .navbar-collapse,
+    .tgm-top-header .main-module-nav,
+    .tgm-top-header .navbar-nav,
+    .tgm-top-header .nav-item.dropdown,
+    .tgm-top-header .main-header {
         overflow: visible !important;
     }
 
     /* 3. Dropdown Menu Styling */
-    .top-header-nav .dropdown-menu {
+    .tgm-top-header .dropdown-menu {
         z-index: 9999 !important;
         background-color: #1a1a1a !important;
         border: 1px solid rgba(255, 255, 255, 0.1) !important;
@@ -331,20 +492,20 @@ if (isset($layout_mode) && $layout_mode == 'top_nav') {
         padding: 0.5rem 0 !important;
     }
 
-    .top-header-nav .dropdown-item {
+    .tgm-top-header .dropdown-item {
         color: rgba(255, 255, 255, 0.8) !important;
         padding: 0.8rem 1.25rem !important;
         font-size: 0.85rem !important;
         border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     }
 
-    .top-header-nav .dropdown-item:hover {
+    .tgm-top-header .dropdown-item:hover {
         background-color: #3b82f6 !important;
         color: #fff !important;
     }
 
     /* Dropdown Manual Show (For JS fallback) */
-    .top-header-nav .dropdown-menu.show {
+    .tgm-top-header .dropdown-menu.show {
         display: block !important;
         visibility: visible !important;
         opacity: 1 !important;
@@ -357,7 +518,7 @@ if (isset($layout_mode) && $layout_mode == 'top_nav') {
             const $ = jQuery;
 
             // Toggle Click (Sangat berguna untuk Mobile/Tablet)
-            $(document).on('click', '.top-header-nav .dropdown-toggle', function (e) {
+            $(document).on('click', '.tgm-top-header.top-header-nav .dropdown-toggle', function (e) {
                 if (window.innerWidth >= 992) return; // Biarkan Hover yang bekerja di Desktop
 
                 e.preventDefault();
@@ -367,19 +528,19 @@ if (isset($layout_mode) && $layout_mode == 'top_nav') {
                 const $target = $parent.find('.dropdown-menu').first();
                 const isOpen = $target.hasClass('show');
 
-                $('.top-header-nav .dropdown-menu').removeClass('show');
+                $('.tgm-top-header.top-header-nav .dropdown-menu').removeClass('show');
                 if (!isOpen) $target.addClass('show');
             });
 
             $(document).on('click', function (e) {
-                if (!$(e.target).closest('.top-header-nav .dropdown').length) {
-                    $('.top-header-nav .dropdown-menu').removeClass('show');
+                if (!$(e.target).closest('.tgm-top-header.top-header-nav .dropdown').length) {
+                    $('.tgm-top-header.top-header-nav .dropdown-menu').removeClass('show');
                 }
             });
         }
 
         // Efek Scroll Header
-        const nav = document.querySelector('.top-header-nav');
+        const nav = document.querySelector('.tgm-top-header.top-header-nav');
         if (nav) {
             window.addEventListener('scroll', function () {
                 if (window.scrollY > 30) {

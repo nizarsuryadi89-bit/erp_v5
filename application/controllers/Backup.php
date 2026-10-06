@@ -152,37 +152,75 @@ class Backup extends MY_Controller
     private function _execute_backup($tables, $prefix = 'backup', $mode = 'download')
     {
         @set_time_limit(0);
-        @ini_set('memory_limit', '512M');
+        @ini_set('memory_limit', '1024M'); // Naikkan limit untuk fallback
 
         $timestamp = date('Ymd_His');
-        $format = 'gzip'; // Lebih hemat memory dibanding zip bawaan CI
-        $filename = $prefix . '_' . $timestamp . '.gz';
+        $filename = $prefix . '_' . $timestamp . '.sql.gz';
+        $targetPath = $this->backupDirectory . $filename;
 
-        $prefs = array(
-            'tables' => $tables,
-            'ignore' => array(),
-            'format' => $format,
-            'filename' => $prefix . '_' . $timestamp . '.sql',
-            'add_drop' => TRUE,
-            'add_insert' => TRUE,
-            'newline' => "\n"
-        );
-
-        $backupData = $this->dbutil->backup($prefs);
-
-        if ($backupData === FALSE) {
-            throw new Exception("Gagal membuat data backup database.");
+        // 1. Coba gunakan mysqldump via exec() agar hemat memory (Sangat disarankan untuk DB besar)
+        $mysqldumpPath = 'mysqldump'; 
+        if (file_exists('/Applications/XAMPP/xamppfiles/bin/mysqldump')) {
+            $mysqldumpPath = '/Applications/XAMPP/xamppfiles/bin/mysqldump';
         }
 
-        if ($mode === 'save') {
-            $targetPath = $this->backupDirectory . $filename;
-            if (!write_file($targetPath, $backupData)) {
-                throw new Exception("Gagal menyimpan file di server. Pastikan folder 'uploads/backup' dapat ditulis (writable).");
+        $tablesStr = implode(' ', array_map('escapeshellarg', $tables));
+        
+        $command = sprintf(
+            '%s -h %s -u %s %s %s %s | gzip > %s',
+            $mysqldumpPath,
+            escapeshellarg($this->db->hostname),
+            escapeshellarg($this->db->username),
+            (!empty($this->db->password) ? '-p' . escapeshellarg($this->db->password) : ''),
+            escapeshellarg($this->db->database),
+            $tablesStr,
+            escapeshellarg($targetPath)
+        );
+
+        $resultCode = -1;
+        if (function_exists('exec')) {
+            @exec($command, $output, $resultCode);
+        }
+
+        // Jika exec() berhasil dan file terbuat
+        if ($resultCode === 0 && file_exists($targetPath) && filesize($targetPath) > 0) {
+            if ($mode === 'save') {
+                return $filename;
+            } else {
+                // Streaming download tanpa load ke memory, lalu hapus
+                header('Content-Type: application/x-gzip');
+                header('Content-Disposition: attachment; filename="'.$filename.'"');
+                header('Content-Length: ' . filesize($targetPath));
+                readfile($targetPath);
+                @unlink($targetPath); 
+                exit;
             }
-            return $filename;
         } else {
-            // Langsung download ke browser
-            force_download($filename, $backupData);
+            // 2. Fallback ke CI dbutil jika exec() di-disable di hosting
+            $prefs = array(
+                'tables' => $tables,
+                'ignore' => array(),
+                'format' => 'gzip',
+                'filename' => $prefix . '_' . $timestamp . '.sql',
+                'add_drop' => TRUE,
+                'add_insert' => TRUE,
+                'newline' => "\n"
+            );
+
+            $backupData = $this->dbutil->backup($prefs);
+
+            if ($backupData === FALSE) {
+                throw new Exception("Gagal membuat data backup database (memori penuh atau mysqldump tidak tersedia).");
+            }
+
+            if ($mode === 'save') {
+                if (!write_file($targetPath, $backupData)) {
+                    throw new Exception("Gagal menyimpan file di server. Pastikan folder 'uploads/backup' dapat ditulis (writable).");
+                }
+                return $filename;
+            } else {
+                force_download($filename, $backupData);
+            }
         }
     }
 
@@ -459,7 +497,8 @@ class Backup extends MY_Controller
     {
         $path = $this->backupDirectory . basename($file);
         if (file_exists($path)) {
-            force_download(basename($path), file_get_contents($path));
+            // Gunakan streaming untuk menghindari Error Memory Limit
+            force_download($path, NULL);
         } else {
             $this->session->set_flashdata('error', 'File tidak ditemukan.');
             redirect('backup');

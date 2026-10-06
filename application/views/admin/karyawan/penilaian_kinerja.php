@@ -177,49 +177,39 @@
         <!-- Filters -->
         <div class="clean-card mb-4 overflow-hidden">
             <div class="p-4 bg-white">
-                <form method="GET" action="<?= base_url('karyawan/penilaian_kinerja') ?>"
-                    class="row g-2 align-items-center">
+                <form method="get" class="row g-3 align-items-end">
                     <div class="col-md-3">
-                        <div class="input-group">
-                            <span
-                                class="input-group-text bg-slate-100 border-end-0 text-dark small fw-900 px-3">PERIODE</span>
-                            <input type="month" class="form-control border-start-0 ps-0 fw-bold" name="bulan"
-                                value="<?= $bulan ?>" onchange="this.form.submit()">
-                        </div>
+                        <label class="form-label small fw-bold text-muted mb-1 ls-1" style="font-size: 0.7rem;">PERIODE</label>
+                        <input type="month" class="form-control fw-bold" name="bulan"
+                            value="<?= $bulan ?>" onchange="this.form.submit()" style="height: 40px; border-radius: 8px;">
                     </div>
                     <div class="col-md-3">
-                        <div class="input-group">
-                            <span
-                                class="input-group-text bg-slate-100 border-end-0 text-dark small fw-900 px-3">JABATAN</span>
-                            <select class="form-select border-start-0 ps-0 fw-bold select2-filter" name="jabatan_id"
-                                onchange="this.form.submit()">
-                                <option value="">Semua Jabatan</option>
-                                <?php foreach ($jabatan_list as $jabatan): ?>
-                                    <option value="<?= $jabatan->jabatan_id ?>" <?= $jabatan_id == $jabatan->jabatan_id ? 'selected' : '' ?>>
-                                        <?= $jabatan->nama_jabatan ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
+                        <label class="form-label small fw-bold text-muted mb-1 ls-1" style="font-size: 0.7rem;">JABATAN</label>
+                        <select class="form-select select2-filter" name="jabatan_id"
+                            onchange="this.form.submit()">
+                            <option value="">Semua Jabatan</option>
+                            <?php foreach ($jabatan_list as $jabatan): ?>
+                                <option value="<?= $jabatan->jabatan_id ?>" <?= $jabatan_id == $jabatan->jabatan_id ? 'selected' : '' ?>>
+                                    <?= $jabatan->nama_jabatan ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
                     </div>
                     <div class="col-md-4">
-                        <div class="input-group">
-                            <span
-                                class="input-group-text bg-slate-100 border-end-0 text-dark small fw-900 px-3">KARYAWAN</span>
-                            <select class="form-select border-start-0 ps-0 fw-bold select2-filter" name="karyawan_id"
-                                onchange="this.form.submit()">
-                                <option value="">Semua Karyawan</option>
-                                <?php foreach ($karyawan_list as $karyawan): ?>
-                                    <option value="<?= $karyawan->karyawan_id ?>" <?= $karyawan_id == $karyawan->karyawan_id ? 'selected' : '' ?>>
-                                        <?= $karyawan->nama_lengkap ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
+                        <label class="form-label small fw-bold text-muted mb-1 ls-1" style="font-size: 0.7rem;">KARYAWAN</label>
+                        <select class="form-select select2-filter" name="karyawan_id"
+                            onchange="this.form.submit()">
+                            <option value="">Semua Karyawan</option>
+                            <?php foreach ($karyawan_list as $karyawan): ?>
+                                <option value="<?= $karyawan->karyawan_id ?>" <?= $karyawan_id == $karyawan->karyawan_id ? 'selected' : '' ?>>
+                                    <?= $karyawan->nama_lengkap ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
                     </div>
                     <div class="col-md-2">
-                        <button type="submit" class="btn btn-primary-tgm w-100 rounded-pill fw-900 small py-2">
-                            <i class="bi bi-filter me-2"></i> FILTER DATA
+                        <button type="submit" class="btn btn-primary-tgm w-100 fw-bold small shadow-sm" style="height: 40px; border-radius: 8px;">
+                            <i class="bi bi-filter me-2"></i> FILTER
                         </button>
                     </div>
                 </form>

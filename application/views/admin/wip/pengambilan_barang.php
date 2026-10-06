@@ -1039,16 +1039,12 @@ ksort($branches);
                                 });
 
                                 let editBtn = '';
-                                // Check if user level is authorized (1, 17, 21)
-                                const userLevel = parseInt('<?= $this->session->userdata("level") ?>');
-                                if ([1, 17, 21].includes(userLevel) && item.last_detail_id) {
-                                    editBtn = `<button class="btn btn-sm btn-outline-primary ms-2 p-1 border-0" style="font-size: 0.7rem;" onclick="editOutputQty(${item.last_detail_id}, ${item.qty_final}, '${nospk}')" title="Koreksi Output"><i class="fas fa-pencil-alt"></i></button>`;
-                                }
+                                // Historical output is displayed without an overwrite action.
 
                                 html += `
                                     <tr class="border-bottom">
                                         <td class="ps-3 py-3">
-                                            <div class="fw-900 text-dark">${item.product_nama}</div>
+                                            <div class="fw-900 text-dark">${item.detail_product ? item.detail_product : item.product_nama}</div>
                                             <div class="text-muted small fw-bold mt-1">ID Prod: #${item.produksi_id}</div>
                                         </td>
                                         <td class="text-center py-3 fw-900 text-muted small">${parseInt(item.qty).toLocaleString('id-ID')}</td>
@@ -1180,7 +1176,7 @@ ksort($branches);
                 let itemsHtml = ``;
 
                 readyItems.forEach(item => {
-                    if (item.status_produksi === 'on_pb') {
+                    if (item.status_produksi === 'on_pb' || item.status_produksi === 'done') {
                         totalItems++;
                         totalOutput += parseInt(item.qty_final) || 0;
                         
@@ -1203,14 +1199,14 @@ ksort($branches);
                             }
                         }
                         
-                        let displayNama = item.product_nama + sisiText;
+                        let displayNama = item.detail_product ? item.detail_product : (item.product_nama + sisiText);
 
                         itemsHtml += `
-                            <label class="struk-item-row" style="cursor: pointer; display: flex; align-items: center; margin-bottom: 4px;">
-                                <input type="checkbox" name="prod_ids" value="${item.produksi_id}" checked style="margin-right: 5px;">
-                                <div style="flex-grow: 1; display: flex; justify-content: space-between;">
-                                    <span style="max-width: 350px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${displayNama}">☑ ${displayNama}</span>
-                                    <span>Pesan:${item.qty} &nbsp;Output:${item.qty_final} ☑</span>
+                            <label class="struk-item-row" style="cursor: pointer; display: flex; align-items: center; margin-bottom: 8px;">
+                                <input type="checkbox" name="prod_ids" value="${item.produksi_id}" checked style="margin-right: 10px; accent-color: #3b82f6; width: 16px; height: 16px;">
+                                <div style="flex-grow: 1; display: flex; justify-content: space-between; align-items: center;">
+                                    <span style="max-width: 350px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; color: #1f2937;" title="${displayNama}">${displayNama}</span>
+                                    <span style="font-size: 11px; font-weight: 700; color: #4b5563; background: #f3f4f6; padding: 2px 6px; border-radius: 4px;">Out: ${item.qty_final} / ${item.qty}</span>
                                 </div>
                             </label>`;
                     }
@@ -1221,29 +1217,33 @@ ksort($branches);
                     width: '750px',
                     html: `
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 .struk-container {
-    font-family: 'Courier New', Courier, monospace;
-    color: #000;
-    background: #fdfdfd;
-    padding: 20px;
-    border: 1px dashed #000;
+    font-family: 'Inter', sans-serif;
+    color: #1f2937;
+    background: #ffffff;
+    padding: 24px;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
     text-align: left;
     font-size: 14px;
     width: 100%;
 }
 .struk-header {
     text-align: center;
-    border-bottom: 1px dashed #000;
-    padding-bottom: 10px;
-    margin-bottom: 15px;
-    font-weight: bold;
+    border-bottom: 1px dashed #e2e8f0;
+    padding-bottom: 12px;
+    margin-bottom: 20px;
+    font-weight: 800;
     font-size: 18px;
-    letter-spacing: 1px;
+    color: #111827;
+    letter-spacing: 0.5px;
 }
 .struk-section {
-    border-bottom: 1px dashed #000;
-    padding-bottom: 15px;
-    margin-bottom: 15px;
+    border-bottom: 1px dashed #e2e8f0;
+    padding-bottom: 16px;
+    margin-bottom: 16px;
 }
 .struk-table {
     width: 100%;
@@ -1251,79 +1251,80 @@ ksort($branches);
 }
 .struk-table td {
     vertical-align: top;
-    padding: 3px 0;
+    padding: 4px 0;
+}
+.struk-item-row {
+    background-color: #f9fafb;
+    border: 1px solid #f3f4f6;
+    border-radius: 8px;
+    padding: 10px 12px;
+    transition: background 0.2s;
+}
+.struk-item-row:hover {
+    background-color: #f3f4f6;
 }
 .radio-struk {
     display: flex;
     gap: 8px;
     align-items: center;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
     cursor: pointer;
+    font-weight: 500;
 }
 .input-struk {
     background: transparent;
     border: none;
-    font-family: 'Courier New', Courier, monospace;
+    font-family: 'Inter', sans-serif;
     width: 100%;
     outline: none;
-    font-weight: bold;
-}
-.input-struk:focus {
-    background: rgba(0,0,0,0.05);
-}
-.btn-handover-struk {
-    background: transparent;
-    color: #000;
-    border: 1px dashed #000;
-    padding: 10px 20px;
-    font-weight: bold;
-    cursor: pointer;
-    text-transform: uppercase;
-    font-family: 'Courier New', Courier, monospace;
-    width: 100%;
-    letter-spacing: 2px;
-    transition: all 0.2s;
-    font-size: 16px;
-}
-.btn-handover-struk:hover {
-    background: #000;
-    color: #fff;
+    font-weight: 700;
+    color: #3b82f6;
 }
 .photo-struk {
-    height: 60px;
-    background: transparent;
-    border: 1px dashed #000;
-    color: #000;
-    border-radius: 0;
+    height: 75px;
+    background: #f9fafb;
+    border: 1px dashed #cbd5e1;
+    color: #64748b;
+    border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
+    transition: all 0.2s;
+}
+.photo-struk:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+}
+.section-title {
+    font-weight: 700;
+    font-size: 12px;
+    color: #64748b;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 </style>
 
 <div class="struk-container">
-    <div class="struk-header">SERAH TERIMA BARANG</div>
-    
     <div class="struk-section">
         <table class="struk-table">
-            <tr><td width="130">SPK</td><td>: #${nospk}</td></tr>
-            <tr><td>Pelanggan</td><td>: ${konsumen}</td></tr>
-            <tr><td>Cabang</td><td>: ${cabang}</td></tr>
-            <tr><td>Asal Pesanan</td><td>: <b>${metodePemesanan || 'OFFLINE'}</b></td></tr>
-            <tr><td>Status Bayar</td><td>: ${payStatus == 'paid' ? '☑ LUNAS' : '☐ BELUM LUNAS'}</td></tr>
-            <tr><td>Deadline</td><td>: ${deadline}</td></tr>
+            <tr><td width="130" style="color:#6b7280;">SPK</td><td style="font-weight:700;">: #${nospk}</td></tr>
+            <tr><td style="color:#6b7280;">Pelanggan</td><td style="font-weight:700;">: ${konsumen}</td></tr>
+            <tr><td style="color:#6b7280;">Cabang</td><td style="font-weight:700;">: ${cabang}</td></tr>
+            <tr><td style="color:#6b7280;">Asal Pesanan</td><td style="font-weight:700;">: <span style="background:#dbeafe; color:#1d4ed8; padding:2px 6px; border-radius:4px; font-size:12px;">${metodePemesanan || 'OFFLINE'}</span></td></tr>
+            <tr><td style="color:#6b7280;">Status Bayar</td><td style="font-weight:700;">: ${payStatus == 'paid' ? '<span style="color:#10b981;">☑ LUNAS</span>' : '<span style="color:#ef4444;">☐ BELUM LUNAS</span>'}</td></tr>
+            <tr><td style="color:#6b7280;">Deadline</td><td style="font-weight:700;">: ${deadline}</td></tr>
         </table>
     </div>
 
     <div class="struk-section">
-        <div style="margin-bottom: 10px; font-weight: bold;">VERIFIKASI ITEM</div>
-        <div style="border-bottom: 1px dashed #000; margin-bottom: 10px;"></div>
+        <div class="section-title">VERIFIKASI ITEM</div>
         ${itemsHtml}
-        <div style="border-top: 1px dashed #000; margin-top: 10px; padding-top: 10px;">
+        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed #e2e8f0;">
             <div style="display: flex; align-items: center;">
-                <span style="width: 130px;">STATUS</span>
-                <span>: 🟢 SEMUA ITEM LENGKAP</span>
+                <span style="width: 130px; color:#6b7280;">STATUS</span>
+                <span style="font-weight: 700; color: #10b981;">: 🟢 LENGKAP & SIAP</span>
             </div>
         </div>
     </div>
@@ -1331,17 +1332,15 @@ ksort($branches);
     <div class="struk-section">
         <table class="struk-table">
             <tr>
-                <td width="50%" style="border-right: 1px dashed #000; padding-right: 15px;">
-                    <div style="font-weight: bold; margin-bottom: 10px;">PENGAMBILAN VIA</div>
-                    <div style="border-bottom: 1px dashed #000; margin-bottom: 10px;"></div>
+                <td width="50%" style="border-right: 1px dashed #e2e8f0; padding-right: 15px;">
+                    <div class="section-title">METODE PENGAMBILAN</div>
                     <label class="radio-struk"><input type="radio" name="via" value="Diambil Langsung" checked onchange="document.getElementById('lblMetode').innerText='Ambil Langsung'"> Ambil Langsung</label>
-                    <label class="radio-struk"><input type="radio" name="via" value="Kurir / Ojek Online" onchange="document.getElementById('lblMetode').innerText='Kurir'"> Kurir</label>
+                    <label class="radio-struk"><input type="radio" name="via" value="Kurir / Ojek Online" onchange="document.getElementById('lblMetode').innerText='Kurir'"> Kurir / Ojek Online</label>
                 </td>
                 <td style="padding-left: 15px;">
-                    <div style="font-weight: bold; margin-bottom: 10px;">PENERIMA</div>
-                    <div style="border-bottom: 1px dashed #000; margin-bottom: 10px;"></div>
-                    <div style="margin-bottom: 2px;">Nama Penerima</div>
-                    <div style="display: flex; margin-bottom: 10px;">[ <input type="text" id="swal-note" class="input-struk" placeholder="${konsumen}"> ]</div>
+                    <div class="section-title">PENERIMA</div>
+                    <div style="margin-bottom: 2px; font-size: 12px; color: #6b7280;">Nama Penerima / Kurir</div>
+                    <div style="display: flex; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px 10px; margin-bottom: 10px;"><input type="text" id="swal-note" class="input-struk" placeholder="${konsumen}"></div>
                 </td>
             </tr>
         </table>
@@ -1350,35 +1349,31 @@ ksort($branches);
     <div class="struk-section">
         <table class="struk-table">
             <tr>
-                <td width="50%" style="border-right: 1px dashed #000; padding-right: 15px;">
-                    <div style="font-weight: bold; margin-bottom: 10px;">FOTO BUKTI</div>
-                    <div style="border-bottom: 1px dashed #000; margin-bottom: 10px;"></div>
+                <td width="50%" style="border-right: 1px dashed #e2e8f0; padding-right: 15px;">
+                    <div class="section-title">FOTO BUKTI SERAH TERIMA</div>
                     <div class="photo-struk" onclick="openWebcamStruk('photo-preview', 'photo-placeholder', 'handover-photo')">
                         <div id="photo-placeholder">
-                            <span class="fw-bold">[ Live Cam / File ]</span>
+                            <span style="font-size: 13px; font-weight: 600;">📷 Ambil Foto</span>
                         </div>
-                        <img id="photo-preview" class="d-none w-100 h-100 object-fit-cover">
+                        <img id="photo-preview" class="d-none w-100 h-100 object-fit-cover" style="border-radius: 8px;">
                         <input type="file" id="handover-photo" class="d-none" accept="image/*" capture="environment" onchange="previewHandoverPhoto(this, 'photo-preview', 'photo-placeholder')">
                     </div>
                 </td>
                 <td style="padding-left: 15px;">
-                    <div style="font-weight: bold; margin-bottom: 10px;">VALIDASI PETUGAS</div>
-                    <div style="border-bottom: 1px dashed #000; margin-bottom: 10px;"></div>
-                    <div style="margin-bottom: 2px;">PIN PETUGAS</div>
-                    <div style="display: flex;">[ <input type="password" id="single-pb-pin" class="input-struk text-center" placeholder="* * * *" maxlength="4" inputmode="numeric" style="letter-spacing: 5px;"> ]</div>
+                    <div class="section-title">VALIDASI PETUGAS</div>
+                    <div style="margin-bottom: 2px; font-size: 12px; color: #6b7280;">PIN Petugas (Wajib)</div>
+                    <div style="display: flex; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px 10px;"><input type="password" id="single-pb-pin" class="input-struk text-center" placeholder="* * * *" maxlength="4" inputmode="numeric" style="letter-spacing: 8px; font-size: 18px;"></div>
                 </td>
             </tr>
         </table>
     </div>
 
     <div class="struk-section" style="border-bottom: none; margin-bottom: 0;">
-        <div style="font-weight: bold; margin-bottom: 10px;">RINGKASAN</div>
-        <div style="border-bottom: 1px dashed #000; margin-bottom: 10px;"></div>
+        <div class="section-title">RINGKASAN SERAH TERIMA</div>
         <table class="struk-table">
-            <tr><td width="150">Total Item</td><td>: ${totalItems}</td></tr>
-            <tr><td>Total Output</td><td>: ${totalOutput}</td></tr>
-            <tr><td>Metode</td><td>: <span id="lblMetode">Ambil Langsung</span></td></tr>
-            <tr><td>Status Verifikasi</td><td>: 100% Lengkap</td></tr>
+            <tr><td width="150" style="color:#6b7280;">Total Item</td><td style="font-weight:700;">: ${totalItems} Produk</td></tr>
+            <tr><td style="color:#6b7280;">Total Output</td><td style="font-weight:700;">: ${totalOutput} Qty</td></tr>
+            <tr><td style="color:#6b7280;">Metode</td><td style="font-weight:700;">: <span id="lblMetode" style="color: #3b82f6;">Ambil Langsung</span></td></tr>
         </table>
     </div>
 </div>
@@ -1574,12 +1569,12 @@ ksort($branches);
 
     function reproduceRijek(nospk, konsumen) {
         Swal.fire({
-            title: '<h5 class="fw-900 text-danger mb-0 ls-n1">KEMBALIKAN KE PRODUKSI</h5>',
+            title: '<h5 class="fw-900 text-danger mb-0 ls-n1">AJUKAN PRODUKSI ULANG</h5>',
             html: `
                 <div class="p-3 text-start bg-danger bg-opacity-10 border border-danger border-opacity-25 rounded-4 mb-3">
                     <p class="small fw-bold text-danger mb-0">
-                        <i class="fas fa-exclamation-triangle me-2"></i> PERHATIAN: Tindakan ini akan mengembalikan SPK #${nospk} 
-                        (${konsumen}) ke Antrian Produksi. Seluruh riwayat pengerjaan produksi akan di-reset (kecuali Deskprint, Admin, Kasir).
+                        <i class="fas fa-exclamation-triangle me-2"></i> PERHATIAN: Tindakan ini akan mencatat SPK #${nospk} 
+                        (${konsumen}) sebagai permintaan produksi ulang untuk ditinjau supervisor. Riwayat tahap dan pemakaian bahan tetap tersimpan.
                     </p>
                 </div>
                 <div class="text-start">
@@ -1593,7 +1588,7 @@ ksort($branches);
                 </div>
             `,
             showCancelButton: true,
-            confirmButtonText: 'KEMBALIKAN KE PRODUKSI',
+            confirmButtonText: 'AJUKAN PRODUKSI ULANG',
             cancelButtonText: 'BATAL',
             customClass: {
                 confirmButton: 'btn btn-danger btn-lg px-5 py-3 fw-bold mt-2',
@@ -1618,7 +1613,7 @@ ksort($branches);
         }).then((result) => {
             if (result.isConfirmed) {
                 Swal.fire({ 
-                    title: 'MENGEMBALIKAN KE PRODUKSI...', 
+                    title: 'MENCATAT PERMINTAAN...', 
                     allowOutsideClick: false, 
                     didOpen: () => { Swal.showLoading(); } 
                 });
@@ -1632,11 +1627,11 @@ ksort($branches);
                         if (resp.success) {
                             Swal.fire({
                                 icon: 'success',
-                                title: 'DIKEMBALIKAN KE PRODUKSI',
+                                title: 'DIAJUKAN PRODUKSI ULANG',
                                 html: `<div class="p-4 rounded-4 bg-light">
-                                            <p class="mb-2 fw-bold text-muted">NOMOR SPK YANG DI-RESET:</p>
+                                            <p class="mb-2 fw-bold text-muted">NOMOR SPK REFERENSI:</p>
                                             <h2 class="fw-900 text-danger ls-n1">#${resp.new_nospk}</h2>
-                                            <p class="mt-3 small text-muted">Seluruh status tahap produksi (kecuali pra-cetak) telah dikembalikan ke dalam <b>Antrian Operator</b>.</p>
+                                            <p class="mt-3 small text-muted">Permintaan menunggu peninjauan supervisor. Riwayat dan status tahap produksi tetap dipertahankan.</p>
                                        </div>`,
                                 confirmButtonText: 'TUTUP',
                                 customClass: { confirmButton: 'btn btn-primary rounded-pill px-5' },

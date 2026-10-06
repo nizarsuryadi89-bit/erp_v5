@@ -5,11 +5,11 @@
  */
 ?>
 
-<div class="row g-4">
+<div class="row g-4 h-100">
     <!-- 1. LIVE PURCHASES (STOCK IN) -->
     <div class="col-md-6">
-        <div class="card border-0 shadow-sm p-4 h-100" style="border-radius: 28px; background: white;">
-            <div class="d-flex justify-content-between align-items-center mb-4">
+        <div class="card border-0 shadow-sm p-4 h-100 d-flex flex-column" style="border-radius: 28px; background: white;">
+            <div class="d-flex justify-content-between align-items-center mb-4 flex-shrink-0">
                 <h5 class="m-0 fw-900 text-dark"><i class="fas fa-truck-loading text-success me-2"></i>Live Pembelian
                 </h5>
                 <span class="badge bg-soft-success text-success px-3 py-1 rounded-pill fw-bold"
@@ -17,12 +17,12 @@
             </div>
 
             <?php if (empty($latest_purchases)): ?>
-                <div class="text-center py-5 opacity-50">
+                <div class="text-center py-5 opacity-50 flex-grow-1 d-flex flex-column justify-content-center">
                     <i class="fas fa-box-open fa-3x mb-3"></i>
                     <p class="small fw-bold">Belum ada pembelian hari ini.</p>
                 </div>
             <?php else: ?>
-                <div class="transaction-timeline">
+                <div class="transaction-timeline flex-grow-1">
                     <?php foreach ($latest_purchases as $p): ?>
                         <div class="trx-item d-flex gap-3 mb-4">
                             <div class="trx-icon bg-soft-success text-success rounded-4 d-flex align-items-center justify-content-center flex-shrink-0"
@@ -61,22 +61,23 @@
         </div>
     </div>
 
-    <!-- 2. LIVE DISPATCHES (STOCK OUT TO WIP) -->
+    <!-- 2. LIVE DISPATCH (STOCK OUT TO PRODUCTION) -->
     <div class="col-md-6">
-        <div class="card border-0 shadow-sm p-4 h-100" style="border-radius: 28px; background: white;">
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <h5 class="m-0 fw-900 text-dark"><i class="fas fa-paper-plane text-info me-2"></i>Live Dispatch WIP</h5>
+        <div class="card border-0 shadow-sm p-4 h-100 d-flex flex-column" style="border-radius: 28px; background: white;">
+            <div class="d-flex justify-content-between align-items-center mb-4 flex-shrink-0">
+                <h5 class="m-0 fw-900 text-dark"><i class="fas fa-paper-plane text-info me-2"></i>Live Dispatch WIP
+                </h5>
                 <span class="badge bg-soft-info text-info px-3 py-1 rounded-pill fw-bold"
                     style="font-size: 0.6rem;">BARANG KELUAR</span>
             </div>
 
             <?php if (empty($latest_dispatches)): ?>
-                <div class="text-center py-5 opacity-50">
-                    <i class="fas fa-paper-plane fa-3x mb-3"></i>
-                    <p class="small fw-bold">Belum ada pengiriman ke produksi.</p>
+                <div class="text-center py-5 opacity-50 flex-grow-1 d-flex flex-column justify-content-center">
+                    <i class="fas fa-clipboard-check fa-3x mb-3"></i>
+                    <p class="small fw-bold">Belum ada barang keluar ke produksi hari ini.</p>
                 </div>
             <?php else: ?>
-                <div class="transaction-timeline">
+                <div class="transaction-timeline flex-grow-1">
                     <?php foreach ($latest_dispatches as $pg): ?>
                         <div class="trx-item d-flex gap-3 mb-4">
                             <div class="trx-icon bg-soft-info text-info rounded-4 d-flex align-items-center justify-content-center flex-shrink-0"

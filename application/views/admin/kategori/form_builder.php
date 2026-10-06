@@ -3,7 +3,7 @@
         <!-- HEADER SECTION -->
         <?php
         // Set back URL explicitly for the header module
-        if (!isset($is_modal) || !$is_modal) {
+        if (!isset($is_modal) && !isset($is_tab)) {
             if (isset($is_product)) {
                 $back_url = base_url('manufaktur');
             } else if (isset($is_subcategory)) {
@@ -12,7 +12,7 @@
                 $back_url = base_url('pengaturan/kategori');
             }
             $this->load->view('layout_admin/header_modul', ['back_url' => $back_url]);
-        } else {
+        } elseif (isset($is_modal) && $is_modal) {
             echo '<style>.app-content { padding-top: 0 !important; margin-left: 0 !important; } .container-fluid { padding-top: 0 !important; } .report-section-card { box-shadow: none !important; border: none !important; } body { background: #f8f9fa !important; } .footer { display: none !important; } </style>';
         }
         ?>
@@ -139,6 +139,9 @@
                                 <input type="hidden" name="kategori_id" value="<?= $kategori['kategori_id'] ?>">
                                 <?php if(isset($is_modal) && $is_modal): ?>
                                     <input type="hidden" name="is_modal" value="1">
+                                <?php endif; ?>
+                                <?php if (isset($is_tab) && $is_tab): ?>
+                                    <input type="hidden" name="is_tab" value="1">
                                 <?php endif; ?>
 
                                 <div class="accordion shadow-sm rounded-3 overflow-hidden border mb-3"
@@ -328,8 +331,7 @@
                     <label class="small fw-bold text-muted mb-1" style="font-size: 0.7rem;">VARIABLE ID</label>
                     <input type="text"
                         class="form-control form-control-sm rounded-3 fw-bold field-name text-primary font-monospace border-0 bg-light"
-                        placeholder="var_name" onkeyup="validateId(this); syncToJson()">
-                    <div class="invalid-feedback small p-1">ID tidak boleh pakai spasi/simbol!</div>
+                        placeholder="Contoh: jenis_bahan" onkeyup="validateId(this)" onchange="this.dataset.manual='true'">
                 </div>
                 <div class="col-12">
                     <label class="small fw-bold text-muted mb-1" style="font-size: 0.7rem;">TIPE INPUT</label>
@@ -440,6 +442,7 @@
         }
 </style>
 
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         const initialJson = document.getElementById('json-editor').value;
@@ -454,6 +457,19 @@
         } catch (e) {
             console.error("Invalid initial JSON", e);
             document.getElementById('empty-state-builder').classList.remove('d-none');
+        }
+
+        // Initialize Sortable for drag-and-drop
+        const fieldList = document.getElementById('field-list');
+        if (fieldList) {
+            new Sortable(fieldList, {
+                handle: '.drag-handle',
+                animation: 150,
+                ghostClass: 'bg-light',
+                onEnd: function () {
+                    syncToJson();
+                }
+            });
         }
     });
 
@@ -482,30 +498,19 @@
     function autoSlug(labelInput) {
         const item = labelInput.closest('.field-item');
         const nameInput = item.querySelector('.field-name');
-
-        // Hanya auto-slug jika Variable ID masih kosong atau user belum pernah manual edit
+        
         if (!nameInput.dataset.manual) {
-            let slug = labelInput.value.toLowerCase()
-                .replace(/[^\w ]+/g, '')
-                .replace(/ +/g, '_');
+            let slug = labelInput.value.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+            slug = slug.replace(/_+/g, '_').replace(/^_|_$/g, '');
             nameInput.value = slug;
-            validateId(nameInput);
         }
     }
 
     function validateId(input) {
-        const value = input.value;
-        const isValid = /^[a-z0-9_]*$/.test(value);
-
-        if (value && !isValid) {
-            input.classList.add('is-invalid');
-        } else {
-            input.classList.remove('is-invalid');
-            // Tandai bahwa user melakukan manual edit agar tidak tertimpa autoSlug
-            if (window.event && window.event.type === 'keyup') {
-                input.dataset.manual = "true";
-            }
-        }
+        let slug = input.value.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+        slug = slug.replace(/_+/g, '_').replace(/^_|_$/g, '');
+        input.value = slug;
+        syncToJson();
     }
 
     function addFieldFromData(data) {
@@ -515,7 +520,10 @@
 
         temp.querySelector('.field-label').value = data.label || '';
         temp.querySelector('.field-type').value = data.type || 'text';
-        temp.querySelector('.field-name').value = data.name || '';
+        
+        const nameInput = temp.querySelector('.field-name');
+        nameInput.value = data.name || '';
+        if (data.name) nameInput.dataset.manual = 'true';
 
         if (data.type === 'select') {
             temp.querySelector('.options-container').classList.remove('d-none');
@@ -560,10 +568,12 @@
         const list = document.querySelectorAll('#field-list .field-item');
         const schema = [];
 
-        list.forEach(item => {
+        list.forEach((item, index) => {
             const type = item.querySelector('.field-type').value;
+            const autoId = item.querySelector('.field-name').value;
+
             const field = {
-                name: item.querySelector('.field-name').value,
+                name: autoId,
                 label: item.querySelector('.field-label').value,
                 type: type
             };
@@ -648,7 +658,7 @@
                     html += `<select class="form-select form-select-sm fw-bold border-2 bg-light text-dark" style="border-radius: 8px;">`;
                     if (f.options) {
                         Object.entries(f.options).forEach(([k, v]) => {
-                            html += `<option>${v}</option>`;
+                            html += `<option value="${k}">${v}</option>`;
                         });
                     }
                     html += `</select>`;

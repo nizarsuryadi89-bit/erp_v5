@@ -22,11 +22,11 @@
 <div class="content-container">
     <!-- Kontrak Alert -->
     <?php if (isset($kontrak_info) && $kontrak_info !== null): ?>
-        <?php 
+        <?php
         $sisa_hari = $kontrak_info['sisa_hari'];
         $akhir_kontrak = date('d M Y', strtotime($kontrak_info['akhir_kontrak']));
         $pengajuan = $kontrak_info['pengajuan_terakhir'];
-        
+
         $show_alert = false;
         $alert_bg = '';
         $alert_border = '';
@@ -82,19 +82,24 @@
         ?>
 
         <?php if ($show_alert): ?>
-            <div class="kontrak-alert animate__animated animate__fadeInDown mb-4" style="background: <?= $alert_bg ?>; border: 1px solid <?= $alert_border ?>;">
+            <div class="kontrak-alert animate__animated animate__fadeInDown mb-4"
+                style="background: <?= $alert_bg ?>; border: 1px solid <?= $alert_border ?>;">
                 <div class="d-flex align-items-start gap-3">
-                    <div class="kontrak-alert-icon-wrapper d-flex align-items-center justify-content-center" style="width: 48px; height: 48px; background: rgba(255, 255, 255, 0.2); border-radius: 12px; backdrop-filter: blur(4px); flex-shrink: 0;">
+                    <div class="kontrak-alert-icon-wrapper d-flex align-items-center justify-content-center"
+                        style="width: 48px; height: 48px; background: rgba(255, 255, 255, 0.2); border-radius: 12px; backdrop-filter: blur(4px); flex-shrink: 0;">
                         <?= $alert_icon ?>
                     </div>
                     <div class="flex-grow-1 text-white">
-                        <h6 class="fw-bold mb-1" style="font-size: 0.95rem; text-shadow: 0 1px 2px rgba(0,0,0,0.1);"><?= $alert_title ?></h6>
-                        <p class="mb-0 text-white-50" style="font-size: 0.8rem; line-height: 1.4; text-shadow: 0 1px 2px rgba(0,0,0,0.1);"><?= $alert_desc ?></p>
+                        <h6 class="fw-bold mb-1" style="font-size: 0.95rem; text-shadow: 0 1px 2px rgba(0,0,0,0.1);">
+                            <?= $alert_title ?></h6>
+                        <p class="mb-0 text-white-50"
+                            style="font-size: 0.8rem; line-height: 1.4; text-shadow: 0 1px 2px rgba(0,0,0,0.1);">
+                            <?= $alert_desc ?></p>
                         <?= $btn_html ?>
                     </div>
                 </div>
             </div>
-            
+
             <style>
                 .kontrak-alert {
                     border-radius: 18px;
@@ -103,6 +108,7 @@
                     position: relative;
                     overflow: hidden;
                 }
+
                 .kontrak-alert::before {
                     content: '';
                     position: absolute;
@@ -113,6 +119,7 @@
                     top: -50px;
                     right: -50px;
                 }
+
                 .kontrak-alert button:active {
                     transform: scale(0.95);
                 }
@@ -158,20 +165,24 @@
             <div class="absence-list">
                 <?php foreach ($absen_hari_ini as $u): ?>
                     <div class="d-flex align-items-center gap-2 mb-2 p-2 rounded" style="background: rgba(255,255,255,0.1);">
-                        <img src="<?= !empty($u->foto) && file_exists('assets/images/karyawan/' . $u->foto) ? base_url('assets/images/karyawan/' . $u->foto) : base_url('assets/images/karyawan/default.png') ?>" 
-                             onerror="this.onerror=null; this.src='<?= base_url('assets/images/karyawan/default.png') ?>'" 
-                             class="rounded-circle border border-1 border-white shadow-sm" 
-                             style="width: 32px; height: 32px; object-fit: cover;">
+                        <img src="<?= !empty($u->foto) && file_exists('assets/images/karyawan/' . $u->foto) ? base_url('assets/images/karyawan/' . $u->foto) : base_url('assets/images/karyawan/default.png') ?>"
+                            onerror="this.onerror=null; this.src='<?= base_url('assets/images/karyawan/default.png') ?>'"
+                            class="rounded-circle border border-1 border-white shadow-sm"
+                            style="width: 32px; height: 32px; object-fit: cover;">
                         <div class="flex-grow-1">
-                            <div class="text-white fw-bold" style="font-size: 0.75rem;"><?= htmlspecialchars($u->nama_lengkap) ?></div>
-                            <div class="text-white-50" style="font-size: 0.65rem;"><?= htmlspecialchars($u->status . (!empty($u->keterangan) ? ' - ' . $u->keterangan : '')) ?></div>
+                            <div class="text-white fw-bold" style="font-size: 0.75rem;">
+                                <?= htmlspecialchars($u->nama_lengkap) ?></div>
+                            <div class="text-white-50" style="font-size: 0.65rem;">
+                                <?= htmlspecialchars($u->status . (!empty($u->keterangan) ? ' - ' . $u->keterangan : '')) ?>
+                            </div>
                         </div>
                     </div>
                 <?php endforeach; ?>
             </div>
         </div>
     <?php else: ?>
-        <div class="absence-card animate__animated animate__fadeInDown" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.2);">
+        <div class="absence-card animate__animated animate__fadeInDown"
+            style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.2);">
             <div class="d-flex align-items-center gap-2">
                 <i class="bi bi-check-circle-fill text-white fs-2"></i>
                 <div class="flex-grow-1 ms-2">
@@ -183,32 +194,36 @@
             </div>
         </div>
     <?php endif; ?>
-        
-        <style>
-            .absence-card {
-                background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-                border-radius: 16px;
-                padding: 12px 15px;
-                margin-bottom: 20px;
-                box-shadow: 0 10px 15px -3px rgba(245, 158, 11, 0.2);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-            }
-            .absence-list {
-                max-height: 120px;
-                overflow-y: auto;
-            }
-            .absence-list::-webkit-scrollbar {
-                width: 4px;
-            }
-            .absence-list::-webkit-scrollbar-track {
-                background: rgba(255,255,255,0.1);
-                border-radius: 4px;
-            }
-            .absence-list::-webkit-scrollbar-thumb {
-                background: rgba(255,255,255,0.3);
-                border-radius: 4px;
-            }
-        </style>
+
+    <style>
+        .absence-card {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            border-radius: 16px;
+            padding: 12px 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 15px -3px rgba(245, 158, 11, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .absence-list {
+            max-height: 120px;
+            overflow-y: auto;
+        }
+
+        .absence-list::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .absence-list::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+        }
+
+        .absence-list::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+        }
+    </style>
 
     <!-- Announcements Section -->
     <?php if (!empty($pengumuman)): ?>
@@ -350,6 +365,10 @@
             <div class="menu-icon icon-yellow"><i class="bi bi-clock"></i></div>
             <span class="menu-label">Lembur</span>
         </a>
+        <a href="<?= base_url('mobile/koreksi_absen') ?>" class="menu-item">
+            <div class="menu-icon icon-yellow" style="background: rgba(253, 126, 20, 0.1); color: #fd7e14;"><i class="bi bi-clock-history"></i></div>
+            <span class="menu-label">Koreksi</span>
+        </a>
         <a href="<?= base_url('mobile/direktori') ?>" class="menu-item">
             <div class="menu-icon icon-blue"><i class="bi bi-person-lines-fill"></i></div>
             <span class="menu-label">Direktori</span>
@@ -381,10 +400,10 @@
             <span class="menu-label">Slip Gaji</span>
         </a>
         <?php if (isset($has_desktop_access) && $has_desktop_access): ?>
-        <a href="javascript:void(0)" onclick="confirmAccessERP()" class="menu-item">
-            <div class="menu-icon icon-dark"><i class="bi bi-display"></i></div>
-            <span class="menu-label">Versi Desktop</span>
-        </a>
+            <a href="javascript:void(0)" onclick="confirmAccessERP()" class="menu-item">
+                <div class="menu-icon icon-dark"><i class="bi bi-display"></i></div>
+                <span class="menu-label">Versi Desktop</span>
+            </a>
         <?php endif; ?>
     </div>
 
@@ -484,14 +503,16 @@
         <div class="px-2 mb-3">
             <div class="row g-2">
                 <div class="col-6">
-                    <a href="<?= base_url('assets/app-releases/tgm_erp.apk') ?>"
-                        class="apk-download-card h-100 flex-column align-items-start p-3 gap-2" download>
-                        <div class="apk-icon">
+                    <a href="<?= base_url('assets/app-releases/tgm_mobile_v.1.1.3.apk') ?>"
+                        class="apk-download-card h-100 flex-column align-items-start p-3 gap-2 border border-primary border-2"
+                        style="background-color: #f8fbff;" download>
+                        <div class="apk-icon text-primary">
                             <i class="bi bi-android2"></i>
                         </div>
                         <div class="apk-info">
-                            <h6 class="mb-1" style="font-size: 0.85rem;">Android App</h6>
-                            <span class="badge bg-primary rounded-pill" style="font-size: 0.45rem;">v.1.1.2 (STABLE)</span>
+                            <h6 class="mb-1" style="font-size: 0.85rem;">Android App <span
+                                    class="badge bg-danger rounded-pill ms-1" style="font-size: 0.45rem;">NEW</span></h6>
+                            <span class="badge bg-primary rounded-pill" style="font-size: 0.45rem;">v.1.1.3 (STABLE)</span>
                         </div>
                     </a>
                 </div>
@@ -512,12 +533,12 @@
         </div>
 
         <?php if (isset($has_desktop_access) && $has_desktop_access): ?>
-        <div class="text-center mt-3 mb-4">
-            <a href="javascript:void(0)" onclick="confirmAccessERP()" class="desktop-link">
-                <span>Versi Web/PC</span>
-                <i class="bi bi-box-arrow-up-right"></i>
-            </a>
-        </div>
+            <div class="text-center mt-3 mb-4">
+                <a href="javascript:void(0)" onclick="confirmAccessERP()" class="desktop-link">
+                    <span>Versi Web/PC</span>
+                    <i class="bi bi-box-arrow-up-right"></i>
+                </a>
+            </div>
         <?php endif; ?>
     <?php endif; ?>
 
@@ -678,7 +699,7 @@
                 const formData = new FormData();
                 formData.append('durasi', result.value.durasi);
                 formData.append('alasan', result.value.alasan);
-                
+
                 const getCookie = (name) => {
                     const value = `; ${document.cookie}`;
                     const parts = value.split(`; ${name}=`);
@@ -697,49 +718,49 @@
                         'X-Requested-With': 'XMLHttpRequest'
                     }
                 })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error("HTTP error! Status: " + response.status);
-                    }
-                    return response.text();
-                })
-                .then(text => {
-                    try {
-                        const data = JSON.parse(text);
-                        if (data.success) {
-                            Swal.fire({
-                                icon: 'success',
-                                title: 'Berhasil!',
-                                text: data.message,
-                                confirmButtonColor: '#10b981',
-                                borderRadius: '20px'
-                            }).then(() => {
-                                window.location.reload();
-                            });
-                        } else {
-                            Swal.fire({
-                                icon: 'error',
-                                title: 'Gagal',
-                                text: data.message,
-                                confirmButtonColor: '#ef4444',
-                                borderRadius: '20px'
-                            });
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error("HTTP error! Status: " + response.status);
                         }
-                    } catch (e) {
-                        console.error("Server response was not JSON:", text);
-                        throw new Error("Respon server tidak valid (bukan JSON)");
-                    }
-                })
-                .catch(error => {
-                    console.error("AJAX Error:", error);
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Terjadi Kesalahan',
-                        text: error.message || 'Terjadi kesalahan pada sistem. Silakan coba lagi.',
-                        confirmButtonColor: '#ef4444',
-                        borderRadius: '20px'
+                        return response.text();
+                    })
+                    .then(text => {
+                        try {
+                            const data = JSON.parse(text);
+                            if (data.success) {
+                                Swal.fire({
+                                    icon: 'success',
+                                    title: 'Berhasil!',
+                                    text: data.message,
+                                    confirmButtonColor: '#10b981',
+                                    borderRadius: '20px'
+                                }).then(() => {
+                                    window.location.reload();
+                                });
+                            } else {
+                                Swal.fire({
+                                    icon: 'error',
+                                    title: 'Gagal',
+                                    text: data.message,
+                                    confirmButtonColor: '#ef4444',
+                                    borderRadius: '20px'
+                                });
+                            }
+                        } catch (e) {
+                            console.error("Server response was not JSON:", text);
+                            throw new Error("Respon server tidak valid (bukan JSON)");
+                        }
+                    })
+                    .catch(error => {
+                        console.error("AJAX Error:", error);
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Terjadi Kesalahan',
+                            text: error.message || 'Terjadi kesalahan pada sistem. Silakan coba lagi.',
+                            confirmButtonColor: '#ef4444',
+                            borderRadius: '20px'
+                        });
                     });
-                });
             }
         });
     }

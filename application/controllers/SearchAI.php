@@ -34,41 +34,94 @@ class SearchAI extends MY_Controller
             return;
         }
 
-        // 1. Skema Database Lengkap (Curated Context untuk Owner)
-        $schema_context = "
-            MODUL 1: SDM & ABSENSI
-            - tbl_karyawan: [karyawan_id, nama_lengkap, nik, divisi_id, jabatan_id]
-            - absensi: [karyawan_id, tanggal, status ('Hadir', 'Alfa', 'Izin', 'Sakit', 'Late', 'Cuti')]
+        $level = $this->session->userdata('level');
+        $karyawan_id = $this->session->userdata('karyawan_id');
+        $is_logged_in = $this->session->userdata('logged_in');
 
-            MODUL 2: PRODUK & HARGA
-            - tbl_product: [product_id, product_nama, product_deskripsi]
-            - tbl_harga_product: [harga_id, product_id, harga_1 (harga jual), hpp (modal), is_active]
+        // Dynamic Schema Context & System Instruction based on Role
+        if ($level == 1) {
+            // 1. Owner (Full Access)
+            $schema_context = "
+                MODUL 1: SDM & ABSENSI
+                - tbl_karyawan: [karyawan_id, nama_lengkap, nik, divisi_id, jabatan_id]
+                - absensi: [karyawan_id, tanggal, status ('Hadir', 'Alfa', 'Izin', 'Sakit', 'Late', 'Cuti')]
 
-            MODUL 3: PENJUALAN & KONSUMEN
-            - tbl_konsumen: [konsumen_id, konsumen_nama, konsumen_nohp]
-            - tbl_pemesanan: [nospk, konsumen_id, status_pembayaran ('pending','paid','canceled'), created_at]
-            - tbl_pemesanan_detail: [nospk, product_id, qty (jumlah produk_terjual), harga_id, panjang, lebar]
-            - tbl_pembayaran: [nospk, tgl_bayar, total_tagihan, total_bayar, status_lunas ('0','1')]
+                MODUL 2: PRODUK & HARGA
+                - tbl_product: [product_id, product_nama, product_deskripsi]
+                - tbl_harga_product: [harga_id, product_id, harga_1 (harga jual), hpp (modal), is_active]
 
-            MODUL 4: OPERASIONAL & STOK
-            - tbl_material: [material_id, varian (nama bahan), harga_jual, stok_min]
-            - tbl_stok_gudang: [material_id, qty (stok saat ini), gudang_id]
-            - tbl_spk: [nospk, spk_time, konsumen_id]
+                MODUL 3: PENJUALAN & KONSUMEN
+                - tbl_konsumen: [konsumen_id, konsumen_nama, konsumen_nohp]
+                - tbl_pemesanan: [nospk, konsumen_id, status_pembayaran ('pending','paid','canceled'), created_at]
+                - tbl_pemesanan_detail: [nospk, product_id, qty (jumlah produk_terjual), harga_id, panjang, lebar]
+                - tbl_pembayaran: [nospk, tgl_bayar, total_tagihan, total_bayar, status_lunas ('0','1')]
 
-            MODUL 5: PENGELUARAN (BIAYA)
-            - tbl_pengeluaran: [pengeluaran_tgl, pengeluaran_detail, pengeluaran_jumlah, pengeluaran_penerima]
+                MODUL 4: OPERASIONAL & STOK
+                - tbl_material: [material_id, varian (nama bahan), harga_jual, stok_min]
+                - tbl_stok_gudang: [material_id, qty (stok saat ini), gudang_id]
+                - tbl_spk: [nospk, spk_time, konsumen_id]
 
-            WAKTU: Hari ini " . date('Y-m-d') . ", Bulan " . date('m') . ", Tahun " . date('Y');
+                MODUL 5: PENGELUARAN (BIAYA)
+                - tbl_pengeluaran: [pengeluaran_tgl, pengeluaran_detail, pengeluaran_jumlah, pengeluaran_penerima]
+            ";
 
-        $system_instruction = "
-            Anda adalah AI ERP TGM. Ubah pertanyaan menjadi SQL MariaDB (SELECT ONLY).
-            RULES:
-            - Output HANYA SQL mentah (TANPA markdown).
-            - Untuk stok habis: tbl_stok_gudang.qty <= tbl_material.stok_min.
-            - Untuk omset: SUM(total_tagihan) di tbl_pembayaran.
-            - Untuk pengeluaran: SUM(pengeluaran_jumlah) di tbl_pengeluaran.
-            - Selalu gunakan JOIN yang tepat antar tabel.
-        ";
+            $system_instruction = "
+                Anda adalah AI ERP TGM. Ubah pertanyaan menjadi SQL MariaDB (SELECT ONLY).
+                RULES:
+                - Output HANYA SQL mentah (TANPA markdown).
+                - Untuk stok habis: tbl_stok_gudang.qty <= tbl_material.stok_min.
+                - Untuk omset: SUM(total_tagihan) di tbl_pembayaran.
+                - Untuk pengeluaran: SUM(pengeluaran_jumlah) di tbl_pengeluaran.
+                - Selalu gunakan JOIN yang tepat antar tabel.
+            ";
+        } elseif ($is_logged_in && $level > 1) {
+            // 2. Karyawan (Limited Access)
+            $schema_context = "
+                MODUL 1: ABSENSI (ID Karyawan Saya: " . ($karyawan_id ?? 0) . ")
+                - absensi: [karyawan_id, tanggal, status ('Hadir', 'Alfa', 'Izin', 'Sakit', 'Late', 'Cuti')]
+
+                MODUL 2: PRODUK & HARGA
+                - tbl_product: [product_id, product_nama, product_deskripsi]
+                - tbl_harga_product: [harga_id, product_id, harga_1 (harga jual), is_active]
+
+                MODUL 3: OPERASIONAL & STOK
+                - tbl_material: [material_id, varian (nama bahan)]
+                - tbl_stok_gudang: [material_id, qty (stok saat ini), gudang_id]
+                - tbl_spk: [nospk, spk_time]
+                - tbl_pemesanan: [nospk, status_pembayaran, created_at]
+            ";
+
+            $system_instruction = "
+                Anda adalah AI ERP TGM. Ubah pertanyaan menjadi SQL MariaDB (SELECT ONLY).
+                RULES:
+                - Output HANYA SQL mentah (TANPA markdown).
+                - DILARANG query data omzet, profit, modal (hpp), gaji, atau pengeluaran.
+                - Jika bertanya tentang absensi, pastikan SELALU filter WHERE karyawan_id = " . ($karyawan_id ?? 0) . ".
+                - Selalu gunakan JOIN yang tepat antar tabel.
+            ";
+        } else {
+            // 3. Konsumen / Public (Very Limited Access)
+            $schema_context = "
+                MODUL 1: PRODUK & HARGA JUAL
+                - tbl_product: [product_id, product_nama, product_deskripsi]
+                - tbl_harga_product: [harga_id, product_id, harga_1 (harga jual satuan), is_active]
+
+                MODUL 2: STATUS PESANAN (KONSUMEN)
+                - tbl_pemesanan: [nospk, status_pembayaran ('pending','paid','canceled'), created_at]
+            ";
+
+            $system_instruction = "
+                Anda adalah asisten virtual TGM Print. Ubah pertanyaan menjadi SQL MariaDB (SELECT ONLY).
+                RULES:
+                - Output HANYA SQL mentah (TANPA markdown).
+                - DILARANG query data modal (hpp), stok gudang, omzet, pengeluaran, absensi, atau informasi internal.
+                - Pastikan hanya bisa menampilkan nama produk, harga jual, atau status pesanan.
+                - Jika konsumen mengecek pesanan (nospk), filter dari tbl_pemesanan.
+                - Selalu gunakan JOIN yang tepat antar tabel.
+            ";
+        }
+
+        $schema_context .= "\n\nWAKTU SEKARANG: Hari ini " . date('Y-m-d') . ", Bulan " . date('m') . ", Tahun " . date('Y');
 
         $ai_response = $this->_call_ai_api($user_query, $schema_context, $system_instruction);
 

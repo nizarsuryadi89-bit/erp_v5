@@ -70,6 +70,9 @@ class MY_Controller extends CI_Controller
         'api' => '*',
         'api_portal' => '*',
         'api_mobile' => '*',
+        'api_tracking' => '*',
+        'api_auth' => '*',
+        'health' => '*',
         'searchai' => '*',
         'rajaongkir' => '*',
         'kiosk' => '*',
@@ -82,6 +85,7 @@ class MY_Controller extends CI_Controller
         'pengaturan' => ['stop_impersonating', 'aset_detail', 'konsumen_search_ajax'],
         'cekpesanan' => ['spk', 'cetak_invoice'],
         'katalog' => '*',
+        'api_katalog' => '*',
         'tracking' => '*',
     ];
 
@@ -98,7 +102,8 @@ class MY_Controller extends CI_Controller
         // Enforce HTTPS (if not already) – only in production
         if (defined('ENVIRONMENT') && ENVIRONMENT === 'production') {
             $is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
-            if (!$is_https) {
+            $is_localhost = isset($_SERVER['HTTP_HOST']) && (strpos($_SERVER['HTTP_HOST'], 'localhost') !== false || strpos($_SERVER['HTTP_HOST'], '127.0.0.1') !== false);
+            if (!$is_https && !$is_localhost) {
                 $https_url = 'https://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
                 redirect($https_url);
             }
@@ -228,7 +233,7 @@ class MY_Controller extends CI_Controller
         // 1. Bypass Rules
         if (!empty($this->data['is_developer']))
             return;
-        if ($current_controller == 'dashboard' || $current_controller == 'support' || $current_controller == 'antrian' || $current_controller == 'switchbranch' || $current_controller == 'produksi_request' || $current_controller == 'tracking' || ($current_controller == 'transaksi' && $current_method == 'order_titipan') || ($current_controller == 'transaksi' && $current_method == 'preview_invoice') || ($current_controller == 'wip' && $current_method == 'view_spk_invoice') || ($current_controller == 'wip' && $current_method == 'produksi') || ($current_controller == 'wip' && $current_method == 'ajax_global_search') || ($current_controller == 'wip' && $current_method == 'get_spk_details_ajax') || ($current_controller == 'wip' && $current_method == 'print_tag') || ($current_controller == 'wip' && $current_method == 'print_tag_ids') || ($current_controller == 'konsumen' && $current_method == 'actionaddajax'))
+        if ($current_controller == 'notifikasi' || $current_controller == 'dashboard' || $current_controller == 'support' || $current_controller == 'antrian' || $current_controller == 'switchbranch' || $current_controller == 'produksi_request' || $current_controller == 'tracking' || ($current_controller == 'transaksi' && $current_method == 'order_titipan') || ($current_controller == 'transaksi' && $current_method == 'preview_invoice') || ($current_controller == 'wip' && $current_method == 'view_spk_invoice') || ($current_controller == 'wip' && $current_method == 'produksi') || ($current_controller == 'wip' && $current_method == 'konsumsi_bahan') || ($current_controller == 'wip' && $current_method == 'ajax_detail_konsumsi') || ($current_controller == 'wip' && $current_method == 'cetak_konsumsi_bahan') || ($current_controller == 'wip' && $current_method == 'ajax_global_search') || ($current_controller == 'wip' && $current_method == 'get_spk_details_ajax') || ($current_controller == 'wip' && $current_method == 'print_tag') || ($current_controller == 'wip' && $current_method == 'print_tag_ids') || ($current_controller == 'konsumen' && $current_method == 'actionaddajax'))
             return;
 
         // Legacy username prefix bypass removed; access now based on menu permissions
@@ -352,11 +357,6 @@ class MY_Controller extends CI_Controller
             $force_sidebar = true;
         if (strpos($role_name, 'hr') !== false || in_array($role_id_raw, [16, 21]))
             $force_sidebar = true;
-
-        // 4. IMPERSONATION BYPASS (DEVELOPER DEBUGGING)
-        if ($this->session->userdata('is_impersonating')) {
-            $force_sidebar = true;
-        }
 
         // Apply Sidebar Layout if forced
         if ($force_sidebar) {
@@ -517,6 +517,7 @@ class MY_Controller extends CI_Controller
         if ($is_dev_context) {
             $this->db->select('*');
             $this->db->from('menu');
+            $this->db->where('status', '1');
             $this->db->order_by('urutan', 'ASC');
             $perms['menu_data'] = $this->db->get()->result();
         } else {
@@ -525,7 +526,7 @@ class MY_Controller extends CI_Controller
             $this->db->from('menu');
             $this->db->join('tbl_menu_access', "tbl_menu_access.$col_menu = menu.$menu_pk_main");
             $this->db->where("tbl_menu_access.$col_role", (int) $role_id);
-            $this->db->where('menu.status', 1);
+            $this->db->where('menu.status', '1');
             $role_menus = $this->db->get()->result();
 
             // Get User Specific Menus
@@ -535,7 +536,7 @@ class MY_Controller extends CI_Controller
                 $this->db->from('menu');
                 $this->db->join('tbl_user_menu_access', "tbl_user_menu_access.menu_id = menu.$menu_pk_main");
                 $this->db->where('tbl_user_menu_access.user_id', (int) $user_id);
-                $this->db->where('menu.status', 1);
+                $this->db->where('menu.status', '1');
                 $user_menus = $this->db->get()->result();
             }
 
@@ -546,7 +547,7 @@ class MY_Controller extends CI_Controller
                 $this->db->from('menu');
                 $this->db->join('tbl_menu_access', "tbl_menu_access.$col_menu = menu.$menu_pk_main");
                 $this->db->where("tbl_menu_access.$col_role", 9);
-                $this->db->where('menu.status', 1);
+                $this->db->where('menu.status', '1');
                 $ecommerce_menus = $this->db->get()->result();
             }
 
@@ -749,7 +750,7 @@ class MY_Controller extends CI_Controller
             $captured_data = ['uri' => $this->uri->uri_string()];
 
         // Hilangkan data sensitif dari log (Password dsb)
-        $sensitive_fields = ['password', 'old_password', 'new_password', 'confirm_password', 'pass'];
+        $sensitive_fields = ['password', 'old_password', 'new_password', 'confirm_password', 'pass', 'pin', 'pin_operator', 'operator_pin', 'supervisor_pin', 'pin_produksi', 'wip_qc_csrf'];
         foreach ($sensitive_fields as $field) {
             if (isset($captured_data[$field]))
                 $captured_data[$field] = '********';
@@ -1013,4 +1014,3 @@ class MY_Controller extends CI_Controller
         return $this->data;
     }
 }
-

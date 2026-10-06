@@ -157,7 +157,7 @@ class Karyawan extends MY_Controller
         $this->db->where('nama_lengkap NOT LIKE', '%A3+%');
         $this->db->where('divisi_id !=', 8);
         $this->db->where_not_in('jabatan_id', [1, 2, 3]);
-        if ($this->session->userdata('perusahaan_id') != 1 && $this->session->userdata('level') != 21) {
+        if (!empty($this->session->userdata('perusahaan_id')) && $this->session->userdata('perusahaan_id') != 1) {
             $this->db->where('perusahaan_id', $this->session->userdata('perusahaan_id'));
         }
         $all = $this->db->get('tbl_karyawan')->result();
@@ -342,7 +342,7 @@ class Karyawan extends MY_Controller
 
         $extra_data = array(
             'performance_data' => $this->get_performance_data($bulan, $karyawan_id, $jabatan_id, $range['start'], $range['end']),
-            'stats' => $this->get_performance_stats($bulan),
+            'stats' => $this->get_performance_stats($bulan, $karyawan_id, $jabatan_id),
             'karyawan_list' => $this->db->where('divisi_id !=', 8)->where_not_in('jabatan_id', [1, 2, 3])->where('nama_lengkap NOT LIKE', '%Terminal%')->where('nama_lengkap NOT LIKE', '%OPERATOR%')->where('nama_lengkap NOT LIKE', '%DEPT%')->where('nama_lengkap NOT LIKE', '%DTG%')->where('nama_lengkap NOT LIKE', '%DTF%')->where('nama_lengkap NOT LIKE', '%WORK CENTER%')->where('nama_lengkap NOT LIKE', '%LARGE FORMAT%')->where('nama_lengkap NOT LIKE', '%A3+%')->where("nik NOT LIKE", 'STATION%')->where("nik NOT LIKE", 'TERM%')->get('tbl_karyawan')->result(),
             'jabatan_list' => $this->db->get('tbl_jabatan')->result(),
             'bulan' => $bulan,
@@ -366,10 +366,10 @@ class Karyawan extends MY_Controller
     /**
      * Get aggregated performance statistics
      */
-    private function get_performance_stats($bulan)
+    private function get_performance_stats($bulan, $karyawan_id = '', $jabatan_id = '')
     {
         $range = $this->_get_payroll_range($bulan);
-        $performance_data = $this->get_performance_data($bulan, '', '', $range['start'], $range['end']);
+        $performance_data = $this->get_performance_data($bulan, $karyawan_id, $jabatan_id, $range['start'], $range['end']);
 
         $total_employees = count($performance_data);
         $total_hadir = 0;
@@ -448,7 +448,7 @@ class Karyawan extends MY_Controller
         $this->db->where('k.divisi_id !=', 8);
         $this->db->where_not_in('k.jabatan_id', [1, 2, 3]);
         if ($this->session->userdata('logged_in')) {
-            if ($this->session->userdata('perusahaan_id') != 1 && $this->session->userdata('level') != 1 && $this->session->userdata('level') != 21) {
+            if (!empty($this->session->userdata('perusahaan_id')) && $this->session->userdata('perusahaan_id') != 1) {
                 // Already joined above with 'tbl_karyawan k'
                 $this->db->where('k.perusahaan_id', $this->session->userdata('perusahaan_id'));
             }
@@ -466,7 +466,7 @@ class Karyawan extends MY_Controller
         $this->db->where_not_in('k.jabatan_id', [1, 2, 3]);
         $this->db->where('jam_masuk >', '08:00:00');
         if ($this->session->userdata('logged_in')) {
-            if ($this->session->userdata('perusahaan_id') != 1 && $this->session->userdata('level') != 1 && $this->session->userdata('level') != 21) {
+            if (!empty($this->session->userdata('perusahaan_id')) && $this->session->userdata('perusahaan_id') != 1) {
                 $this->db->join('tbl_karyawan', 'tbl_karyawan.karyawan_id = absensi.karyawan_id');
                 $this->db->where('tbl_karyawan.perusahaan_id', $this->session->userdata('perusahaan_id'));
             }
@@ -584,6 +584,26 @@ class Karyawan extends MY_Controller
         redirect('karyawan/penggajian');
     }
 
+    public function update_payroll_range()
+    {
+        $perusahaan_id = $this->input->post('perusahaan_id', true) ?: $this->session->userdata('perusahaan_id');
+        $start_day = (int) $this->input->post('start_day', true);
+        $end_day = (int) $this->input->post('end_day', true);
+        
+        if (!$perusahaan_id || !$start_day || !$end_day) {
+            echo json_encode(['success' => false, 'message' => 'Data tidak lengkap!']);
+            return;
+        }
+        
+        $this->db->where('id_perusahaan', $perusahaan_id);
+        $this->db->update('tbl_perusahaan', [
+            'payroll_start_day' => $start_day,
+            'payroll_end_day' => $end_day
+        ]);
+        
+        echo json_encode(['success' => true, 'message' => 'Periode penggajian berhasil diupdate!']);
+    }
+
     public function penggajian()
     {
         // Get filter parameters
@@ -597,9 +617,38 @@ class Karyawan extends MY_Controller
         $this->db->where_not_in('k.jabatan_id', [1, 2, 3]);
         $karyawan_list = $this->M_master->get_karyawan()->result();
 
+        $salary_data = $this->get_salary_data($bulan, $karyawan_id, $jabatan_id, $perusahaan_id);
+
+        if (empty($karyawan_id) && empty($jabatan_id)) {
+            $total_employees = count($salary_data);
+            $total_salary = 0; $total_overtime = 0; $total_meal = 0;
+            $total_performance_bonus = 0; $total_attendance_bonus = 0; $total_alpha_penalty = 0;
+            foreach ($salary_data as $salary) {
+                $total_salary += ($salary['total_gaji'] ?? 0);
+                $total_overtime += ($salary['uang_lembur'] ?? 0);
+                $total_meal += ($salary['biaya_makan_lembur'] ?? 0);
+                $total_performance_bonus += ($salary['tunjangan_kinerja_manual'] ?? 0);
+                $total_attendance_bonus += ($salary['reward'] ?? 0);
+                $total_alpha_penalty += ($salary['potongan_alpha'] ?? 0);
+            }
+            $avg_salary = $total_employees > 0 ? $total_salary / $total_employees : 0;
+            $salary_stats = array(
+                'total_employees' => $total_employees,
+                'total_salary' => $total_salary,
+                'avg_salary' => round($avg_salary, 0),
+                'total_overtime' => $total_overtime,
+                'total_meal' => $total_meal,
+                'total_performance_bonus' => $total_performance_bonus,
+                'total_attendance_bonus' => $total_attendance_bonus,
+                'total_alpha_penalty' => $total_alpha_penalty
+            );
+        } else {
+            $salary_stats = $this->get_salary_stats($bulan, $perusahaan_id);
+        }
+
         $extra_data = array(
-            'salary_data' => $this->get_salary_data($bulan, $karyawan_id, $jabatan_id, $perusahaan_id),
-            'salary_stats' => $this->get_salary_stats($bulan, $perusahaan_id),
+            'salary_data' => $salary_data,
+            'salary_stats' => $salary_stats,
             'karyawan_list' => $karyawan_list,
             'jabatan_list' => $this->db->get('tbl_jabatan')->result(),
             'perusahaan_list' => $this->db->get('tbl_perusahaan')->result(),
@@ -747,8 +796,13 @@ class Karyawan extends MY_Controller
             ->where("nik NOT LIKE", 'STATION%')
             ->where("nik NOT LIKE", 'TERM%')
             ->where('divisi_id !=', 8)
-            ->where_not_in('jabatan_id', [1, 2, 3])
-            ->get()->result();
+            ->where_not_in('jabatan_id', [1, 2, 3]);
+
+        if (!empty($this->session->userdata('perusahaan_id')) && $this->session->userdata('perusahaan_id') != 1) {
+            $this->db->where('perusahaan_id', $this->session->userdata('perusahaan_id'));
+        }
+
+        $all_employees = $this->db->get()->result();
 
         // 2. Fetch SPLs for the selected date - grouped by employee
         $this->db->where('tanggal', $tanggal);
@@ -934,6 +988,7 @@ class Karyawan extends MY_Controller
             }
 
             $row->foto_kegiatan = $last_spl ? $last_spl->foto_kegiatan : null;
+            $row->lokasi = $last_spl ? (isset($last_spl->lokasi) ? $last_spl->lokasi : null) : null;
             $row->jam_masuk = $att_day ? $att_day->jam_masuk : '00:00:00';
             $row->jam_pulang = $att_day ? $att_day->jam_pulang : '00:00:00';
 
@@ -965,7 +1020,10 @@ class Karyawan extends MY_Controller
                 $breakdown_list[] = "Kerjaan: " . round($total_jam_kerjaan, 1) . "j";
             $row->breakdown_html = implode('<br>', $breakdown_list) ?: 'Total: ' . $row->jam_efektif . ' jam';
 
-            $final_list[] = $row;
+            // Hanya tampilkan karyawan yang mengajukan lembur (punya SPL)
+            if (!empty($day_spls)) {
+                $final_list[] = $row;
+            }
         }
 
         // Sort: show lembur first, then by name
@@ -1016,8 +1074,13 @@ class Karyawan extends MY_Controller
             ->where('nama_lengkap NOT LIKE', '%LARGE FORMAT%')
             ->where('nama_lengkap NOT LIKE', '%A3+%')
             ->where("nik NOT LIKE", 'STATION%')
-            ->where("nik NOT LIKE", 'TERM%')
-            ->get()->result();
+            ->where("nik NOT LIKE", 'TERM%');
+
+        if (!empty($this->session->userdata('perusahaan_id')) && $this->session->userdata('perusahaan_id') != 1) {
+            $this->db->where('perusahaan_id', $this->session->userdata('perusahaan_id'));
+        }
+
+        $all_employees = $this->db->get()->result();
 
         // 2. Fetch SPLs for the selected date - Grouped
         $spl_data = $this->db->get_where('tbl_lembur', ['tanggal' => $tanggal])->result();
@@ -1038,6 +1101,12 @@ class Karyawan extends MY_Controller
         foreach ($all_employees as $emp) {
             $k_id = $emp->karyawan_id;
             $spls = isset($spl_grouped[$k_id]) ? $spl_grouped[$k_id] : [];
+            
+            // Hanya tampilkan karyawan yang mengajukan lembur
+            if (empty($spls)) {
+                continue;
+            }
+            
             $att = isset($abs_map[$k_id]) ? $abs_map[$k_id] : null;
 
             $total_jam_pagi = 0;
@@ -1137,6 +1206,7 @@ class Karyawan extends MY_Controller
             $row->status = $last_spl ? $last_spl->status : ($total_efektif > 0 ? 'hadir' : 'tidak lembur');
             $row->kegiatan = count($spls) > 0 ? $spls[0]->kegiatan : ($total_efektif > 0 ? 'Lembur Wajib/Otomatis' : '-');
             $row->foto_kegiatan = count($spls) > 0 ? $spls[0]->foto_kegiatan : null;
+            $row->lokasi = count($spls) > 0 ? (isset($spls[0]->lokasi) ? $spls[0]->lokasi : null) : null;
 
             $row->jam_efektif = round($total_efektif, 1);
             $row->jam_pagi = round($total_jam_pagi, 1);
@@ -1218,6 +1288,10 @@ class Karyawan extends MY_Controller
         $this->db->where('k.divisi_id !=', 8);
         $this->db->where_not_in('k.jabatan_id', [1, 2, 3]);
         $this->db->where('k.nama_lengkap NOT LIKE', '%Terminal%');
+
+        if (!empty($this->session->userdata('perusahaan_id')) && $this->session->userdata('perusahaan_id') != 1) {
+            $this->db->where('k.perusahaan_id', $this->session->userdata('perusahaan_id'));
+        }
 
         $this->db->order_by('k.nama_lengkap', 'ASC');
         $this->db->order_by('a.tanggal', 'ASC');
@@ -2010,18 +2084,24 @@ class Karyawan extends MY_Controller
 
         // Handle File Upload (Foto Profil)
         if (!empty($_FILES['foto']['name'])) {
-            $config['upload_path'] = './assets/images/karyawan/';
-            $config['allowed_types'] = 'jpg|jpeg|png';
-            $config['max_size'] = 5120; // 5MB
-            $config['file_name'] = 'karyawan_' . time();
+            $upload_path = FCPATH . 'assets/images/karyawan/';
+            if (!is_dir($upload_path)) {
+                mkdir($upload_path, 0777, true);
+            }
 
-            $this->load->library('upload', $config);
+            $config = [];
+            $config['upload_path'] = $upload_path;
+            $config['allowed_types'] = 'jpg|jpeg|png|webp|gif|JPG|JPEG|PNG|WEBP|GIF';
+            $config['max_size'] = 10240; // 10MB
+            $config['file_name'] = 'karyawan_' . time() . '_' . uniqid();
+
+            $this->upload->initialize($config);
 
             if ($this->upload->do_upload('foto')) {
                 $upload_data = $this->upload->data();
                 $data['foto'] = $upload_data['file_name'];
             } else {
-                echo json_encode(['status' => false, 'message' => $this->upload->display_errors()]);
+                echo json_encode(['status' => false, 'message' => 'Gagal upload foto: ' . strip_tags($this->upload->display_errors())]);
                 return;
             }
         }
@@ -2041,26 +2121,24 @@ class Karyawan extends MY_Controller
                 'dokumen_form_data' => 'form_data'
             ];
 
-            $doc_config['upload_path'] = './assets/documents/karyawan/';
-            $doc_config['allowed_types'] = 'pdf|jpg|jpeg|png|doc|docx';
-            $doc_config['max_size'] = 5120; // 5MB
+            $doc_upload_path = FCPATH . 'assets/documents/karyawan/';
+            if (!is_dir($doc_upload_path)) {
+                mkdir($doc_upload_path, 0777, true);
+            }
+
+            $doc_config = [];
+            $doc_config['upload_path'] = $doc_upload_path;
+            $doc_config['allowed_types'] = 'pdf|jpg|jpeg|png|doc|docx|PDF|JPG|JPEG|PNG|DOC|DOCX';
+            $doc_config['max_size'] = 10240; // 10MB
             $doc_config['encrypt_name'] = TRUE;
 
-            if (!is_dir($doc_config['upload_path'])) {
-                mkdir($doc_config['upload_path'], 0777, true);
-            }
-
-            // Load upload library if not loaded
-            if (!isset($this->upload)) {
-                $this->load->library('upload', $doc_config);
-            } else {
-                $this->upload->initialize($doc_config);
-            }
+            $this->upload->initialize($doc_config);
 
             $upload_errors = [];
 
             foreach ($dokumen_types as $input_name => $db_type) {
                 if (!empty($_FILES[$input_name]['name'])) {
+                    $this->upload->initialize($doc_config);
                     if ($this->upload->do_upload($input_name)) {
                         $upload_data = $this->upload->data();
                         $doc_data = [
@@ -2072,7 +2150,6 @@ class Karyawan extends MY_Controller
                     } else {
                         $upload_errors[] = "Gagal mengunggah $db_type: " . strip_tags($this->upload->display_errors());
                     }
-                    $this->upload->initialize($doc_config);
                 }
             }
 
@@ -2309,12 +2386,18 @@ class Karyawan extends MY_Controller
         }
 
         if (!empty($_FILES['foto']['name'])) {
-            $config['upload_path'] = './assets/images/karyawan/';
-            $config['allowed_types'] = 'jpg|jpeg|png';
-            $config['max_size'] = 5048; // 2MB
-            $config['file_name'] = 'karyawan_' . time();
+            $upload_path = FCPATH . 'assets/images/karyawan/';
+            if (!is_dir($upload_path)) {
+                mkdir($upload_path, 0777, true);
+            }
 
-            $this->load->library('upload', $config);
+            $config = [];
+            $config['upload_path'] = $upload_path;
+            $config['allowed_types'] = 'jpg|jpeg|png|webp|gif|JPG|JPEG|PNG|WEBP|GIF';
+            $config['max_size'] = 10240; // 10MB
+            $config['file_name'] = 'karyawan_' . time() . '_' . uniqid();
+
+            $this->upload->initialize($config);
 
             if ($this->upload->do_upload('foto')) {
                 $upload_data = $this->upload->data();
@@ -2322,12 +2405,12 @@ class Karyawan extends MY_Controller
 
                 // Hapus foto lama (jika ada)
                 $old_foto = $this->M_master->get_by_id($id)->foto;
-                if ($old_foto && file_exists('./assets/images/karyawan/' . $old_foto)) {
-                    unlink('./assets/images/karyawan/' . $old_foto);
+                if ($old_foto && !in_array($old_foto, ['default.png', 'user.png']) && file_exists($upload_path . $old_foto)) {
+                    @unlink($upload_path . $old_foto);
                 }
             } else {
                 // Jika upload gagal
-                $this->session->set_flashdata('error', $this->upload->display_errors());
+                $this->session->set_flashdata('error', strip_tags($this->upload->display_errors()));
                 redirect('karyawan/edit-karyawan/' . $id);
             }
         }
@@ -2493,7 +2576,7 @@ class Karyawan extends MY_Controller
             $this->db->where("k.nama_lengkap NOT LIKE 'OPERATOR %'");
 
             // Apply company filter
-            if ($this->session->userdata('perusahaan_id') != 1 && $this->session->userdata('level') != 21) {
+            if (!empty($this->session->userdata('perusahaan_id')) && $this->session->userdata('perusahaan_id') != 1) {
                 $this->db->where('k.perusahaan_id', $this->session->userdata('perusahaan_id'));
             }
 
@@ -2656,7 +2739,7 @@ class Karyawan extends MY_Controller
 
             // Apply company filter
             // Apply company filter
-            if ($this->session->userdata('perusahaan_id') != 1 && $this->session->userdata('level') != 21) {
+            if (!empty($this->session->userdata('perusahaan_id')) && $this->session->userdata('perusahaan_id') != 1) {
                 $this->db->where('k.perusahaan_id', $this->session->userdata('perusahaan_id'));
             }
 
@@ -2891,12 +2974,18 @@ class Karyawan extends MY_Controller
 
         // Handle File Upload (Foto Profil)
         if (!empty($_FILES['foto']['name'])) {
-            $config['upload_path'] = './assets/images/karyawan/';
-            $config['allowed_types'] = 'jpg|jpeg|png';
-            $config['max_size'] = 5120; // 5MB
-            $config['file_name'] = 'karyawan_' . time();
+            $upload_path = FCPATH . 'assets/images/karyawan/';
+            if (!is_dir($upload_path)) {
+                mkdir($upload_path, 0777, true);
+            }
 
-            $this->load->library('upload', $config);
+            $config = [];
+            $config['upload_path'] = $upload_path;
+            $config['allowed_types'] = 'jpg|jpeg|png|webp|gif|JPG|JPEG|PNG|WEBP|GIF';
+            $config['max_size'] = 10240; // 10MB
+            $config['file_name'] = 'karyawan_' . time() . '_' . uniqid();
+
+            $this->upload->initialize($config);
 
             if ($this->upload->do_upload('foto')) {
                 $upload_data = $this->upload->data();
@@ -2904,11 +2993,11 @@ class Karyawan extends MY_Controller
 
                 // Delete old photo
                 $old_data = $this->db->get_where('tbl_karyawan', ['karyawan_id' => $id])->row();
-                if ($old_data && $old_data->foto && file_exists('./assets/images/karyawan/' . $old_data->foto)) {
-                    unlink('./assets/images/karyawan/' . $old_data->foto);
+                if ($old_data && !empty($old_data->foto) && !in_array($old_data->foto, ['default.png', 'user.png']) && file_exists($upload_path . $old_data->foto)) {
+                    @unlink($upload_path . $old_data->foto);
                 }
             } else {
-                echo json_encode(['status' => false, 'message' => $this->upload->display_errors()]);
+                echo json_encode(['status' => false, 'message' => 'Gagal upload foto: ' . strip_tags($this->upload->display_errors())]);
                 return;
             }
         }
@@ -2925,22 +3014,24 @@ class Karyawan extends MY_Controller
             'dokumen_form_data' => 'form_data'
         ];
 
-        $doc_config['upload_path'] = './assets/documents/karyawan/';
-        $doc_config['allowed_types'] = 'pdf|jpg|jpeg|png|doc|docx';
-        $doc_config['max_size'] = 5120; // 5MB
-        $doc_config['encrypt_name'] = TRUE;
-
-        if (!is_dir($doc_config['upload_path'])) {
-            mkdir($doc_config['upload_path'], 0777, true);
+        $doc_upload_path = FCPATH . 'assets/documents/karyawan/';
+        if (!is_dir($doc_upload_path)) {
+            mkdir($doc_upload_path, 0777, true);
         }
 
-        // Load upload library if not loaded, or initialize
+        $doc_config = [];
+        $doc_config['upload_path'] = $doc_upload_path;
+        $doc_config['allowed_types'] = 'pdf|jpg|jpeg|png|doc|docx|PDF|JPG|JPEG|PNG|DOC|DOCX';
+        $doc_config['max_size'] = 10240; // 10MB
+        $doc_config['encrypt_name'] = TRUE;
+
         $this->upload->initialize($doc_config);
 
         $upload_errors = [];
 
         foreach ($dokumen_types as $input_name => $db_type) {
             if (!empty($_FILES[$input_name]['name'])) {
+                $this->upload->initialize($doc_config);
                 if ($this->upload->do_upload($input_name)) {
                     $upload_data = $this->upload->data();
 
@@ -2952,8 +3043,8 @@ class Karyawan extends MY_Controller
 
                     if ($existing_doc) {
                         // Delete old file
-                        if (file_exists($doc_config['upload_path'] . $existing_doc->file_path)) {
-                            unlink($doc_config['upload_path'] . $existing_doc->file_path);
+                        if (!empty($existing_doc->file_path) && file_exists($doc_upload_path . $existing_doc->file_path)) {
+                            @unlink($doc_upload_path . $existing_doc->file_path);
                         }
                         // Update existing record
                         $this->db->where('id', $existing_doc->id);
@@ -2974,9 +3065,6 @@ class Karyawan extends MY_Controller
                 } else {
                     $upload_errors[] = "Gagal mengunggah $db_type: " . strip_tags($this->upload->display_errors());
                 }
-
-                // Re-initialize for next loop
-                $this->upload->initialize($doc_config);
             }
         }
 
@@ -3386,9 +3474,10 @@ class Karyawan extends MY_Controller
         $extra_data = [
             'configs' => $this->db->get('tbl_lembur_config')->result(),
             'jam_kerja' => $this->db->order_by('urutan', 'asc')->get('tbl_jam_kerja')->result(),
-            'jam_configs' => $this->db->order_by('hari', 'asc')->order_by('jam_mulai', 'asc')->get('tbl_lembur_jam_config')->result()
+            'jam_configs' => $this->db->order_by('hari', 'asc')->order_by('jam_mulai', 'asc')->get('tbl_lembur_jam_config')->result(),
+            'kedisiplinan' => $this->db->get('tbl_pengaturan_kedisiplinan')->row()
         ];
-        $data = $this->_prepare_view_data('Pengaturan Kebijakan Lembur', $extra_data);
+        $data = $this->_prepare_view_data('Pengaturan Kebijakan Lembur & Kedisiplinan', $extra_data);
         $this->load_admin_view('admin/karyawan/pengaturan_lembur', $data);
     }
 
@@ -3441,6 +3530,24 @@ class Karyawan extends MY_Controller
             echo json_encode(['success' => true]);
         } else {
             echo json_encode(['success' => false, 'message' => 'No data received']);
+        }
+    }
+
+    public function update_pengaturan_kedisiplinan_ajax()
+    {
+        $data = [
+            'potongan_telat' => $this->input->post('potongan_telat', true),
+            'potongan_alpha' => $this->input->post('potongan_alpha', true),
+            'potongan_izin' => $this->input->post('potongan_izin', true),
+            'potongan_sakit' => $this->input->post('potongan_sakit', true),
+            'potongan_pulang_cepat' => $this->input->post('potongan_pulang_cepat', true)
+        ];
+
+        $this->db->where('id', 1);
+        if ($this->db->update('tbl_pengaturan_kedisiplinan', $data)) {
+            echo json_encode(['success' => true]);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Gagal memperbarui pengaturan kedisiplinan.']);
         }
     }
     /**
@@ -3542,7 +3649,19 @@ class Karyawan extends MY_Controller
             'tunjangan_extra' => $this->input->post('tunjangan_extra', true) ?? 0,
             'tunjangan_kinerja_manual' => $this->input->post('tunjangan_kinerja_manual', true) ?? 0,
             'kasbon' => $this->input->post('kasbon', true) ?? 0,
-            'pinjaman' => $this->input->post('pinjaman', true) ?? 0
+            'pinjaman' => $this->input->post('pinjaman', true) ?? 0,
+            'custom_in1_nama' => $this->input->post('custom_in1_nama', true) ?? '',
+            'custom_in1_nom' => $this->input->post('custom_in1_nom', true) ?? 0,
+            'custom_in2_nama' => $this->input->post('custom_in2_nama', true) ?? '',
+            'custom_in2_nom' => $this->input->post('custom_in2_nom', true) ?? 0,
+            'custom_in3_nama' => $this->input->post('custom_in3_nama', true) ?? '',
+            'custom_in3_nom' => $this->input->post('custom_in3_nom', true) ?? 0,
+            'custom_out1_nama' => $this->input->post('custom_out1_nama', true) ?? '',
+            'custom_out1_nom' => $this->input->post('custom_out1_nom', true) ?? 0,
+            'custom_out2_nama' => $this->input->post('custom_out2_nama', true) ?? '',
+            'custom_out2_nom' => $this->input->post('custom_out2_nom', true) ?? 0,
+            'custom_out3_nama' => $this->input->post('custom_out3_nama', true) ?? '',
+            'custom_out3_nom' => $this->input->post('custom_out3_nom', true) ?? 0,
         ];
 
         // UPSERT logic
@@ -3828,6 +3947,255 @@ class Karyawan extends MY_Controller
             echo json_encode(['success' => true, 'message' => $msg]);
         }
     }
-}
 
+    public function export_karyawan_excel()
+    {
+        // Check if user is authorized
+        $user_level = $this->session->userdata('level');
+        $nama_level = (string)$this->session->userdata('nama_level');
+        $username = (string)$this->session->userdata('username');
+
+        $is_owner = ($user_level == 17 || strpos($nama_level, 'Owner') !== false);
+        $is_admin = ($user_level == 1 || strpos($nama_level, 'Admin') !== false);
+        $is_sdm = ($user_level == 21 || strpos($nama_level, 'HR') !== false);
+        $is_developer = ($username === 'nizarsuryadi');
+
+        if (!$is_owner && !$is_admin && !$is_sdm && !$is_developer) {
+            show_error('Access denied', 403);
+            return;
+        }
+
+        try {
+            // Turn off error reporting to prevent warnings/notices from breaking the Excel file
+            error_reporting(0);
+            
+            // Get search parameters
+            $search = trim($this->input->get('search', true));
+            $gender = trim($this->input->get('gender', true));
+            $status = trim($this->input->get('status', true));
+            $jabatan = trim($this->input->get('jabatan', true));
+            $divisi = trim($this->input->get('divisi', true));
+            $perusahaan = trim($this->input->get('perusahaan', true));
+
+            // Build the query
+            $this->db->select('k.*, j.nama_jabatan, d.divisi_nama, p.nama_perusahaan, u.username');
+            $this->db->from('tbl_karyawan k');
+            $this->db->join('tbl_jabatan j', 'k.jabatan_id = j.jabatan_id', 'left');
+            $this->db->join('tbl_divisi d', 'k.divisi_id = d.divisi_id', 'left');
+            $this->db->join('tbl_perusahaan p', 'k.perusahaan_id = p.id_perusahaan', 'left');
+            $this->db->join('users u', 'k.karyawan_id = u.karyawan_id', 'left');
+
+            // Exclude Owner and Directors
+            $this->db->where('k.divisi_id !=', 8);
+            $this->db->where_not_in('k.jabatan_id', [1, 2, 3]);
+
+            // Exclude Dummy Terminal Accounts
+            $this->db->where("k.nik NOT LIKE 'STATION%'");
+            $this->db->where("k.nama_lengkap NOT LIKE '%Terminal%'");
+            $this->db->where("k.nama_lengkap NOT LIKE '%DTF%'");
+            $this->db->where("k.nama_lengkap NOT LIKE 'OPERATOR %'");
+
+            // Apply company filter
+            if (!empty($this->session->userdata('perusahaan_id')) && $this->session->userdata('perusahaan_id') != 1) {
+                $this->db->where('k.perusahaan_id', $this->session->userdata('perusahaan_id'));
+            }
+
+            // Apply search filter
+            if (!empty($search)) {
+                $this->db->group_start();
+                $this->db->like('k.nama_lengkap', $search);
+                $this->db->or_like('k.nik', $search);
+                $this->db->or_like('k.email', $search);
+                $this->db->group_end();
+            }
+
+            // Apply gender filter
+            if (!empty($gender)) {
+                $this->db->where('k.jenis_kelamin', $gender);
+            }
+
+            // Apply status filter
+            if (!empty($status)) {
+                $this->db->where('k.status_karyawan', $status);
+            }
+
+            // Apply jabatan filter
+            if (!empty($jabatan)) {
+                if (is_numeric($jabatan)) {
+                    $this->db->where('k.jabatan_id', $jabatan);
+                } else {
+                    $this->db->where('j.nama_jabatan', $jabatan);
+                }
+            }
+
+            // Apply divisi filter
+            if (!empty($divisi)) {
+                if (is_numeric($divisi)) {
+                    $this->db->where('k.divisi_id', $divisi);
+                } else {
+                    $this->db->where('d.divisi_nama', $divisi);
+                }
+            }
+
+            // Apply perusahaan filter
+            if (!empty($perusahaan)) {
+                if (is_numeric($perusahaan)) {
+                    $this->db->where('k.perusahaan_id', $perusahaan);
+                } else {
+                    $this->db->where('p.nama_perusahaan', $perusahaan);
+                }
+            }
+
+            // Order by: Tanggal Masuk (Oldest First) then Nama (A-Z)
+            $this->db->order_by('k.tanggal_masuk', 'asc');
+            $this->db->order_by('k.nama_lengkap', 'asc');
+
+            $employees = $this->db->get()->result();
+
+            // Load PHPExcel library
+            $this->load->library('excel');
+
+            // Create new PHPExcel object
+            $objPHPExcel = new PHPExcel();
+
+            // Set document properties
+            $objPHPExcel->getProperties()->setCreator("TGM ERP System")
+                ->setLastModifiedBy("TGM ERP System")
+                ->setTitle("Data Karyawan Export")
+                ->setSubject("Data Karyawan Export")
+                ->setDescription("Data karyawan yang diexport dari sistem TGM ERP");
+
+            // Add header
+            $objPHPExcel->setActiveSheetIndex(0)
+                ->setCellValue('A1', 'DATA KARYAWAN')
+                ->setCellValue('A2', 'Tanggal Export: ' . date('d/m/Y H:i:s'));
+
+            // Add table headers
+            $objPHPExcel->setActiveSheetIndex(0)
+                ->setCellValue('A4', 'No')
+                ->setCellValue('B4', 'NIK')
+                ->setCellValue('C4', 'Nama Lengkap')
+                ->setCellValue('D4', 'Jenis Kelamin')
+                ->setCellValue('E4', 'Jabatan')
+                ->setCellValue('F4', 'Divisi')
+                ->setCellValue('G4', 'Lokasi Cabang')
+                ->setCellValue('H4', 'Status')
+                ->setCellValue('I4', 'Tanggal Masuk')
+                ->setCellValue('J4', 'Telepon')
+                ->setCellValue('K4', 'Email')
+                ->setCellValue('L4', 'Alamat');
+
+            // Style header
+            $objPHPExcel->getActiveSheet()->getStyle('A1:L1')->getFont()->setBold(true)->setSize(14);
+            $objPHPExcel->getActiveSheet()->getStyle('A4:L4')->getFont()->setBold(true);
+            $objPHPExcel->getActiveSheet()->getStyle('A4:L4')->getFill()->setFillType(PHPExcel_Style_Fill::FILL_SOLID)->getStartColor()->setRGB('CCCCCC');
+
+            // Add data
+            $row = 5;
+            foreach ($employees as $index => $employee) {
+                $objPHPExcel->setActiveSheetIndex(0)
+                    ->setCellValue('A' . $row, $index + 1)
+                    ->setCellValue('B' . $row, ' ' . $employee->nik)
+                    ->setCellValue('C' . $row, $employee->nama_lengkap)
+                    ->setCellValue('D' . $row, $employee->jenis_kelamin == 'L' ? 'Laki-laki' : ($employee->jenis_kelamin == 'P' ? 'Perempuan' : $employee->jenis_kelamin))
+                    ->setCellValue('E' . $row, $employee->nama_jabatan)
+                    ->setCellValue('F' . $row, $employee->divisi_nama)
+                    ->setCellValue('G' . $row, $employee->nama_perusahaan)
+                    ->setCellValue('H' . $row, $employee->status_karyawan)
+                    ->setCellValue('I' . $row, $employee->tanggal_masuk)
+                    ->setCellValue('J' . $row, ' ' . $employee->telepon)
+                    ->setCellValue('K' . $row, $employee->email)
+                    ->setCellValue('L' . $row, $employee->alamat);
+                $row++;
+            }
+
+            // Auto size columns
+            foreach (range('A', 'L') as $col) {
+                $objPHPExcel->getActiveSheet()->getColumnDimension($col)->setAutoSize(true);
+            }
+
+            // Set active sheet index to the first sheet
+            $objPHPExcel->setActiveSheetIndex(0);
+
+            $temp_file = FCPATH . 'assets/temp_export_' . time() . '.xlsx';
+            $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel2007');
+            $objWriter->save($temp_file);
+
+            // Clean output buffer before sending headers
+            while (ob_get_level() > 0) {
+                ob_end_clean();
+            }
+
+            // Redirect output to client browser
+            header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            header('Content-Disposition: attachment;filename="karyawan_export_' . date('Ymd_His') . '.xlsx"');
+            header('Cache-Control: max-age=0');
+            header('Content-Length: ' . filesize($temp_file));
+
+            readfile($temp_file);
+            if (file_exists($temp_file)) {
+                unlink($temp_file);
+            }
+            exit;
+
+        } catch (Exception $e) {
+            show_error('Export error: ' . $e->getMessage(), 500);
+        }
+    }
+
+    public function export_karyawan_pdf()
+    {
+        $user_level = $this->session->userdata('level');
+        $nama_level = (string)$this->session->userdata('nama_level');
+        $username = (string)$this->session->userdata('username');
+
+        $is_owner = ($user_level == 17 || strpos($nama_level, 'Owner') !== false);
+        $is_admin = ($user_level == 1 || strpos($nama_level, 'Admin') !== false);
+        $is_sdm = ($user_level == 21 || strpos($nama_level, 'HR') !== false);
+        $is_developer = ($username === 'nizarsuryadi');
+
+        if (!$is_owner && !$is_admin && !$is_sdm && !$is_developer) {
+            show_error('Access denied', 403);
+            return;
+        }
+
+        $search = trim($this->input->get('search', true));
+        $gender = trim($this->input->get('gender', true));
+        $status = trim($this->input->get('status', true));
+        $jabatan = trim($this->input->get('jabatan', true));
+        $divisi = trim($this->input->get('divisi', true));
+        $perusahaan = trim($this->input->get('perusahaan', true));
+
+        $this->db->select('k.*, j.nama_jabatan, d.divisi_nama, p.nama_perusahaan, u.username');
+        $this->db->from('tbl_karyawan k');
+        $this->db->join('tbl_jabatan j', 'k.jabatan_id = j.jabatan_id', 'left');
+        $this->db->join('tbl_divisi d', 'k.divisi_id = d.divisi_id', 'left');
+        $this->db->join('tbl_perusahaan p', 'k.perusahaan_id = p.id_perusahaan', 'left');
+        $this->db->join('users u', 'k.karyawan_id = u.karyawan_id', 'left');
+        $this->db->where('k.divisi_id !=', 8);
+        $this->db->where_not_in('k.jabatan_id', [1, 2, 3]);
+        $this->db->where("k.nik NOT LIKE 'STATION%'");
+        $this->db->where("k.nama_lengkap NOT LIKE '%Terminal%'");
+        $this->db->where("k.nama_lengkap NOT LIKE '%DTF%'");
+        $this->db->where("k.nama_lengkap NOT LIKE 'OPERATOR %'");
+
+        if (!empty($this->session->userdata('perusahaan_id')) && $this->session->userdata('perusahaan_id') != 1) {
+            $this->db->where('k.perusahaan_id', $this->session->userdata('perusahaan_id'));
+        }
+        if (!empty($search)) {
+            $this->db->group_start()->like('k.nama_lengkap', $search)->or_like('k.nik', $search)->or_like('k.email', $search)->group_end();
+        }
+        if (!empty($gender)) $this->db->where('k.jenis_kelamin', $gender);
+        if (!empty($status)) $this->db->where('k.status_karyawan', $status);
+        if (!empty($jabatan)) { is_numeric($jabatan) ? $this->db->where('k.jabatan_id', $jabatan) : $this->db->where('j.nama_jabatan', $jabatan); }
+        if (!empty($divisi)) { is_numeric($divisi) ? $this->db->where('k.divisi_id', $divisi) : $this->db->where('d.divisi_nama', $divisi); }
+        if (!empty($perusahaan)) { is_numeric($perusahaan) ? $this->db->where('k.perusahaan_id', $perusahaan) : $this->db->where('p.nama_perusahaan', $perusahaan); }
+
+        $this->db->order_by('k.tanggal_masuk', 'asc');
+        $this->db->order_by('k.nama_lengkap', 'asc');
+        
+        $data['karyawan'] = $this->db->get()->result();
+        $this->load->view('admin/karyawan/cetak_karyawan_pdf', $data);
+    }
+}
 ?>

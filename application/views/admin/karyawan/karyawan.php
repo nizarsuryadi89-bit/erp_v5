@@ -161,6 +161,14 @@
                 <p class="small text-muted mb-0">Manajemen record SDM, posisi, dan riwayat administrasi.</p>
             </div>
             <div class="d-flex gap-2">
+                <button type="button" id="btnExportExcel"
+                    class="btn btn-success rounded-pill px-4 fw-900 small shadow-sm">
+                    <i class="bi bi-file-earmark-excel-fill me-2"></i> EXPORT EXCEL
+                </button>
+                <button type="button" id="btnExportPdf"
+                    class="btn btn-danger rounded-pill px-4 fw-900 small shadow-sm">
+                    <i class="bi bi-file-earmark-pdf-fill me-2"></i> EXPORT PDF
+                </button>
                 <button type="button" data-bs-toggle="modal" data-bs-target="#modalSOPKaryawan"
                     class="btn btn-white border rounded-pill px-4 fw-900 small shadow-sm">
                     <i class="bi bi-journal-text me-2 text-primary-tgm"></i> PANDUAN SOP

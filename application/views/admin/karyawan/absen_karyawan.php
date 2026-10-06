@@ -22,6 +22,27 @@ foreach ($absensi as $row) {
     else
         $jumlah_alpa++;
 }
+
+// Haversine Distance Helper
+if (!function_exists('hitung_jarak')) {
+    function hitung_jarak($lat1, $lon1, $lat2, $lon2) {
+        $earth_radius = 6371000; // in meters
+        
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLon = deg2rad($lon2 - $lon1);
+        
+        $a = sin($dLat/2) * sin($dLat/2) + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLon/2) * sin($dLon/2);
+        $c = 2 * asin(sqrt($a));
+        $d = $earth_radius * $c;
+        
+        return $d;
+    }
+}
+
+$CI =& get_instance();
+$comp = $CI->db->get_where('tbl_perusahaan', ['id_perusahaan' => 1])->row();
+$comp_lat = $comp ? $comp->latitude : -6.23674577;
+$comp_lon = $comp ? $comp->longitude : 106.99821922;
 ?>
 
 <link rel="stylesheet" href="<?= base_url('assets/css/costume-tgm.css') ?>">
@@ -215,6 +236,7 @@ foreach ($absensi as $row) {
                                         <th class="text-center">Jam Masuk</th>
                                         <th class="text-center">Jam Pulang</th>
                                         <th class="text-center">Status</th>
+                                        <th class="text-center">Lokasi</th>
                                         <th>Keterangan</th>
                                     </tr>
                                 </thead>
@@ -248,6 +270,27 @@ foreach ($absensi as $row) {
                                                     <span class="badge status-pill bg-<?= $sc ?>">
                                                         <?= strtoupper($row->status) ?>
                                                     </span>
+                                                </td>
+                                                <td class="text-center">
+                                                    <?php if (!empty($row->lokasi_absen)): ?>
+                                                        <?php
+                                                        $loc_url = '#';
+                                                        $jarak_text = '';
+                                                        if (preg_match('/Lat:\s*([-\d\.]+),\s*Long:\s*([-\d\.]+)/i', $row->lokasi_absen, $matches)) {
+                                                            $loc_url = "https://www.google.com/maps/search/?api=1&query=" . $matches[1] . "," . $matches[2];
+                                                            $jarak = hitung_jarak($comp_lat, $comp_lon, $matches[1], $matches[2]);
+                                                            $jarak_text = '<div class="small mt-1 text-muted" style="font-size: 0.75rem;">' . number_format($jarak, 0, ',', '.') . ' m</div>';
+                                                        } else {
+                                                            $loc_url = "https://www.google.com/maps/search/?api=1&query=" . urlencode($row->lokasi_absen);
+                                                        }
+                                                        ?>
+                                                        <a href="<?= $loc_url ?>" target="_blank" class="badge bg-info text-decoration-none">
+                                                            <i class="fas fa-map-marker-alt"></i> Peta
+                                                        </a>
+                                                        <?= $jarak_text ?>
+                                                    <?php else: ?>
+                                                        <span class="text-muted small">-</span>
+                                                    <?php endif; ?>
                                                 </td>
                                                 <td><small class="text-muted"><?= $row->keterangan ?: '-' ?></small></td>
                                             </tr>

@@ -226,7 +226,7 @@
                         $groupStates[$gk]['pending']++;
                         if ($is_auth_active) $groupStates[$gk]['auth_pending']++;
                     }
-                    elseif ($stKey === 'proses') {
+                    elseif (in_array($stKey, ['proses', 'finishing'], true)) {
                         $groupStates[$gk]['proses']++;
                         if ($is_auth_active) $groupStates[$gk]['auth_proses']++;
                     }
@@ -285,7 +285,7 @@
 
                 $st = (string) $item->status_produksi;
                 $stClass = 'bg-info bg-opacity-10 text-info border-info';
-                if ($st === 'proses')
+                if (in_array($st, ['proses', 'finishing'], true))
                     $stClass = 'bg-warning bg-opacity-10 text-warning border-warning';
                 if ($st === 'done')
                     $stClass = 'bg-success bg-opacity-10 text-success border-success';
@@ -458,6 +458,18 @@
                 ?>
                 <?php
                 $isReprintItem = (!empty($item->is_reprint) || strpos(($item->catatan ?? ''), '[RIJEK]') !== false);
+                
+                $itemTitle = $item->product_nama;
+                if (!empty($meta) && is_array($meta)) {
+                    $fin_parts = [];
+                    if (!empty($meta['finishing'])) $fin_parts[] = $meta['finishing'];
+                    if (!empty($meta['ukuran'])) $fin_parts[] = $meta['ukuran'];
+                    if (!empty($fin_parts)) {
+                        $itemTitle .= ' [' . implode(', ', $fin_parts) . ']';
+                    }
+                } elseif (!empty($item->db_ket_1)) {
+                    $itemTitle .= ' [' . $item->db_ket_1 . ']';
+                }
                 ?>
                 <tr class="tr-item-row tr-nesting-item <?= $isReprintItem ? 'tr-reprint' : '' ?>"
                     style="border-left: 5px solid <?= $isReprintItem ? '#e74c3c' : 'transparent' ?>; transition: all 0.2s ease;"
@@ -466,24 +478,41 @@
                     <td style="width: 1%; white-space: nowrap;"
                         class="text-center <?= (isset($view_mode) && $view_mode === 'finishing') ? 'd-none' : '' ?>">
                         <div class="form-check d-flex justify-content-center m-0 p-0">
+                            <?php
+                            $filtered_bom_lines = !empty($item->bom_lines) ? $item->bom_lines : (!empty($item->bom) ? [$item->bom] : []);
+                            $current_step_bom_line_id = $item->current_step_bom_line_id ?? null;
+                            $active_bom = null;
+
+                            if ($current_step_bom_line_id) {
+                                foreach ($filtered_bom_lines as $b) {
+                                    if ($b->bom_line_id == $current_step_bom_line_id) {
+                                        $active_bom = $b;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (!$active_bom) {
+                                $active_bom = $item->bom ?? ($filtered_bom_lines[0] ?? null);
+                            }
+                            ?>
                             <input class="form-check-input check-item-nesting" type="checkbox"
-                                data-id="<?= $item->produksi_id ?>" data-panjang="<?= $p ?>" data-lebar="<?= $l ?>"
-                                data-qty="<?= $qty ?>" data-bahan-id="<?= $item->bom->bahan_id ?? 0 ?>"
-                                data-bom-material-id="<?= $item->bom->bom_material_id ?? 0 ?>"
-                                data-bom-p="<?= (float) ($item->bom->panjang ?? 0) ?>"
-                                data-bom-l="<?= (float) ($item->bom->lebar ?? 0) ?>"
-                                data-bom-qty="<?= (float) ($item->bom->bom_qty ?? 1) ?>"
+                                data-id="<?= $item->produksi_id ?>" data-step-id="<?= (int) ($item->workflow_step_id ?? 0) ?>" data-step-status="<?= htmlspecialchars($item->workflow_step_status ?? '0', ENT_QUOTES, 'UTF-8') ?>"
+                                    data-step-output="<?= (float) ($item->workflow_qty_output ?? 0) ?>" data-step-version="<?= htmlspecialchars($item->workflow_version ?? '', ENT_QUOTES, 'UTF-8') ?>" data-panjang="<?= $p ?>" data-lebar="<?= $l ?>"
+                                data-qty="<?= $qty ?>" data-bahan-id="<?= $active_bom->bahan_id ?? 0 ?>"
+                                data-bom-material-id="<?= $active_bom->bom_material_id ?? 0 ?>"
+                                data-bom-p="<?= (float) ($active_bom->panjang ?? 0) ?>"
+                                data-bom-l="<?= (float) ($active_bom->lebar ?? 0) ?>"
+                                data-bom-qty="<?= (float) ($active_bom->quantity ?? $active_bom->bom_qty ?? 1) ?>"
                                 data-status="<?= $item->status_produksi ?>" data-kategori-id="<?= $item->kategori_id ?>"
                                 data-tipe-id="<?= $item->tipe_id ?? 1 ?>"
-                                data-satuan="<?= htmlspecialchars($item->bom->satuan_nama ?? 'UNIT') ?>"
+                                data-satuan="<?= htmlspecialchars($active_bom->satuan_nama ?? 'UNIT') ?>"
                                 data-satuan-produk="<?= htmlspecialchars($item->satuan_nama ?? 'UNIT') ?>"
                                 data-step-urutan="<?= $item->current_step_urutan ?? 1 ?>"
                                 data-step-name="<?= htmlspecialchars($item->current_step_name ?? 'FINISHING') ?>"
-                                <?php
-                                $filtered_bom_lines = !empty($item->bom_lines) ? $item->bom_lines : (!empty($item->bom) ? [$item->bom] : []);
-                                ?>
+                                data-current-bom-line-id="<?= htmlspecialchars($current_step_bom_line_id ?? '') ?>"
                                 data-bom-lines="<?= htmlspecialchars(json_encode($filtered_bom_lines), ENT_QUOTES, 'UTF-8') ?>"
                                 data-ripping-group="<?= htmlspecialchars($item->ripping_group ?? '') ?>"
+                                data-item-title="<?= htmlspecialchars($itemTitle, ENT_QUOTES, 'UTF-8') ?>"
                                 style="width: 1.1rem; height: 1.1rem; cursor: pointer;" <?= ($item->status_produksi === 'done' || !$can_execute || $is_waiting_upstream) ? 'disabled' : '' ?>>
                         </div>
                     </td>
@@ -726,9 +755,12 @@
                                         <?php
                                         $bom_json_data = [];
                                         foreach ($item->bom_lines as $bl) {
-                                            $total_qty = $bl->bom_qty * $qty;
+                                            $base_qty = (float)$bl->bom_qty;
+                                            $total_qty = $base_qty * $qty;
                                             $bom_json_data[] = [
                                                 'name' => $bl->bahan_nama ?? 'Unknown',
+                                                'base_qty' => $base_qty,
+                                                'order_qty' => (float)$qty,
                                                 'qty' => number_format($total_qty, 2),
                                                 'unit' => $bl->satuan_nama ?? 'Unit'
                                             ];
@@ -803,11 +835,33 @@
                                 <div class="mt-1 ps-2 border-start border-3 border-warning py-1 bg-warning bg-opacity-10 rounded-end">
                                     <div class="small fw-bold text-warning-emphasis mb-1" style="font-size: 0.6rem;"><i class="fas fa-sticky-note me-1"></i>KETERANGAN:</div>
                                     <div class="d-flex flex-column gap-1" style="font-size: 0.65rem;">
+                                        <?php 
+                                            // Get Lokasi Pesan & Lokasi Produksi names
+                                            $nospk_parts = explode('-', $item->nospk);
+                                            $spk_cabang_id = isset($nospk_parts[0]) ? (int)$nospk_parts[0] : 1;
+                                            $lokasi_cetak = $item->lokasi_cetak ?? 1;
+                                            
+                                            $lokasi_pesan_nama = 'TGM OFFICIAL (PUSAT)';
+                                            if ($spk_cabang_id == 3) {
+                                                $lokasi_pesan_nama = 'TGM MERCH (CABANG)';
+                                            } elseif ($spk_cabang_id > 3) {
+                                                $lokasi_pesan_nama = 'CABANG LAIN';
+                                            }
+
+                                            $lokasi_produksi_nama = 'TGM OFFICIAL (PUSAT)';
+                                            if ($lokasi_cetak == 3) {
+                                                $lokasi_produksi_nama = 'TGM MERCH (CABANG)';
+                                            } elseif ($lokasi_cetak > 3) {
+                                                $lokasi_produksi_nama = 'CABANG LAIN';
+                                            }
+                                        ?>
+                                        <div class="text-muted">Lokasi Pesan: <span class="fw-bold text-dark"><?= htmlspecialchars($lokasi_pesan_nama) ?></span></div>
+                                        <div class="text-muted">Lokasi Produksi: <span class="fw-bold text-dark"><?= htmlspecialchars($lokasi_produksi_nama) ?></span></div>
                                         <?php if (!empty($item->deskprint_nama)): ?>
-                                            <div class="text-muted">Dibuat Oleh (Deskprint): <span class="fw-bold text-dark"><?= htmlspecialchars($item->deskprint_nama) ?></span></div>
+                                            <div class="text-muted" style="font-size: 0.6rem;">Deskprint: <span><?= htmlspecialchars($item->deskprint_nama) ?></span></div>
                                         <?php endif; ?>
 
-                                        <?php if ($st === 'proses'): ?>
+                                        <?php if (in_array($st, ['proses', 'finishing'], true)): ?>
                                             <?php if (!empty($item->assigned_user)): ?>
                                                 <div class="text-muted">Dikerjakan Oleh Operator: <span class="fw-bold text-dark"><?= htmlspecialchars($item->assigned_user) ?></span></div>
                                             <?php endif; ?>
@@ -826,6 +880,21 @@
                                                 <?php endif; ?>
                                             <?php endif; ?>
                                         <?php endif; ?>
+                                        
+                                        <?php 
+                                        // Display routing history (completed steps and their operators)
+                                        if (!empty($item->routing_steps)) {
+                                            $history_arr = [];
+                                            foreach ($item->routing_steps as $step) {
+                                                if ($step->status_produksi == '2' && !empty($step->op_name)) {
+                                                    $history_arr[] = "<span class='fw-bold text-dark'>" . htmlspecialchars($step->op_name) . "</span> <span class='text-muted fst-italic'>(" . htmlspecialchars($step->routing_name) . ")</span>";
+                                                }
+                                            }
+                                            if (!empty($history_arr)) {
+                                                echo '<div class="text-muted mt-1 border-top border-warning-subtle pt-1 pb-1">Riwayat Pengerjaan: <div class="lh-sm mt-1" style="font-size:0.65rem;">' . implode('<br>', $history_arr) . '</div></div>';
+                                            }
+                                        }
+                                        ?>
                                     </div>
 
                                     <?php if (!empty($final_catatan)): ?>
@@ -843,7 +912,7 @@
                             $status_text = 'Belum di Proses';
                             $status_class = 'bg-secondary bg-opacity-10 text-secondary border-secondary';
                             
-                            if ($st === 'proses') {
+                            if (in_array($st, ['proses', 'finishing'], true)) {
                                 $status_text = 'Proses Produksi';
                                 $status_class = 'bg-warning bg-opacity-10 text-warning border-warning';
                             } elseif ($st === 'done') {
@@ -861,7 +930,7 @@
                                 style="padding: 6px 12px; font-size: 0.65rem; letter-spacing: 0.5px; min-width: 85px; font-weight: 800;">
                                 <?= strtoupper($status_text) ?>
                             </span>
-                            <?php if ($st === 'proses' && !empty($item->current_step_name)): ?>
+                            <?php if (in_array($st, ['proses', 'finishing'], true) && !empty($item->current_step_name)): ?>
                                 <span class="text-primary fw-900 text-center"
                                     style="font-size: 0.55rem; max-width: 100%; white-space: normal; line-height: 1.1;"><?= strtoupper($item->current_step_name) ?></span>
                                 <?php
@@ -1008,18 +1077,18 @@
         if (!document.getElementById('bomMaterialsModal')) {
             const modalHtml = `
         <div class="modal fade" id="bomMaterialsModal" tabindex="-1" aria-labelledby="bomMaterialsModalLabel" aria-hidden="true">
-          <div class="modal-dialog modal-dialog-centered modal-sm">
+          <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0 shadow-lg">
               <div class="modal-header bg-light border-bottom border-primary border-3">
-                <h6 class="modal-title fw-bold text-dark mb-0"><i class="fas fa-box-open me-2 text-primary"></i>Kebutuhan Bahan</h6>
+                <h5 class="modal-title fw-bold text-dark mb-0"><i class="fas fa-box-open me-2 text-primary"></i>Kebutuhan Bahan</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
               </div>
               <div class="modal-body p-3">
-                <div class="alert alert-warning py-2 px-3 mb-3 d-flex align-items-center" style="font-size: 0.75rem; border-left: 4px solid #ffc107;">
-                    <i class="fas fa-exclamation-circle me-2 fs-6"></i>
+                <div class="alert alert-warning py-2 px-3 mb-3 d-flex align-items-center" style="font-size: 0.85rem; border-left: 4px solid #ffc107;">
+                    <i class="fas fa-exclamation-circle me-2 fs-5"></i>
                     <div>Silahkan Cek Ketersediaan Stok Bahan Berikut sebelum melakukan Produksi</div>
                 </div>
-                <div class="fw-bold text-dark mb-3 border-bottom pb-2" style="font-size: 0.8rem;" id="bomModalProductName"></div>
+                <div class="fw-bold text-dark mb-3 border-bottom pb-2" style="font-size: 0.95rem;" id="bomModalProductName"></div>
                 <ul class="list-unstyled mb-0 d-flex flex-column gap-2" id="bomModalListContainer"></ul>
               </div>
             </div>
@@ -1039,10 +1108,18 @@
 
             if (bomData && bomData.length > 0) {
                 bomData.forEach(item => {
+                    let calcDetail = '';
+                    if (item.base_qty !== undefined && item.order_qty !== undefined) {
+                        calcDetail = `<div class="text-muted mt-1" style="font-size: 0.8rem; margin-left: 0.5rem;"><i class="fas fa-calculator me-1 text-secondary"></i> Kebutuhan: (1 Pcs = ${item.base_qty} ${item.unit}) &times; (${item.order_qty} Pesanan)</div>`;
+                    }
+                    
                     listContainer.append(`
-                    <li class="d-flex align-items-center justify-content-between border-bottom border-secondary border-opacity-10 pb-2">
-                        <span class="text-dark fw-semibold text-wrap pe-2" style="font-size: 0.75rem; line-height: 1.2;">&bull; ${item.name}</span>
-                        <span class="badge bg-primary bg-opacity-10 text-primary fw-bold border border-primary border-opacity-25 shadow-sm text-nowrap" style="font-size: 0.7rem;">${item.qty} ${item.unit}</span>
+                    <li class="d-flex flex-column border-bottom border-secondary border-opacity-10 pb-2">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <span class="text-dark fw-semibold text-wrap pe-2" style="font-size: 0.85rem; line-height: 1.3;">&bull; ${item.name}</span>
+                            <span class="badge bg-primary bg-opacity-10 text-primary fw-bold border border-primary border-opacity-25 shadow-sm text-nowrap" style="font-size: 0.85rem;">Total: ${item.qty} ${item.unit}</span>
+                        </div>
+                        ${calcDetail}
                     </li>
                 `);
                 });

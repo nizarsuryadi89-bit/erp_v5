@@ -284,8 +284,8 @@ if (!function_exists('invoice_detail_metadata')) {
     }
 
     // Hitung diskon dan ongkir (jika ada)
-    $diskon = 0; // Bisa diambil dari form pembayaran jika disimpan
-    $ongkir = 0; // Bisa diambil dari form pembayaran jika disimpan
+    $diskon = isset($pembayaran->diskon_total) ? floatval($pembayaran->diskon_total) : (isset($pembayaran->diskon) ? floatval($pembayaran->diskon) : 0);
+    $ongkir = isset($pembayaran->ongkir) ? floatval($pembayaran->ongkir) : 0;
     ?>
     <tr>
         <td rowspan="8" width="40%" align="center"></td>

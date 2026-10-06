@@ -47,7 +47,7 @@ class Penjualan extends MY_Controller
         $pesan .= "Total Tagihan: *Rp $total*\n";
         $pesan .= "Status: *" . ($trx->status_lunas == 1 ? 'LUNAS' : 'PENDING') . "*\n\n";
         $pesan .= "Detail pesanan Anda sedang diproses. Silakan simpan nota ini sebagai bukti transaksi.\n\n";
-        $pesan .= "Cek Status Pesanan: https://erp.tgmprint.com/cekpesanan/spk/" . urlencode(encrypt_spk($nospk)) . "\n\n";
+        $pesan .= "Cek Status Pesanan: https://tracking.tgmprint.com/?spk=" . urlencode(encrypt_spk($nospk)) . "\n\n";
         $pesan .= "_Pesan otomatis via ERP TGM Print_";
 
         $response = send_wa($trx->konsumen_nohp, $pesan);
@@ -144,7 +144,10 @@ class Penjualan extends MY_Controller
         $privileged_roles = [1, 2, 17, 21];
 
         if (in_array($user_level, $privileged_roles)) {
-            if ($selected_perusahaan && $selected_perusahaan != 'all') {
+            if ($selected_perusahaan == '1' || $selected_perusahaan == 'all') {
+                $params['filter_branch'] = false; // Show all
+                $params['show_all_branches'] = true;
+            } elseif ($selected_perusahaan) {
                 $params['filter_branch'] = true;
                 $params['branch_id'] = $selected_perusahaan;
                 $params['filter_by_branch'] = true;
@@ -335,7 +338,7 @@ class Penjualan extends MY_Controller
 
         $date = $this->input->get('date') ?: date('Y-m-d');
         $format = $this->input->get('format') ?: 'excel';
-        
+
         $userid = $this->session->userdata('id');
         $access_params = $this->getAccessControlParams($user_level, $userid);
 
@@ -502,7 +505,7 @@ class Penjualan extends MY_Controller
             $has_snapshot_detail = $this->db->field_exists('snapshot_detail_product', 'tbl_pembayaran_produk');
             $select_harga = $has_snapshot_harga ? 'COALESCE(pp.snapshot_harga, hd.harga_1)' : 'hd.harga_1';
             $select_detail = $has_snapshot_detail ? 'COALESCE(pp.snapshot_detail_product, hd.detail_product)' : 'hd.detail_product';
-            $this->db->select("pp.*, pr.product_nama, pr.barcode_product, {$select_harga} as harga_1, {$select_detail} as detail_product, s.satuan_nama");
+            $this->db->select("pp.*, pr.product_nama, pr.barcode_product, pr.form_schema, {$select_harga} as harga_1, {$select_detail} as detail_product, s.satuan_nama");
             $this->db->from('tbl_pembayaran_produk pp');
             $this->db->join('tbl_product pr', 'pp.product_id = pr.product_id', 'left');
             $this->db->join('tbl_harga_product hd', 'pp.harga_id = hd.harga_id', 'left');
@@ -532,7 +535,7 @@ class Penjualan extends MY_Controller
             $select_detail = $has_snapshot_detail ? 'COALESCE(pp.snapshot_detail_product, hd.detail_product)' : 'hd.detail_product';
             $select_subtotal = $has_snapshot_subtotal ? 'pp.snapshot_subtotal' : 'NULL as snapshot_subtotal';
 
-            $this->db->select("pp.*, pr.product_nama, pr.barcode_product, {$select_harga} as harga_1, {$select_detail} as detail_product, {$select_subtotal}, s.satuan_nama", FALSE);
+            $this->db->select("pp.*, pr.product_nama, pr.barcode_product, pr.form_schema, {$select_harga} as harga_1, {$select_detail} as detail_product, {$select_subtotal}, s.satuan_nama", FALSE);
             $this->db->from('tbl_pembayaran_produk pp');
             $this->db->join('tbl_product pr', 'pp.product_id = pr.product_id', 'left');
             $this->db->join('tbl_harga_product hd', 'pp.harga_id = hd.harga_id', 'left');
@@ -627,7 +630,104 @@ class Penjualan extends MY_Controller
                     <td class="text-center text-muted fw-bold px-4">' . ($index + 1) . '</td>
                     <td class="py-3">
                         <div class="fw-800 text-dark">' . $detail->product_nama . '</div>
-                        <div class="small text-muted fw-bold">' . ($detail->barcode_product ?: 'SKU-N/A') . '</div>
+                        <div class="small text-muted fw-bold mb-2">' . ($detail->barcode_product ?: 'SKU-N/A') . '</div>
+';
+
+                // [NEW] Intelligent Variation Resolver using Schema
+                $variations_to_check = [];
+                $db_meta = !empty($detail->metadata) ? json_decode($detail->metadata, true) : [];
+                if (is_array($db_meta)) {
+                    foreach($db_meta as $mk => $mv) {
+                        $variations_to_check[$mk] = $mv;
+                    }
+                }
+
+                if (!empty($variations_to_check)) {
+                    $schema_map = [];
+                    if (!empty($detail->form_schema)) {
+                        $schema_arr = json_decode($detail->form_schema, true);
+                        if (is_array($schema_arr)) {
+                            foreach ($schema_arr as $field) {
+                                if (isset($field['name'])) {
+                                    $schema_map[$field['name']] = $field;
+                                }
+                            }
+                        }
+                    }
+
+                    $printed_metadata = [];
+                    $exclude_keys = ['product_id', 'nospk', 'qty', 'panjang', 'lebar', 'kategori_id', 'keterangan', 'approve', 'lokasi_cetak', 'subkategori_id', 'user_id', 'kodeproduk', 'jenis_transaksi', 'id_jenis_transaksi', 'konsumen_id', 'deskprint_id', 'user', 'subkategori', 'konsumen', 'deskprint', 'unit_price', 'subtotal', 'price_snapshot_at'];
+
+                    foreach ($variations_to_check as $key => $val) {
+                        if (in_array($key, $exclude_keys)) continue;
+                        if (empty($val) || $val === '0') continue;
+
+                        $schema_key = $key;
+                        $in_schema = isset($schema_map[$schema_key]);
+                        if (!$in_schema && isset($schema_map[$key . '_id'])) {
+                            $in_schema = true;
+                            $schema_key = $key . '_id';
+                        }
+
+                        if (substr($key, -3) === '_id') {
+                            $clean_k = substr($key, 0, -3);
+                            if (isset($variations_to_check[$clean_k]) && !empty($variations_to_check[$clean_k])) {
+                                continue;
+                            }
+                        }
+                        
+                        if (substr($key, -6) === '_label') continue;
+
+                        if (strtolower($key) === 'side' && (isset($schema_map['sisi']) || isset($variations_to_check['sisi']))) continue;
+                        if (strtolower($key) === 'jenisprint' && (isset($schema_map['mesin']) || isset($variations_to_check['mesin']))) continue;
+
+                        $label = '';
+                        $resolved_val = $val;
+
+                        if ($in_schema) {
+                            $field = $schema_map[$schema_key];
+                            $label = $field['label'] ?? $schema_key;
+                            if (isset($field['options']) && is_array($field['options']) && isset($field['options'][$val])) {
+                                $resolved_val = $field['options'][$val];
+                            }
+                        } else {
+                            if (strpos(strtolower($key), 'ket_') === 0) {
+                                $label = 'HIDDEN_LABEL_' . $key;
+                            } else {
+                                $label = str_replace('_', ' ', $key);
+                                if ($key === 'jenisprint') $label = 'MESIN';
+                            }
+                        }
+
+                        $printed_metadata[$label] = $resolved_val;
+                    }
+
+                    if (!empty($printed_metadata)) {
+                        $html .= '<div class="d-flex flex-wrap align-items-center mt-1">';
+                        foreach ($printed_metadata as $lbl => $val) {
+                            $icon = 'fa-info-circle';
+                            $color_class = 'secondary';
+                            if (stripos($lbl, 'MESIN') !== false) {
+                                $icon = 'fa-print';
+                                $color_class = 'primary';
+                            } elseif (stripos($lbl, 'LEBAR') !== false) {
+                                $icon = 'fa-arrows-alt-h';
+                                $color_class = 'success';
+                            }
+                            
+                            $dval = ucwords(strtolower($val));
+                            if (strpos($lbl, 'HIDDEN_LABEL_') === 0) {
+                                $html .= "<span class='badge bg-{$color_class} bg-opacity-10 text-{$color_class} border border-{$color_class} border-opacity-25 px-3 py-1 me-1 mb-1 fw-normal rounded-pill' style='font-size: 0.75rem; letter-spacing: 0.3px;'><i class='fas {$icon} me-1 opacity-75'></i><span class='fw-bold'>{$dval}</span></span>";
+                            } else {
+                                $dlbl = ucwords(strtolower(str_replace('_', ' ', $lbl)));
+                                $html .= "<span class='badge bg-{$color_class} bg-opacity-10 text-{$color_class} border border-{$color_class} border-opacity-25 px-3 py-1 me-1 mb-1 fw-normal rounded-pill' style='font-size: 0.75rem; letter-spacing: 0.3px;'><i class='fas {$icon} me-1 opacity-75'></i><span class='opacity-75 me-1'>{$dlbl}:</span><span class='fw-bold'>{$dval}</span></span>";
+                            }
+                        }
+                        $html .= '</div>';
+                    }
+                }
+
+                $html .= '
                     </td>
                     <td class="text-center">
                         <span class="badge bg-light text-dark border fw-800 px-3 py-2">' . $detail->qty . ' ' . $detail->satuan_nama . '</span>
@@ -708,33 +808,12 @@ class Penjualan extends MY_Controller
         try {
             $pembayaran_id = $pembayaran->pembayaran_id;
 
-            // Hapus detail yang bergantung pada ID pembayaran
-            if (!empty($pembayaran_id)) {
-                $this->db->delete('tbl_pembayaran_detail', ['pembayaran_id' => $pembayaran_id]);
-            }
-
-            // Atasi Foreign Key Constraint di (tbl_piutang -> tbl_piutang_pembayaran)
-            $piutang_list = $this->db->get_where('tbl_piutang', ['nospk' => $nospk])->result();
-            foreach ($piutang_list as $pt) {
-                $this->db->delete('tbl_piutang_pembayaran', ['piutang_id' => $pt->piutang_id]);
-            }
-
             // Hapus semua data yang berhubungan dengan No SPK secara menyeluruh
-            // Urutan SANGAT PENTING: Anak dihapus lebih dulu dari Induk untuk mencegah Foreign Key Error.
-            $tables = [
-                'tbl_piutang',
-                'tbl_flow_diagram',
-                'tbl_pembayaran_produk',
-                'tbl_pemesanan_detail',
-                'tbl_pembayaran',
-                'tbl_produksi',
-                'tbl_pemesanan',
-                'tbl_spk'
-            ];
-
-            foreach ($tables as $t) {
-                $this->db->delete($t, ['nospk' => $nospk]);
-            }
+            // Melalui M_transaksi->delete_spk_complete, sistem akan:
+            // - Menghapus detail_produksi, flow_diagram, dan tabel terkait lainnya secara aman.
+            // - Melakukan otomatisasi ROLLBACK STOK GUDANG yang terpotong saat produksi.
+            $this->load->model('M_transaksi');
+            $this->M_transaksi->delete_spk_complete($nospk);
 
             // Dapatkan informasi user untuk audit log
             $user_id = $this->session->userdata('id');
@@ -805,6 +884,10 @@ class Penjualan extends MY_Controller
         $this->db->trans_start();
         try {
             $pembayaran_id = $pembayaran->pembayaran_id;
+
+            // 0. ROLLBACK STOK PRODUKSI (PENTING! Harus dipanggil sebelum tbl_produksi dihapus)
+            $this->load->model('M_transaksi');
+            $this->M_transaksi->rollback_stok_by_nospk($nospk);
 
             // 1. HAPUS LOGISTIK PEMBAYARAN & PRODUKSI (BERLAKU UNTUK KEDUA TARGET)
             if (!empty($pembayaran_id)) {

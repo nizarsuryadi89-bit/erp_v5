@@ -194,8 +194,8 @@
                 'gt' => 0
             ];
             foreach ($salary_data as $row):
-                $reward_total = $row['reward'] + $row['bpjs'] + $row['tunjangan_extra'] + $row['tunjangan_kinerja_manual'] + $row['bonus_kinerja'] + $row['bonus_kehadiran'] + ($row['biaya_makan_lembur'] ?? 0);
-                $potongan_total = $row['potongan_alpha'] + $row['potongan_terlambat'] + $row['kasbon'] + $row['pinjaman'];
+                $reward_total = $row['reward'] + $row['bpjs'] + $row['tunjangan_extra'] + $row['tunjangan_kinerja_manual'] + $row['bonus_kinerja'] + $row['bonus_kehadiran'] + ($row['biaya_makan_lembur'] ?? 0) + ($row['custom_in1_nom']??0) + ($row['custom_in2_nom']??0) + ($row['custom_in3_nom']??0);
+                $potongan_total = $row['potongan_alpha'] + $row['potongan_terlambat'] + $row['kasbon'] + $row['pinjaman'] + ($row['custom_out1_nom']??0) + ($row['custom_out2_nom']??0) + ($row['custom_out3_nom']??0);
 
                 $totals['gp'] += $row['gaji_pokok'];
                 $totals['tj'] += $row['tunjangan_jabatan'];

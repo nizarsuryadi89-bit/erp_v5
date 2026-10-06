@@ -410,11 +410,25 @@
                             <?php endif; ?>
                         </td>
                     </tr>
+                    <?php for($i=1; $i<=3; $i++): ?>
+                    <?php if(isset($slip["custom_in{$i}_nom"]) && $slip["custom_in{$i}_nom"] > 0): ?>
+                    <tr>
+                        <td><?= htmlspecialchars($slip["custom_in{$i}_nama"] ?: "Tambahan Pendapatan $i") ?></td>
+                        <td class="amount">
+                            <?php if ($mode == 'edit'): ?>
+                                <input type="number" readonly class="edit-input earnings" value="<?= $slip["custom_in{$i}_nom"] ?>" style="text-align:right; border: none; background: transparent;">
+                            <?php else: ?>
+                                Rp <?= number_format($slip["custom_in{$i}_nom"]) ?>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <?php endif; ?>
+                    <?php endfor; ?>
                     <tr style="background-color: #f8fafc; font-weight: bold;">
                         <td class="text-right">SUBTOTAL PENDAPATAN</td>
                         <td class="amount" id="subtotalPendapatan">
                             <?php
-                            $sub_pendapatan = $slip['gaji_pokok'] + $slip['tunjangan_jabatan'] + $slip['tunjangan_transportasi'] + $slip['bonus_kinerja'] + (isset($slip['tunjangan_kinerja_manual']) ? $slip['tunjangan_kinerja_manual'] : 0) + $slip['bonus_kehadiran'] + $slip['uang_lembur'] + (isset($slip['biaya_makan_lembur']) ? $slip['biaya_makan_lembur'] : 0) + (isset($slip['reward']) ? $slip['reward'] : 0) + (isset($slip['bpjs']) ? $slip['bpjs'] : 0) + (isset($slip['tunjangan_extra']) ? $slip['tunjangan_extra'] : 0);
+                            $sub_pendapatan = $slip['gaji_pokok'] + $slip['tunjangan_jabatan'] + $slip['tunjangan_transportasi'] + $slip['bonus_kinerja'] + (isset($slip['tunjangan_kinerja_manual']) ? $slip['tunjangan_kinerja_manual'] : 0) + $slip['bonus_kehadiran'] + $slip['uang_lembur'] + (isset($slip['biaya_makan_lembur']) ? $slip['biaya_makan_lembur'] : 0) + (isset($slip['reward']) ? $slip['reward'] : 0) + (isset($slip['bpjs']) ? $slip['bpjs'] : 0) + (isset($slip['tunjangan_extra']) ? $slip['tunjangan_extra'] : 0) + (isset($slip['custom_in1_nom']) ? $slip['custom_in1_nom'] : 0) + (isset($slip['custom_in2_nom']) ? $slip['custom_in2_nom'] : 0) + (isset($slip['custom_in3_nom']) ? $slip['custom_in3_nom'] : 0);
                             ?>
                             Rp <?= number_format($sub_pendapatan) ?>
                         </td>
@@ -494,11 +508,25 @@
                             <?php endif; ?>
                         </td>
                     </tr>
+                    <?php for($i=1; $i<=3; $i++): ?>
+                    <?php if(isset($slip["custom_out{$i}_nom"]) && $slip["custom_out{$i}_nom"] > 0): ?>
+                    <tr>
+                        <td style="color: #e74c3c;"><?= htmlspecialchars($slip["custom_out{$i}_nama"] ?: "Tambahan Potongan $i") ?></td>
+                        <td class="amount" style="color: #e74c3c;">
+                            <?php if ($mode == 'edit'): ?>
+                                <input type="number" readonly class="edit-input deductions" value="<?= $slip["custom_out{$i}_nom"] ?>" style="text-align:right; border: none; background: transparent; color: #e74c3c;">
+                            <?php else: ?>
+                                - Rp <?= number_format($slip["custom_out{$i}_nom"]) ?>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <?php endif; ?>
+                    <?php endfor; ?>
                     <tr style="background-color: #fff5f5; font-weight: bold;">
                         <td class="text-right" style="color: #e74c3c;">SUBTOTAL POTONGAN</td>
                         <td class="amount" id="subtotalPotongan" style="color: #e74c3c;">
                             <?php
-                            $sub_potongan = $slip['potongan_alpha'] + (isset($slip['potongan_terlambat']) ? $slip['potongan_terlambat'] : 0) + (isset($slip['kasbon']) ? $slip['kasbon'] : 0) + (isset($slip['pinjaman']) ? $slip['pinjaman'] : 0);
+                            $sub_potongan = $slip['potongan_alpha'] + (isset($slip['potongan_terlambat']) ? $slip['potongan_terlambat'] : 0) + (isset($slip['kasbon']) ? $slip['kasbon'] : 0) + (isset($slip['pinjaman']) ? $slip['pinjaman'] : 0) + (isset($slip['custom_out1_nom']) ? $slip['custom_out1_nom'] : 0) + (isset($slip['custom_out2_nom']) ? $slip['custom_out2_nom'] : 0) + (isset($slip['custom_out3_nom']) ? $slip['custom_out3_nom'] : 0);
                             ?>
                             - Rp <?= number_format($sub_potongan) ?>
                         </td>

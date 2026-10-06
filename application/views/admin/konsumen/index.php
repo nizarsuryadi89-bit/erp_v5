@@ -212,20 +212,24 @@
             <form id="formKonsumen" method="POST" action="<?= base_url('pengaturan/konsumen_add') ?>">
                 <div class="modal-body p-4">
                     <div class="row g-3">
-                        <div class="col-12">
-                            <label class="fw-bold text-muted small text-uppercase mb-2">Nama Lengkap <span
+                        <div class="col-md-6">
+                            <label class="fw-bold text-muted small text-uppercase mb-2">Tipe Konsumen <span
+                                    class="text-danger">*</span></label>
+                            <select class="form-select fw-bold" name="tipe_konsumen" id="tipe_konsumen_dash" required onchange="toggleB2BDash()"
+                                style="border: 2px solid #f1f5f9; border-radius: 12px; padding: 0.75rem 1.25rem;">
+                                <option value="B2C">B2C (Reguler/End User)</option>
+                                <option value="Reseller">Reseller</option>
+                                <option value="B2B">B2B (Corporate)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="fw-bold text-muted small text-uppercase mb-2">Nama Lengkap / Kontak Utama <span
                                     class="text-danger">*</span></label>
                             <input type="text" class="form-control fw-bold" name="konsumen_nama" required
                                 placeholder="Nama Konsumen"
                                 style="border: 2px solid #f1f5f9; border-radius: 12px; padding: 0.75rem 1.25rem;">
                         </div>
-                        <div class="col-12">
-                            <label class="fw-bold text-muted small text-uppercase mb-2">Alamat Lengkap <span
-                                    class="text-danger">*</span></label>
-                            <textarea class="form-control fw-bold" name="konsumen_alamat" rows="2" required
-                                placeholder="Alamat Domisili"
-                                style="border: 2px solid #f1f5f9; border-radius: 12px; padding: 0.75rem 1.25rem;"></textarea>
-                        </div>
+                        
                         <div class="col-md-6">
                             <label class="fw-bold text-muted small text-uppercase mb-2">WhatsApp / HP <span
                                     class="text-danger">*</span></label>
@@ -235,9 +239,44 @@
                                 style="border: 2px solid #f1f5f9; border-radius: 12px; padding: 0.75rem 1.25rem;">
                         </div>
                         <div class="col-md-6">
-                            <label class="fw-bold text-muted small text-uppercase mb-2">Email</label>
+                            <label class="fw-bold text-muted small text-uppercase mb-2">Email (U/ Login Marketplace)</label>
                             <input type="email" class="form-control fw-bold" name="konsumen_email"
                                 placeholder="email@contoh.com"
+                                style="border: 2px solid #f1f5f9; border-radius: 12px; padding: 0.75rem 1.25rem;">
+                        </div>
+
+                        <!-- B2B Fields -->
+                        <div class="col-12 b2b-fields-dash" style="display:none;">
+                            <div class="p-3 bg-light rounded-4 border">
+                                <h6 class="fw-900 text-primary mb-3"><i class="fas fa-building me-2"></i>Data Corporate (B2B)</h6>
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="fw-bold text-muted small mb-1">Perusahaan (PT/CV)</label>
+                                        <input type="text" class="form-control fw-bold" name="perusahaan" placeholder="Nama Perusahaan">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="fw-bold text-muted small mb-1">NPWP</label>
+                                        <input type="text" class="form-control fw-bold" name="npwp" placeholder="Nomor NPWP">
+                                    </div>
+                                    <div class="col-md-12">
+                                        <label class="fw-bold text-muted small mb-1">Nama PIC</label>
+                                        <input type="text" class="form-control fw-bold" name="pic_nama" placeholder="Person in Charge">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-12">
+                            <label class="fw-bold text-muted small text-uppercase mb-2">Alamat Lengkap <span
+                                    class="text-danger">*</span></label>
+                            <textarea class="form-control fw-bold" name="konsumen_alamat" rows="2" required
+                                placeholder="Alamat Lengkap"
+                                style="border: 2px solid #f1f5f9; border-radius: 12px; padding: 0.75rem 1.25rem;"></textarea>
+                        </div>
+                        <div class="col-12">
+                            <label class="fw-bold text-muted small text-uppercase mb-2">Password Login Marketplace</label>
+                            <input type="password" class="form-control fw-bold" name="password"
+                                placeholder="Opsional (Isi untuk membuatkan akun otomatis)"
                                 style="border: 2px solid #f1f5f9; border-radius: 12px; padding: 0.75rem 1.25rem;">
                         </div>
                     </div>
@@ -310,4 +349,15 @@
     setTimeout(function () {
         $('#alert-container .alert').fadeOut('slow');
     }, 5000);
+
+    function toggleB2BDash() {
+        const tipe = document.getElementById('tipe_konsumen_dash').value;
+        const b2bFields = document.querySelectorAll('.b2b-fields-dash');
+        
+        if (tipe === 'B2B') {
+            b2bFields.forEach(el => el.style.display = 'block');
+        } else {
+            b2bFields.forEach(el => el.style.display = 'none');
+        }
+    }
 </script>

@@ -518,7 +518,13 @@
                 <div class="table-responsive">
                     <table class="table table-bordered table-hover align-middle w-100" id="tableCekStok">
                         <thead class="table-light text-muted small uppercase">
-                            <?php $cabang_list = $this->db->order_by('id_perusahaan', 'ASC')->get('tbl_perusahaan')->result(); ?>
+                            <?php 
+                                $user_perusahaan_id = $this->session->userdata('perusahaan_id');
+                                if ($user_perusahaan_id) {
+                                    $this->db->where('id_perusahaan', $user_perusahaan_id);
+                                }
+                                $cabang_list = $this->db->order_by('id_perusahaan', 'ASC')->get('tbl_perusahaan')->result(); 
+                            ?>
                             <tr>
                                 <th style="min-width: 250px;">NAMA BAHAN</th>
                                 <th style="min-width: 250px;">VARIAN / UKURAN</th>

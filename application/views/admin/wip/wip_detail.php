@@ -1,3 +1,11 @@
+<script>
+    const WIP_DETAIL_VERSIONS = <?= json_encode(array_reduce($detail_produksi ?? [], function ($versions, $step) {
+        if (!isset($versions[$step->produksi_id]) && !Production_workflow::step_completed($step->status_produksi)) {
+            $versions[$step->produksi_id] = Production_workflow::version($step);
+        }
+        return $versions;
+    }, [])) ?>;
+</script>
 <div class="app-content">
     <div class="container-fluid">
         <!-- Header -->
@@ -22,6 +30,55 @@
                 </div>
              </div>
         </div>
+
+        <?php
+        // Cek apakah SPK ini punya finishing
+        $spk_has_finishing = false;
+        $spk_finishing_name = 'Finishing';
+        if (isset($produksi->finishing_id) && !empty($produksi->finishing_id)) {
+            $spk_has_finishing = true;
+            // Coba ambil nama finishing
+            $f_name_q = $this->db->get_where('tbl_product', ['product_id' => $produksi->finishing_id])->row();
+            if ($f_name_q) $spk_finishing_name = $f_name_q->product_nama;
+        }
+        // Cek juga dari detail_produksi apakah ada baris is_finishing = 1
+        $detail_has_finishing = false;
+        if (!$spk_has_finishing) {
+            foreach ($detail_produksi as $dp_check) {
+                if (isset($dp_check->is_finishing) && !empty($dp_check->is_finishing) && $dp_check->is_finishing == 1) {
+                    $detail_has_finishing = true;
+                    break;
+                }
+            }
+        }
+        $need_finishing = $spk_has_finishing || $detail_has_finishing;
+        ?>
+
+        <?php if ($need_finishing): ?>
+        <div class="alert alert-warning border-start border-warning border-4 shadow-sm mb-4 py-3 px-4 d-flex align-items-center gap-3" role="alert">
+            <i class="fas fa-exclamation-triangle fa-2x text-warning flex-shrink-0"></i>
+            <div>
+                <strong class="d-block fs-6">SPK Ini Memiliki Proses Finishing!</strong>
+                <span class="text-muted small">
+                    Setelah proses <strong>Cetak/Print selesai</strong>, SPK ini akan otomatis diarahkan ke antrian
+                    <strong class="text-warning">Finishing: <?= htmlspecialchars($spk_finishing_name) ?></strong>
+                    &mdash; <em>TIDAK langsung ke PB</em>.
+                    Pastikan proses finishing diselesaikan terlebih dahulu sebelum barang diserahkan ke PB.
+                </span>
+            </div>
+        </div>
+        <?php else: ?>
+        <div class="alert alert-info border-start border-info border-4 shadow-sm mb-4 py-3 px-4 d-flex align-items-center gap-3" role="alert">
+            <i class="fas fa-info-circle fa-2x text-info flex-shrink-0"></i>
+            <div>
+                <strong class="d-block fs-6">SPK Tanpa Finishing</strong>
+                <span class="text-muted small">
+                    SPK ini <strong>tidak memiliki proses finishing</strong>.
+                    Setelah semua proses produksi selesai, barang akan langsung masuk ke antrian <strong class="text-info">PB (Pengambilan Barang)</strong>.
+                </span>
+            </div>
+        </div>
+        <?php endif; ?>
 
         <!-- Stats Overview -->
         <div class="row g-3 mb-4">
@@ -335,6 +392,19 @@
                 </div>
             </div>
         </div>
+
+        <!-- Chatter History / Log Produksi (ERP Level) -->
+        <div class="card border-0 shadow-sm mt-4 mb-4">
+            <div class="card-header bg-dark text-white py-3 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-bold"><i class="fas fa-history me-2"></i>Riwayat Aktivitas & Perubahan Status</h6>
+            </div>
+            <div class="card-body bg-light">
+                <div id="produksi_chatter_container">
+                    <div class="text-center p-3 text-muted"><i class="fas fa-spinner fa-spin me-2"></i> Memuat riwayat...</div>
+                </div>
+            </div>
+        </div>
+        
     </div>
 </div>
 
@@ -362,6 +432,14 @@
                             <input type="number" class="form-control" id="qty_missing" name="qty_missing" value="0" placeholder="0">
                         </div>
 
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Bahan terpakai aktual (satuan dasar)</label>
+                            <input type="number" min="0" step="0.01" class="form-control" name="qty_bahan_pakai" id="stock_usage" placeholder="Pemakaian tambahan" value="0">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Bahan rusak aktual (satuan dasar)</label>
+                            <input type="number" min="0" step="0.01" class="form-control" name="qty_bahan_rusak" id="stock_scrap" value="0">
+                        </div>
                          <div class="col-12"><hr class="my-2 opacity-10"></div>
 
                          <div class="col-md-6">
@@ -486,7 +564,15 @@
                             <input type="number" class="form-control" id="qty_missing_prod" name="qty_missing">
                         </div>
 
-                        <!-- Dimensions (Hidden by default) -->
+                                                <div class="col-md-6">
+                            <label class="form-label small fw-bold">Bahan terpakai aktual (satuan dasar)</label>
+                            <input type="number" min="0" step="0.01" class="form-control" name="qty_bahan_pakai" id="production_usage" placeholder="Pemakaian tambahan" value="0">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Bahan rusak aktual (satuan dasar)</label>
+                            <input type="number" min="0" step="0.01" class="form-control" name="qty_bahan_rusak" id="production_scrap" value="0">
+                        </div>
+<!-- Dimensions (Hidden by default) -->
                         <div class="col-12" id="dimensionsRow" style="display:none;">
                             <div class="row g-3">
                                 <div class="col-md-6">
@@ -578,19 +664,50 @@ function startProcess(detailId, routingUrutan) {
 }
 
 function completeProcess(detailId, routingUrutan) {
-    $('#stockForm')[0].reset();
-    $('#detail_produksi_id').val(detailId);
-    
-    // Fetch data via AJAX to pre-fill
-    loadStockProductionData(detailId);
-    loadExistingMachineData(detailId);
+    // ====================================================================
+    // [FIX] NOTIFIKASI: Beritahu operator ke mana SPK ini akan diarahkan
+    // setelah proses ini selesai — ke Finishing atau langsung ke PB.
+    // ====================================================================
+    const needsFinishing = <?= $need_finishing ? 'true' : 'false' ?>;
+    const finishingName  = '<?= htmlspecialchars($spk_finishing_name, ENT_QUOTES) ?>';
 
-    // Default Qty from order
-    let qtyOrder = <?= $produksi->qty ?? 0 ?>;
-    if(qtyOrder > 0) $('#qty_output').val(qtyOrder);
+    let confirmTitle, confirmText, confirmIcon, confirmColor;
+    if (needsFinishing) {
+        confirmTitle = '⚠️ Selesaikan Proses Cetak?';
+        confirmIcon  = 'warning';
+        confirmColor = '#f59e0b';
+        confirmText  = `Setelah proses ini selesai, SPK akan otomatis diarahkan ke antrian:\n\n` +
+                       `🔧 FINISHING: ${finishingName}\n\n` +
+                       `Pastikan hasil cetak sudah OK sebelum melanjutkan.`;
+    } else {
+        confirmTitle = '✅ Selesaikan & Kirim ke PB?';
+        confirmIcon  = 'info';
+        confirmColor = '#2563eb';
+        confirmText  = 'SPK ini tidak memiliki finishing. Setelah disimpan, barang akan langsung masuk ke antrian PB (Pengambilan Barang).';
+    }
 
-    $('#dimensionsRowStock').hide(); // default hide
-    $('#stockModal').modal('show');
+    Swal.fire({
+        title: confirmTitle,
+        text: confirmText,
+        icon: confirmIcon,
+        showCancelButton: true,
+        confirmButtonColor: confirmColor,
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: needsFinishing ? '✔ Cetak Selesai → Ke Finishing' : '✔ Selesai → Kirim ke PB',
+        cancelButtonText: 'Batal'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            // Buka modal input qty output setelah konfirmasi
+            $('#stockForm')[0].reset();
+            $('#detail_produksi_id').val(detailId);
+            loadStockProductionData(detailId);
+            loadExistingMachineData(detailId);
+            let qtyOrder = <?= $produksi->qty ?? 0 ?>;
+            $('#qty_output').val('');
+            $('#dimensionsRowStock').hide();
+            $('#stockModal').modal('show');
+        }
+    });
 }
 
 function processProduction(detailId, currentStatus, routingUrutan) {
@@ -615,7 +732,7 @@ function loadStockProductionData(detailId) {
     $.post('<?= site_url("wip/get_production_data") ?>', {detail_produksi_id: detailId}, function(res) {
         if(res.success && res.data) {
             let d = res.data;
-            if(d.qty_output > 0) $('#qty_output').val(d.qty_output);
+            $('#qty_output').val('');
             $('#qty_missing').val(d.qty_missing || 0);
             
             if(parseFloat(d.panjang_output) > 0 || parseFloat(d.lebar_output) > 0) {
@@ -679,7 +796,7 @@ function loadProductionData(detailId) {
         if(res.success && res.data) {
             let d = res.data;
             $('#qty_input').val(d.qty_input || '');
-            if(d.qty_output > 0) $('#qty_output_prod').val(d.qty_output);
+            $('#qty_output_prod').val('');
             $('#qty_missing_prod').val(d.qty_missing || 0);
             
             if(parseFloat(d.panjang_output) > 0 || parseFloat(d.lebar_output) > 0) {
@@ -698,7 +815,7 @@ function loadProductionData(detailId) {
 }
 
 
-function submitStockUpdate() {
+function submitStockUpdate(supervisorPin = '') {
     Swal.fire({
         title: 'Simpan & Selesaikan?',
         text: 'Stok akan diupdate berdasarkan data ini.',
@@ -709,16 +826,42 @@ function submitStockUpdate() {
         confirmButtonText: 'Ya, Simpan!'
     }).then((result) => {
         if (result.isConfirmed) {
+            let formData = $('#stockForm').serialize() + '&' + $.param({ expected_versions: WIP_DETAIL_VERSIONS });
+            if (supervisorPin) {
+                formData += '&supervisor_pin=' + encodeURIComponent(supervisorPin);
+            }
             $.ajax({
                 url: '<?= site_url("wip/complete_process") ?>',
                 type: 'POST',
-                data: $('#stockForm').serialize(),
+                data: formData,
                 dataType: 'json',
                 success: function(res) {
                     if(res.success) {
                         Swal.fire('Berhasil!', 'Data tersimpan.', 'success').then(() => {
                             $('#stockModal').modal('hide');
                             location.reload();
+                        });
+                    } else if (res.require_pin_override) {
+                        Swal.fire({
+                            title: 'Otorisasi Dibutuhkan',
+                            text: res.message,
+                            icon: 'warning',
+                            input: 'password',
+                            inputPlaceholder: 'Masukkan PIN Supervisor/Otorisasi',
+                            showCancelButton: true,
+                            confirmButtonText: 'Bypass & Lanjut',
+                            cancelButtonText: 'Batal',
+                            preConfirm: (pin) => {
+                                if (!pin) {
+                                    Swal.showValidationMessage('PIN wajib diisi!');
+                                    return false;
+                                }
+                                return pin;
+                            }
+                        }).then((result) => {
+                            if (result.isConfirmed && result.value) {
+                                submitStockUpdate(result.value);
+                            }
                         });
                     } else {
                         Swal.fire('Gagal!', res.message, 'error');
@@ -742,7 +885,7 @@ function submitProductionProcess() {
             $.ajax({
                 url: '<?= site_url("wip/update_production_process") ?>',
                 type: 'POST',
-                data: $('#productionForm').serialize(),
+                data: $('#productionForm').serialize() + '&' + $.param({ expected_versions: WIP_DETAIL_VERSIONS }),
                 dataType: 'json',
                 success: function(res) {
                     if(res.success) {
@@ -801,4 +944,31 @@ function printProductionTag(detailId, routingUrutan, productNama, operatorNama, 
      w.document.close();
      w.onload = function() { w.print(); w.close(); }
 }
+
+// ==========================================
+// Misi 2: Chatter History Loader (ERP Level)
+// ==========================================
+function load_chatter_history(produksi_id) {
+    $('#produksi_chatter_container').html('<div class="text-center p-3 text-muted"><i class="fas fa-spinner fa-spin me-2"></i> Memuat riwayat...</div>');
+    $.ajax({
+        url: '<?= base_url("wip/ajax_get_log") ?>',
+        type: 'POST',
+        dataType: 'json',
+        data: { produksi_id: produksi_id },
+        success: function(res) {
+            if(res.success) {
+                $('#produksi_chatter_container').html(res.html);
+            } else {
+                $('#produksi_chatter_container').html('<div class="text-danger text-center"><i class="fas fa-exclamation-triangle"></i> Gagal memuat log.</div>');
+            }
+        },
+        error: function() {
+            $('#produksi_chatter_container').html('<div class="text-danger text-center"><i class="fas fa-exclamation-triangle"></i> Terjadi kesalahan koneksi server saat memuat log.</div>');
+        }
+    });
+}
+
+$(document).ready(function() {
+    load_chatter_history(<?= $produksi->produksi_id ?? 0 ?>);
+});
 </script>

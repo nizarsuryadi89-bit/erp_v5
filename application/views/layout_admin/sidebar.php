@@ -58,9 +58,9 @@ if (!function_exists('renderMenuItem')) {
                 $context->db->or_where("submenu.id IN (SELECT submenu_id FROM tbl_user_submenu_access WHERE user_id = " . (int) $user_id . ")", NULL, FALSE);
             }
             $context->db->group_end();
-            $context->db->where('submenu.status', 1);
         }
-
+        
+        $context->db->where('submenu.status', '1');
         $context->db->where("submenu.$col_parent", $mn->id);
         $context->db->order_by('submenu.urutan', 'ASC');
         $submenus = $context->db->get()->result();
@@ -121,9 +121,8 @@ if (!function_exists('renderMenuItem')) {
             // Header Logic: Jika link kosong/# dan tidak punya submenu
             if (empty($mn->link) || $mn->link === '#' || $mn->link === '//') {
                 ?>
-                <li class="nav-header small text-uppercase fw-bold text-muted px-3 mt-4 mb-2"
-                    style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
-                    <i class="bi <?= htmlspecialchars($mn->icon_fa ? $mn->icon_fa : 'bi-circle', ENT_QUOTES, 'UTF-8') ?> me-1"></i>
+                <li class="nav-header small fw-bolder text-uppercase mt-4 mb-1 px-4"
+                    style="color: rgba(255,255,255,0.4); letter-spacing: 0.5px; font-size: 0.75rem;">
                     <?= htmlspecialchars($mn->alias ? $mn->alias : $mn->nama_menu, ENT_QUOTES, 'UTF-8') ?>
                 </li>
                 <?php
@@ -165,22 +164,61 @@ if (isset($layout_mode) && $layout_mode == 'top_nav') {
     .app-sidebar * {
         --bs-nav-link-font-size: 14px;
         --bs-nav-link-padding-x: 16px;
-        --bs-nav-link-padding-y: 8px;
+        --bs-nav-link-padding-y: 10px;
         --bs-body-font-size: 14px;
-        --bs-body-font-family: "Source Sans 3", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-        --bs-font-sans-serif: "Source Sans 3", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        --bs-body-font-family: "Inter", "Source Sans 3", system-ui, -apple-system, sans-serif;
+    }
+
+    /* Odoo-style Modern Sidebar Customization */
+    .app-sidebar {
+        background-color: #111827 !important; /* Deep modern dark (Tailwind Gray-900) */
+        border-right: none !important;
+    }
+    
+    .sidebar-brand {
+        border-bottom: 1px solid rgba(255,255,255,0.05) !important;
+    }
+
+    .sidebar-menu .nav-item .nav-link {
+        border-radius: 8px; /* Rounded pill style */
+        margin: 2px 12px;
+        color: #9ca3af; /* Gray 400 */
+        transition: all 0.2s ease-in-out;
+    }
+
+    .sidebar-menu .nav-item .nav-link:hover {
+        background-color: rgba(255,255,255,0.05);
+        color: #f3f4f6;
+    }
+
+    /* Active State (Odoo style: subtle highlight with primary text or background) */
+    .sidebar-menu .nav-item .nav-link.active {
+        background-color: #3b82f6 !important; /* Blue 500 */
+        color: #ffffff !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        font-weight: 600;
+    }
+
+    /* Icons */
+    .sidebar-menu .nav-item .nav-link i.nav-icon {
+        font-size: 1.1rem;
+        margin-right: 8px;
+        transition: transform 0.2s;
+    }
+    .sidebar-menu .nav-item .nav-link:hover i.nav-icon {
+        transform: scale(1.1);
     }
 </style>
 
 <!--begin::Sidebar-->
-<aside class="app-sidebar sidebar-expand-lg shadow" data-bs-theme="dark">
+<aside class="app-sidebar sidebar-expand-lg shadow-lg" data-bs-theme="dark">
     <!--begin::Sidebar Brand-->
     <div class="sidebar-brand">
         <a href="<?= base_url('dashboard') ?>"
             class="brand-link d-flex align-items-center justify-content-center w-100">
             <img src="<?= base_url('assets/images/app_icon.png') ?>" alt="Logo"
                 class="brand-image opacity-80 shadow-sm me-2" style="height: 30px;">
-            <span class="brand-text fw-bold">TGM CORE <a href="<?= base_url('log_audit/changelog') ?>" class="text-decoration-none"><small class="opacity-50 fw-normal ms-1">v<?= isset($app_version) ? $app_version : '5.0' ?></small></a></span>
+            <span class="brand-text fw-bold"><?= get_app_name() ?> <a href="<?= base_url('log_audit/changelog') ?>" class="text-decoration-none"><small class="opacity-50 fw-normal ms-1">v<?= isset($app_version) ? $app_version : '5.0' ?></small></a></span>
         </a>
     </div>
 
@@ -232,7 +270,7 @@ if (isset($layout_mode) && $layout_mode == 'top_nav') {
                         $this->db->or_where("menu.id IN (SELECT menu_id FROM tbl_user_menu_access WHERE user_id = " . (int) $user_id . ")", NULL, FALSE);
                     }
                     $this->db->group_end();
-                    $this->db->where('menu.status', 1);
+                    $this->db->where('menu.status', '1');
                     $this->db->group_by('menu.id');
                     $this->db->order_by('menu.urutan', 'ASC');
                     $menu = $this->db->get()->result();

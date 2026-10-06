@@ -85,7 +85,7 @@ if (!empty($items)) {
             <div class="d-flex align-items-center gap-2">
                 <?php if ($isAllDone): ?>
                     <button
-                        onclick="if(confirm('Semua item selesai. Kirim SPK ini ke Pengambilan Barang (PB)?')) window.location.href='<?= site_url('wip/kirim_pb_spk/' . $spk_header->nospk) ?>'"
+                        onclick="ProductionApp.sendSPKToPB(<?= htmlspecialchars(json_encode($spk_header->nospk), ENT_QUOTES, 'UTF-8') ?>)"
                         class="btn btn-warning btn-sm rounded-pill fw-bold shadow-sm animate__animated animate__pulse animate__infinite">
                         <i class="fas fa-truck-loading me-1"></i> KIRIM KE PB
                     </button>
@@ -97,7 +97,7 @@ if (!empty($items)) {
                 </button>
                 <button onclick="finishAllItems('<?= $spk_header->nospk ?>')"
                     class="btn btn-success btn-sm rounded-pill fw-bold shadow-sm">
-                    <i class="fas fa-check-double me-1"></i> Selesai Semua
+                    <i class="fas fa-check-double me-1"></i> Catat Hasil Aktif
                 </button>
                 <a href="<?= site_url('wip/guide_revisi') ?>" target="_blank"
                     class="btn btn-danger btn-sm rounded-pill fw-bold shadow-sm">
@@ -274,7 +274,8 @@ if (!empty($items)) {
                         ?>
                         <tr class="<?= $rowClass ?> tr-nesting-item" data-material="<?= htmlspecialchars($matKey) ?>">
                             <td class="d-none">
-                                <input type="checkbox" class="check-item-nesting" data-id="<?= $item->produksi_id ?>"
+                                <input type="checkbox" class="check-item-nesting" data-id="<?= $item->produksi_id ?>" data-step-id="<?= (int) ($item->workflow_step_id ?? 0) ?>" data-step-status="<?= htmlspecialchars($item->workflow_step_status ?? '0', ENT_QUOTES, 'UTF-8') ?>"
+                                    data-step-output="<?= (float) ($item->workflow_qty_output ?? 0) ?>" data-step-version="<?= htmlspecialchars($item->workflow_version ?? '', ENT_QUOTES, 'UTF-8') ?>"
                                     data-panjang="<?= $item->panjang ?>" data-lebar="<?= $item->lebar ?>"
                                     data-qty="<?= $item->qty ?>" data-bahan-id="<?= $bomBahanId ?>"
                                     data-bom-p="<?= $bomP ?>" data-bom-l="<?= $bomL ?>"
@@ -526,95 +527,25 @@ if (!empty($items)) {
 
 <script>
     function startAllItems(nospk) {
-        if (!confirm('Mulai semua item di SPK ini?')) return;
-
-        const formData = new FormData();
-        formData.append('nospk', nospk);
-        formData.append(WIP_CONFIG.csrfTokenName, WIP_CONFIG.csrfHash);
-
-        fetch(WIP_CONFIG.baseUrl + 'start_all_spk_items', {
-            method: 'POST',
-            body: formData
-        })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Update CSRF for next request if needed, though reload handles it
-                    WIP_CONFIG.csrfHash = data.csrfHash || WIP_CONFIG.csrfHash;
-                    alert(data.message);
-                    location.reload();
-                } else {
-                    alert('Gagal: ' + data.message);
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('Terjadi kesalahan sistem.');
-            });
+        const ids = $('.check-item-nesting').filter(function () {
+            return ['0', ''].includes(String($(this).data('step-status'))) && ['pending', 'approve', 'approved', '0', '', 'proses', 'finishing'].includes(String($(this).data('status')));
+        }).map((i, el) => $(el).data('id')).get();
+        if (!ids.length) return Swal.fire('Tidak ada tahap siap', 'Tidak ada item yang dapat dimulai pada tampilan ini.', 'info');
+        ProductionApp.captureOperations(ids);
+        $.post(WIP_CONFIG.baseUrl + 'batch_status_produksi', ProductionApp.getAuthData({ ids, status: 'proses' }), res => {
+            if (res.success) location.reload(); else Swal.fire('Gagal', res.message, 'error');
+        }, 'json').fail(() => Swal.fire('Gagal', 'Koneksi server gagal.', 'error'));
     }
     function finishAllItems(nospk) {
-        if (!confirm('Selesaikan semua item yang sedang PROSES di SPK ini?')) return;
-
-        const formData = new FormData();
-        formData.append('nospk', nospk);
-        formData.append(WIP_CONFIG.csrfTokenName, WIP_CONFIG.csrfHash);
-
-        fetch(WIP_CONFIG.baseUrl + 'finish_all_spk_items', {
-            method: 'POST',
-            body: formData
-        })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    WIP_CONFIG.csrfHash = data.csrfHash || WIP_CONFIG.csrfHash;
-                    alert(data.message);
-                    location.reload();
-                } else {
-                    alert('Gagal: ' + data.message);
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('Terjadi kesalahan sistem.');
-            });
+        $('.check-item-nesting').prop('checked', false).filter(function () {
+            return String($(this).data('step-status')) === '1';
+        }).prop('checked', true);
+        if (!$('.check-item-nesting:checked').length) return Swal.fire('Tidak ada tahap aktif', 'Mulai tahap sebelum mencatat hasil.', 'info');
+        ProductionApp.openCompletionModal();
     }
 
     function reviseItem(prodId, steps) {
-        document.getElementById('revisi_produksi_id').value = prodId;
-        document.getElementById('revisi_qty').value = 0;
-        document.getElementById('revisi_alasan').value = '';
-
-        const select = document.getElementById('revisi_target_step');
-        select.innerHTML = '';
-
-        if (steps && steps.length > 0) {
-            // Sort by sequence to be safe
-            steps.sort((a, b) => (parseInt(a.routing_urutan) || 0) - (parseInt(b.routing_urutan) || 0));
-
-            steps.forEach(s => {
-                // Allow reverting to any step that was DONE or is currently PROSES
-                if (s.status_produksi == '2' || s.status_produksi == '1') {
-                    const opt = document.createElement('option');
-                    opt.value = s.detail_produksi_id;
-                    opt.innerHTML = `TAHAP: ${s.routing_name.toUpperCase()}`;
-                    if (s.status_produksi == '1') opt.selected = true; // Default to active step if any
-                    select.appendChild(opt);
-                }
-            });
-
-            // If no active step, default to selecting the last done step
-            if (!select.value && select.options.length > 0) {
-                select.options[select.options.length - 1].selected = true;
-            }
-        } else {
-            const opt = document.createElement('option');
-            opt.value = '0';
-            opt.text = 'Default (Utama)';
-            select.appendChild(opt);
-        }
-
-        const modalRev = new bootstrap.Modal(document.getElementById('modalRevisi'));
-        modalRev.show();
+        Swal.fire('Riwayat dipertahankan', 'Revisi yang mereset tahap dinonaktifkan. Catat tambahan hasil/bahan pada tahap aktif; permintaan reprint pekerjaan selesai dapat dilaporkan dari daftar produksi.', 'info');
     }
 
     function submitRevision() {
@@ -741,6 +672,7 @@ if (!empty($items)) {
             container.innerHTML = '<div class="text-center text-muted small py-3">Tidak ada data tahapan.</div>';
         }
 
+        $('#modalAdminEdit .step-edit-row :input').prop('disabled', true);
         const modalEdit = new bootstrap.Modal(document.getElementById('modalAdminEdit'));
         modalEdit.show();
     }
@@ -752,19 +684,7 @@ if (!empty($items)) {
         const l = document.getElementById('edit_lebar').value;
         const catatan = document.getElementById('edit_catatan').value;
 
-        // Collect Step Edits
-        const stepRows = document.querySelectorAll('.step-edit-row');
-        const stepData = [];
-        stepRows.forEach(row => {
-            stepData.push({
-                id: row.dataset.id,
-                material_id: row.querySelector('.edit-step-material').value,
-                operator_id: row.querySelector('.edit-step-operator').value,
-                pakai: row.querySelector('.edit-step-pakai').value,
-                rusak: row.querySelector('.edit-step-rusak').value,
-                missing: row.querySelector('.edit-step-missing').value
-            });
-        });
+        // This editor changes draft specifications only; operation history is read-only.
 
         if (!qty || qty <= 0) {
             alert('Qty harus lebih dari 0.');
@@ -781,7 +701,6 @@ if (!empty($items)) {
         fd.append('panjang', p);
         fd.append('lebar', l);
         fd.append('catatan', catatan);
-        fd.append('step_updates', JSON.stringify(stepData));
         fd.append(WIP_CONFIG.csrfTokenName, WIP_CONFIG.csrfHash);
 
         fetch(WIP_CONFIG.baseUrl + 'admin_save_item_edit', {

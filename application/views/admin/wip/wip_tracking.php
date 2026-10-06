@@ -331,6 +331,7 @@
                                     <th class="text-center" width="50">No</th>
                                     <th width="200">Informasi SPK</th>
                                     <th width="150">Konsumen</th>
+                                    <th width="250">Daftar Produk</th>
                                     <th class="text-center">Status Produksi</th>
                                     <th class="text-center" width="180">Progress</th>
                                     <th class="text-center" width="120">Detail</th>
@@ -392,6 +393,21 @@
                                             <td>
                                                 <div class="fw-800 text-dark"><?= $p->konsumen_nama ?></div>
                                             </td>
+                                            <td>
+                                                <div class="d-flex flex-column gap-2">
+                                                    <?php foreach ($spk_group as $item): ?>
+                                                        <div class="d-flex justify-content-between align-items-center border-bottom pb-1 mb-1 border-opacity-10">
+                                                            <div>
+                                                                <span class="d-block fw-bold text-dark" style="font-size:0.85rem"><?= htmlspecialchars($item->product_nama) ?></span>
+                                                                <span class="text-muted" style="font-size:0.75rem"><i class="fas fa-boxes me-1"></i><?= number_format($item->jumlah ?? 0) ?> <?= $item->satuan_nama ?></span>
+                                                            </div>
+                                                            <a href="<?= site_url('wip/detail/'.$item->produksi_id) ?>" class="btn btn-sm btn-primary py-0 px-2 rounded-pill" style="font-size:0.7rem" title="Proses / Detail">
+                                                                <i class="fas fa-cog fa-spin-hover me-1"></i>Proses
+                                                            </a>
+                                                        </div>
+                                                    <?php endforeach; ?>
+                                                </div>
+                                            </td>
                                             <td class="text-center">
                                                 <?php
                                                 // Simplified aggregated status
@@ -430,8 +446,8 @@
                                             <td class="text-center">
                                                 <div class="d-flex justify-content-center gap-1">
                                                     <button onclick="showInvoicePreview('<?= $nospk ?>')"
-                                                        class="btn btn-sm btn-dark rounded-pill px-2" title="Preview">
-                                                        <i class="fas fa-eye"></i>
+                                                        class="btn btn-sm btn-dark rounded-pill px-2" title="Preview SPK">
+                                                        <i class="fas fa-receipt"></i>
                                                     </button>
                                                     <a href="<?= base_url('transaksi/cetak_invoice_ulang/' . $nospk) ?>"
                                                         target="_blank" class="btn btn-sm btn-outline-dark rounded-pill px-2"
@@ -444,7 +460,7 @@
                                     <?php endforeach; ?>
                                 <?php else: ?>
                                     <tr>
-                                        <td colspan="6" class="text-center py-5">
+                                        <td colspan="7" class="text-center py-5">
                                             <div class="text-muted">
                                                 <i class="fas fa-inbox fa-3x mb-3 opacity-20"></i>
                                                 <p class="fw-bold">Tidak ada data WIP saat ini</p>
@@ -482,7 +498,7 @@
                                                 <div class="fw-800 text-dark"><?= $p->konsumen_nama ?></div>
                                             </td>
                                             <td><?= $p->product_nama ?></td>
-                                            <td class="text-center fw-bold"><?= number_format($p->qty) ?></td>
+                                            <td class="text-center fw-bold"><?= number_format($p->jumlah ?? 0) ?></td>
                                             <td class="text-center">
                                                 <a href="<?= site_url('wip/detail/' . $p->produksi_id) ?>"
                                                     class="btn btn-sm btn-dark rounded-pill px-3">
@@ -626,7 +642,7 @@
                 "ordering": false,
                 "dom": "<'row mb-0'<'col-md-6'l><'col-md-6 d-flex justify-content-end text-end'f>>t<'row mt-4'<'col-md-6'i><'col-md-6 d-flex justify-content-end text-end'p>>",
                 "initComplete": function () {
-                    var columnStatus = this.api().column(3);
+                    var columnStatus = this.api().column(4);
                     var columnKonsumen = this.api().column(2);
 
                     $('#statusFilter').on('change', function () {

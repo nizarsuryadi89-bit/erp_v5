@@ -108,9 +108,14 @@
                                 </div>
                                 <div class="col-md-3">
                                     <label class="form-label small fw-bold text-muted">PIN PRODUKSI</label>
-                                    <input type="password" class="form-control bg-slate-50 border-0 fw-bold rounded-3"
-                                        name="pin_produksi" id="form_pin_produksi" maxlength="6"
-                                        placeholder="4-6 Digit">
+                                    <div class="input-group">
+                                        <input type="password" class="form-control bg-slate-50 border-0 fw-bold rounded-start-3"
+                                            name="pin_produksi" id="form_pin_produksi" maxlength="6"
+                                            placeholder="4-6 Digit">
+                                        <button class="btn bg-slate-50 border-0 text-muted rounded-end-3" type="button" onclick="togglePinKaryawan()">
+                                            <i class="fas fa-eye" id="icon_toggle_pin"></i>
+                                        </button>
+                                    </div>
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label small fw-bold text-muted">TGL MASUK</label>

@@ -447,40 +447,10 @@
     }
 </style>
 
-<div class="warehouse-header-section">
-    <div class="container-fluid px-5">
-        <div class="row align-items-start">
-            <div class="col-md-7">
-                <div class="header-content">
-                    <div class="header-icon">
-                        <i class="fa fa-clipboard-check"></i>
-                    </div>
-                    <div class="header-text">
-                        <p class="header-subtitle">Tahap 5: Rekonsiliasi</p>
-                        <h1 class="header-title">Stok Opname & Penyesuaian</h1>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-5 text-end header-actions d-flex justify-content-end align-items-center gap-2">
-                <button id="btnToggleWorkflow" class="btn btn-outline-light btn-premium rounded-pill px-3">
-                    <i class="fa fa-eye-slash me-1"></i>SEMBUNYIKAN
-                </button>
-                <button class="btn btn-outline-light btn-premium rounded-pill px-3" onclick="openCekStokModal()">
-                    <i class="fa fa-clipboard-list me-1"></i>CEK SALDO APLIKASI
-                </button>
-                <button class="btn btn-outline-light btn-premium rounded-pill px-3" data-bs-toggle="modal"
-                    data-bs-target="#modalOpnameGuide">
-                    <i class="fa fa-info-circle me-1"></i>BANTUAN/SOP
-                </button>
-                <a href="<?= base_url('warehouse') ?>" class="btn btn-outline-light btn-premium rounded-pill px-3">
-                    <i class="fa fa-arrow-left me-1"></i>DASHBOARD
-                </a>
-            </div>
-        </div>
-    </div>
-</div>
+<div style="height: 35px;"></div>
 
 <div class="container-fluid px-5">
+    <?php $this->load->view('admin/warehouse/components/sop_stepper', ['active_step' => 6]); ?>
     <!-- Stats Row -->
     <div class="stats-container">
         <div class="row g-4">
@@ -520,9 +490,11 @@
         </div>
     </div>
 
-    <!-- 6-STEP CORE WORKFLOW (SOP) -->
-    <div id="workflowContainer">
-        <?php $this->load->view('admin/warehouse/components/v_material_workflow', ['current_step' => 3]); ?>
+    <!-- ACTION BUTTON -->
+    <div class="d-flex justify-content-end mb-4 mt-2">
+        <button class="btn btn-primary btn-premium rounded-pill px-4 shadow-sm" onclick="openCekStokModal()" style="background: linear-gradient(135deg, #2563eb, #1d4ed8); border:none;">
+            <i class="fa fa-clipboard-list me-2"></i> CEK SALDO APLIKASI (SISTEM)
+        </button>
     </div>
 
     <!-- Scanner Mode Bar (Floating/Fixed top) -->
@@ -609,6 +581,14 @@
                             ---
                         </div>
                         <input type="hidden" name="son_aplikasi" id="son_aplikasi_hidden">
+                    </div>
+
+                    <!-- BOM Usage Info -->
+                    <div class="p-4 bg-white rounded-24 border mt-3 shadow-sm" id="bom-usage-container" style="display: none;">
+                        <label class="form-label-premium text-primary"><i class="fas fa-info-circle me-2"></i>Digunakan Untuk Produk:</label>
+                        <div id="bom-usage-list" class="small mt-2" style="max-height: 150px; overflow-y: auto;">
+                            <!-- Populated by JS -->
+                        </div>
                     </div>
                 </div>
 
@@ -1023,6 +1003,25 @@
 
                         $('#system-stock-breakdown').html(breakdown);
                         $('#son_aplikasi_hidden').val(stok);
+
+                        // Populate BOM Usage Info
+                        if (res.usage_info && res.usage_info.length > 0) {
+                            let usageHtml = '<ul class="list-unstyled mb-0">';
+                            res.usage_info.forEach(u => {
+                                usageHtml += `<li class="mb-2 pb-1 border-bottom border-light">
+                                    <div class="fw-bold text-dark"><i class="fas fa-cube text-primary me-2"></i>${u.product_nama}</div>
+                                    <div class="text-muted ms-3 ps-2 fw-semibold" style="font-size:0.75rem;"><span class="badge bg-warning bg-opacity-25 text-dark border border-warning px-2"><i class="fas fa-boxes me-1"></i>${u.kapasitas}</span></div>
+                                </li>`;
+                            });
+                            usageHtml += '</ul>';
+                            if (res.usage_info.length === 10) {
+                                usageHtml += `<div class="text-center text-muted mt-2" style="font-size: 0.7rem;">(Menampilkan maksimal 10 produk pertama)</div>`;
+                            }
+                            $('#bom-usage-list').html(usageHtml);
+                            $('#bom-usage-container').fadeIn();
+                        } else {
+                            $('#bom-usage-container').hide();
+                        }
 
                         calculateFinalQty();
                     }

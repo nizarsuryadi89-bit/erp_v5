@@ -574,7 +574,8 @@ class Laporan extends MY_Controller
                        p.total_bayar as bayar_hari_ini,
                        (p.total_tagihan - p.total_bayar) as sisa_piutang,
                        u.username as kasir,
-                       CASE WHEN p.status_lunas = '1' THEN 'Lunas' ELSE 'DP/Termin' END as status_transaksi
+                       CASE WHEN p.status_lunas = '1' THEN 'Lunas' ELSE 'DP/Termin' END as status_transaksi,
+                       (SELECT GROUP_CONCAT(tp.product_nama SEPARATOR ', ') FROM tbl_produksi tpr JOIN tbl_product tp ON tpr.product_id = tp.product_id WHERE tpr.nospk = p.nospk) as produk
                 FROM tbl_pembayaran p
                 LEFT JOIN tbl_konsumen k ON p.konsumen_id = k.konsumen_id
                 LEFT JOIN users u ON p.kasir_id = u.user_id
@@ -3719,6 +3720,52 @@ class Laporan extends MY_Controller
         $this->load->view('admin/laporan/print_transaksi_manual', $data);
     }
 
+    public function cetak_transaksi_bulanan()
+    {
+        $perusahaan_id = $this->input->get('perusahaan_id', true) ?: $this->session->userdata('perusahaan_id');
+        $ids = $this->_get_ids($perusahaan_id);
+        $ids_sql = implode(',', $ids);
+
+        $bulan_ini = $this->input->get('bulan', true) ?: date('Y-m');
+        $start_date = $bulan_ini . '-01';
+        $end_date = date('Y-m-t', strtotime($start_date));
+
+        $pemasukan_list = $this->db->query("
+                SELECT pd.created_at as full_timestamp, DATE(pd.created_at) as tanggal, TIME(pd.created_at) as jam, p.nospk, 
+                       k.konsumen_nama as konsumen,
+                       pd.jumlah as total,
+                       (SELECT GROUP_CONCAT(DISTINCT pr.product_nama SEPARATOR ', ')
+                        FROM tbl_produksi prod
+                        JOIN tbl_product pr ON prod.product_id = pr.product_id
+                        WHERE prod.nospk = p.nospk) as produk,
+                       CASE WHEN DATE(pd.created_at) > p.tgl_bayar THEN 'Pelunasan Piutang' ELSE 'Transaksi' END as jenis,
+                       u.username as kasir
+                FROM tbl_pembayaran_detail pd
+                JOIN tbl_pembayaran p ON pd.pembayaran_id = p.pembayaran_id
+                LEFT JOIN tbl_konsumen k ON p.konsumen_id = k.konsumen_id
+                LEFT JOIN users u ON p.kasir_id = u.user_id
+                WHERE (DATE(pd.created_at) BETWEEN ? AND ?)
+                  AND p.perusahaan_id IN ($ids_sql)
+                  AND pd.jumlah > 0
+                ORDER BY pd.created_at ASC
+            ", [$start_date, $end_date])->result_array();
+
+        // Get company info
+        $perusahaan_name = 'TGM ERP System';
+        $p_info = $this->db->select('nama_perusahaan')->get_where('tbl_perusahaan', array('id_perusahaan' => $perusahaan_id))->row_array();
+        if ($p_info) {
+            $perusahaan_name = $p_info['nama_perusahaan'];
+        }
+
+        $data = [
+            'perusahaan' => $perusahaan_name,
+            'bulan_ini' => $bulan_ini,
+            'pemasukan_list' => $pemasukan_list
+        ];
+
+        $this->load->view('admin/laporan/keuangan/cetak_transaksi_bulanan', $data);
+    }
+
     public function export_pemasukan_bulanan()
     {
         $perusahaan_id = $this->input->get('perusahaan_id', true) ?: $this->session->userdata('perusahaan_id');
@@ -3729,42 +3776,22 @@ class Laporan extends MY_Controller
         $start_date = $bulan_ini . '-01';
         $end_date = date('Y-m-t', strtotime($start_date));
 
-        // 1. Transaksi Langsung (Sales Payment)
-        $transaksi = $this->db->query("
-                SELECT p.tgl_bayar as tanggal, p.jam_bayar as jam, p.nospk, 
+        // Unified Data Source for Monthly Income Export (Matching the Dashboard)
+        $data = $this->db->query("
+                SELECT pd.created_at as full_timestamp, DATE(pd.created_at) as tanggal, TIME(pd.created_at) as jam, p.nospk, 
                        k.konsumen_nama as konsumen,
-                       p.total_bayar as total,
-                       'Transaksi' as jenis,
+                       pd.jumlah as total,
+                       CASE WHEN DATE(pd.created_at) > p.tgl_bayar THEN 'Pelunasan Piutang' ELSE 'Transaksi' END as jenis,
                        u.username as kasir
-                FROM tbl_pembayaran p
+                FROM tbl_pembayaran_detail pd
+                JOIN tbl_pembayaran p ON pd.pembayaran_id = p.pembayaran_id
                 LEFT JOIN tbl_konsumen k ON p.konsumen_id = k.konsumen_id
                 LEFT JOIN users u ON p.kasir_id = u.user_id
-                WHERE (p.tgl_bayar BETWEEN '$start_date' AND '$end_date') 
+                WHERE (DATE(pd.created_at) BETWEEN ? AND ?)
                   AND p.perusahaan_id IN ($ids_sql)
-                  AND p.total_bayar > 0
-            ")->result_array();
-
-        // 2. Pelunasan Piutang
-        $piutang = $this->db->query("
-                SELECT pp.tanggal_bayar as tanggal, TIME(pp.created_at) as jam, p.nospk,
-                       k.konsumen_nama as konsumen,
-                       pp.jumlah_bayar as total,
-                       'Pelunasan Piutang' as jenis,
-                       '-' as kasir
-                FROM tbl_piutang_pembayaran pp
-                JOIN tbl_piutang p ON pp.piutang_id = p.piutang_id
-                LEFT JOIN tbl_konsumen k ON p.konsumen_id = k.konsumen_id
-                WHERE (DATE(pp.tanggal_bayar) BETWEEN '$start_date' AND '$end_date') 
-                  AND p.perusahaan_id IN ($ids_sql)
-            ")->result_array();
-
-        // Merge and Sort
-        $data = array_merge($transaksi, $piutang);
-        usort($data, function ($a, $b) {
-            $t1 = strtotime($a['tanggal'] . ' ' . $a['jam']);
-            $t2 = strtotime($b['tanggal'] . ' ' . $b['jam']);
-            return $t1 - $t2;
-        });
+                  AND pd.jumlah > 0
+                ORDER BY pd.created_at ASC
+            ", [$start_date, $end_date])->result_array();
 
         // Load PHPExcel
         require_once APPPATH . 'third_party/PHPExcel/PHPExcel.php';

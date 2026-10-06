@@ -458,7 +458,44 @@
         }
     }
 
-    function mulaiLembur() {
+    async function mulaiLembur() {
+        Swal.fire({
+            title: 'Mendeteksi Lokasi...',
+            html: `Mencoba mendapatkan koordinat GPS untuk mulai lembur...<br><small class="text-muted">Pastikan GPS aktif & izin lokasi diberikan.</small>`,
+            allowOutsideClick: false,
+            didOpen: () => { Swal.showLoading(); }
+        });
+
+        let locationString = "";
+        try {
+            const pos = await getPosition();
+            locationString = `Lat: ${pos.coords.latitude.toFixed(6)}, Long: ${pos.coords.longitude.toFixed(6)}`;
+            Swal.close();
+        } catch (err) {
+            let errorMsg = "Gagal mendapatkan lokasi.";
+            if (err.code === 1) errorMsg = "Izin lokasi ditolak. Silakan aktifkan izin lokasi pada browser/aplikasi Anda.";
+            if (err.code === 2) errorMsg = "Sinyal GPS tidak ditemukan atau lokasi tidak tersedia.";
+            if (err.code === 3) errorMsg = "Waktu pencarian lokasi habis (Timeout). Pastikan Anda berada di ruang terbuka.";
+            
+            Swal.fire({
+                icon: 'warning',
+                title: 'Lokasi Tidak Ditemukan',
+                text: errorMsg + ' Apakah Anda tetap ingin mulai lembur tanpa lokasi?',
+                showCancelButton: true,
+                confirmButtonText: 'Ya, Lanjut',
+                cancelButtonText: 'Batal'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    submitMulaiLembur("");
+                }
+            });
+            return;
+        }
+
+        submitMulaiLembur(locationString);
+    }
+
+    function submitMulaiLembur(locationString) {
         Swal.fire({
             title: 'Mulai Lembur?',
             text: "Sesi lembur Anda akan dicatat mulai pukul <?= date('H:i') ?> WIB",
@@ -470,7 +507,19 @@
             borderRadius: '25px'
         }).then((result) => {
             if (result.isConfirmed) {
-                document.getElementById('mulaiLemburForm').submit();
+                let form = document.getElementById('mulaiLemburForm');
+                
+                // Hapus input lokasi lama jika ada (untuk mencegah duplikasi)
+                let oldInput = document.getElementById('lokasi_lembur');
+                if(oldInput) { oldInput.remove(); }
+
+                let inputLoc = document.createElement('input');
+                inputLoc.type = 'hidden';
+                inputLoc.name = 'lokasi';
+                inputLoc.id = 'lokasi_lembur';
+                inputLoc.value = locationString;
+                form.appendChild(inputLoc);
+                form.submit();
             }
         });
     }

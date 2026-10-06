@@ -5,13 +5,13 @@
     <!-- Meta Tags -->
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= isset($title) ? $title : 'TGM Core - Smart Printing ERP' ?></title>
+    <title><?= isset($title) ? $title : get_app_name() . ' - Smart Printing ERP' ?></title>
     <link rel="icon" type="image/png" href="<?= base_url('assets/images/app_icon.png') ?>">
 
     <!-- Core JS (PRIORITY LOAD) -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 
-    <meta name="title" content="TGM Core - Integrated Printing ERP">
+    <meta name="title" content="<?= get_app_name() ?> - Integrated Printing ERP">
     <meta name="author" content="ColorlibHQ">
     <meta name="description" content="">
     <meta name="keywords" content="">
