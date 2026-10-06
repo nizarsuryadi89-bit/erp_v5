@@ -733,7 +733,7 @@ class MY_Controller extends CI_Controller
         $method = $this->router->method;
 
         // 1. Daftar Controller yang TIDAK perlu dicatat secara otomatis (High traffic / non-critical)
-        $ignored_controllers = ['absensi', 'chat', 'notifikasi', 'antrian'];
+        $ignored_controllers = ['absensi', 'chat', 'notifikasi', 'antrian', 'complaint'];
         if (in_array(strtolower($class), $ignored_controllers))
             return;
 
@@ -1013,3 +1013,4 @@ class MY_Controller extends CI_Controller
         return $this->data;
     }
 }
+

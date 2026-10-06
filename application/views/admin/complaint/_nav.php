@@ -1,0 +1,16 @@
+<style>
+.complaint-shell{max-width:1450px;margin:auto;padding:24px;color:#203047}.complaint-card{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:20px;box-shadow:0 3px 16px #17304b08}.complaint-kpi{font-size:2rem;font-weight:750;letter-spacing:-1px}.complaint-title{font-size:1.8rem;font-weight:750;letter-spacing:-.6px}.complaint-muted{color:#64748b}.complaint-shell .table th{font-size:.8rem;letter-spacing:.4px;color:#64748b;white-space:nowrap}.complaint-shell .table td{vertical-align:middle}.complaint-source{white-space:pre-wrap;overflow-wrap:anywhere;background:#f8fafc;border-radius:10px;padding:14px;font:inherit;max-height:360px;overflow:auto}.complaint-shell label{font-weight:600;font-size:.88rem;margin-bottom:6px}.complaint-shell .form-control,.complaint-shell .form-select{border-radius:9px}.complaint-shell .btn{border-radius:9px}.complaint-dot{width:9px;height:9px;display:inline-block;border-radius:50%;background:#10b981}.complaint-timeline{border-left:2px solid #cbd5e1;padding-left:18px;margin-left:6px}.complaint-timeline article{padding-bottom:22px;position:relative}.complaint-timeline article:before{content:'';position:absolute;left:-24px;top:4px;width:10px;height:10px;background:#2366b3;border-radius:50%}@media(max-width:768px){.complaint-shell{padding:12px}.complaint-title{font-size:1.35rem}.complaint-card{padding:14px}}@media print{.app-sidebar,.app-header,.no-print,.main-footer,.navbar{display:none!important}.complaint-shell{padding:0}.complaint-card{box-shadow:none;border-color:#ddd}.content-wrapper,.app-main{margin:0!important}.complaint-source{max-height:none;overflow:visible}}
+</style>
+<div class="d-flex flex-wrap justify-content-between gap-3 align-items-start mb-4">
+    <div><div class="small fw-semibold text-primary mb-1">TGM PRINT · OPERASIONAL</div><h1 class="complaint-title mb-1">Complaint & Trouble Center</h1><div class="complaint-muted small">Satu tempat untuk laporan masalah, penanganan, dan ringkasan cabang aktif.</div></div>
+    <div class="small complaint-muted"><span class="complaint-dot me-1"></span> Impor dan penanganan tersedia offline</div>
+</div>
+<nav class="d-flex flex-wrap gap-2 mb-4 no-print" aria-label="Navigasi komplain">
+    <?php foreach (array('complaint' => 'Dashboard & Tiket', 'complaint/inbox' => 'Kotak Masuk WA', 'complaint/summary' => 'Rangkuman') as $path => $label): ?>
+    <a class="btn btn-outline-primary btn-sm" href="<?= complaint_e(site_url($path)) ?>"><?= complaint_e($label) ?></a>
+    <?php endforeach; ?>
+    <?php if ($complaint_manager && empty($is_readonly)): ?><a class="btn btn-success btn-sm" href="<?= complaint_e(site_url('complaint/import')) ?>"><i class="bi bi-whatsapp me-1"></i>Impor Chat</a><?php endif; ?>
+    <?php if (empty($is_readonly)): ?><a class="btn btn-primary btn-sm" href="<?= complaint_e(site_url('complaint/create')) ?>"><i class="bi bi-plus-lg me-1"></i>Tiket Manual</a><?php endif; ?>
+</nav>
+<?php if ($this->session->flashdata('complaint_success')): ?><div class="alert alert-success no-print" role="status"><?= complaint_e($this->session->flashdata('complaint_success')) ?></div><?php endif; ?>
+<?php if ($this->session->flashdata('complaint_error')): ?><div class="alert alert-danger no-print" role="alert"><?= complaint_e($this->session->flashdata('complaint_error')) ?></div><?php endif; ?>
