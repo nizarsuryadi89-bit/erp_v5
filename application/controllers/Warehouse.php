@@ -2440,55 +2440,41 @@ class Warehouse extends MY_Controller
 
     public function export_akumulasi_stok_excel()
     {
-        $stok_gudang_utama = $this->m_gudang->getStokgudangByGudang(1);
-        $stok_gudang_1 = $this->m_gudang->getStokgudangByGudang(2);
-        $stok_gudang_2 = $this->m_gudang->getStokgudangByGudang(3);
-        $akumulasi = [];
-        $index_gudang_utama = [];
-        $index_gudang_1 = [];
-        $index_gudang_2 = [];
-        foreach ($stok_gudang_utama as $row) {
-            $index_gudang_utama[$row->bahan_id] = ($row->stok_awal + $row->stok_tambah - $row->stok_kurang);
-        }
-        foreach ($stok_gudang_1 as $row) {
-            $index_gudang_1[$row->bahan_id] = ($row->stok_awal + $row->stok_tambah - $row->stok_kurang);
-        }
-        foreach ($stok_gudang_2 as $row) {
-            $index_gudang_2[$row->bahan_id] = ($row->stok_awal + $row->stok_tambah - $row->stok_kurang);
-        }
-        foreach ([$stok_gudang_utama, $stok_gudang_1, $stok_gudang_2] as $stok_gudang) {
-            foreach ($stok_gudang as $row) {
-                $id = $row->bahan_id;
-                if (!isset($akumulasi[$id])) {
-                    $akumulasi[$id] = [
-                        'bahanbaku_nama' => $row->bahanbaku_nama,
-                        'satuan_nama' => $row->satuan_nama,
-                        'stok_gudang_utama' => isset($index_gudang_utama[$id]) ? $index_gudang_utama[$id] : 0,
-                        'stok_gudang_1' => isset($index_gudang_1[$id]) ? $index_gudang_1[$id] : 0,
-                        'stok_gudang_2' => isset($index_gudang_2[$id]) ? $index_gudang_2[$id] : 0,
-                        'stok_aktif' => 0
-                    ];
-                }
-                $akumulasi[$id]['stok_aktif'] = $akumulasi[$id]['stok_gudang_utama'] + $akumulasi[$id]['stok_gudang_1'] + $akumulasi[$id]['stok_gudang_2'];
-            }
-        }
-        // Export as CSV (simple, compatible)
+        // Use the same stock source as the warehouse dashboard/report.
+        // This avoids discrepancies with the legacy `stok_gudang` table
+        // and keeps material variants (material_id) such as Stopper 2 cm visible.
+        $report_data = $this->warehouse->get_accumulated_stock();
+        $warehouses = $report_data['warehouses'];
+        $rows = $report_data['data'];
+
         header('Content-Type: text/csv; charset=utf-8');
         header('Content-Disposition: attachment; filename=laporan_akumulasi_stok.csv');
+
         $output = fopen('php://output', 'w');
-        fputcsv($output, ['No', 'Nama Bahan', 'Satuan', 'Stok Gudang Utama', 'Stok Gudang Produksi 1', 'Stok Gudang Produksi 2', 'Stok Semua']);
-        $no = 1;
-        foreach ($akumulasi as $row) {
-            fputcsv($output, [
-                $no++,
-                $row['bahanbaku_nama'],
-                $row['satuan_nama'],
-                $row['stok_gudang_utama'],
-                $row['stok_gudang_1'],
-                $row['stok_gudang_2'],
-                $row['stok_aktif']
-            ]);
+
+        $headers = ['No', 'Nama Material', 'Satuan'];
+        foreach ($warehouses as $warehouse) {
+            $headers[] = $warehouse->gudang_nama;
         }
+        $headers[] = 'Total Stok';
+        fputcsv($output, $headers);
+
+        $no = 1;
+        foreach ($rows as $row) {
+            $line = [
+                $no++,
+                $row['name'],
+                $row['unit'],
+            ];
+
+            foreach ($warehouses as $warehouse) {
+                $line[] = $row['warehouses'][$warehouse->gudang_id] ?? 0;
+            }
+
+            $line[] = $row['total_qty'];
+            fputcsv($output, $line);
+        }
+
         fclose($output);
         exit;
     }

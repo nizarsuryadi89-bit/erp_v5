@@ -382,43 +382,47 @@ class Warehouse_model extends CI_Model
      */
     public function get_accumulated_stock()
     {
-        // 1. Get all active warehouses for headers
+        // Single source of truth: tbl_stok_gudang stores quantities in BASE units.
+        // Convert back to warehouse/display units so printed reports match the stock screen.
         $warehouses = $this->db->get('tbl_gudang')->result();
+        $conversion = 'IFNULL(NULLIF(m.konversi, 0), 1)';
 
-        // 2. Build Dynamic Pivot Query
-        $this->db->select('m.material_id, CONCAT(b.bahan_nama, " - ", m.varian) as name, s.satuan_nama as unit');
+        $this->db->select('m.material_id, CONCAT(b.bahan_nama, " - ", m.varian) as name, s.satuan_nama as unit', false);
 
-        // Add dynamic warehouse columns
+        // A material may be split across several racks. SUM is required; MAX loses stock on other racks.
         foreach ($warehouses as $w) {
-            $this->db->select("MAX(CASE WHEN sg.gudang_id = {$w->gudang_id} THEN sg.qty ELSE 0 END) as wh_{$w->gudang_id}");
+            $warehouse_id = (int) $w->gudang_id;
+            $this->db->select(
+                "SUM(CASE WHEN sg.gudang_id = {$warehouse_id} THEN COALESCE(sg.qty, 0) ELSE 0 END) / {$conversion} as wh_{$warehouse_id}",
+                false
+            );
         }
 
-        $this->db->select('SUM(COALESCE(sg.qty, 0)) as total_qty');
+        $this->db->select("SUM(COALESCE(sg.qty, 0)) / {$conversion} as total_qty", false);
+        $this->db->select('(SELECT COUNT(*) FROM tbl_stok_log sl WHERE sl.material_id = m.material_id) as popularity', false);
         $this->db->from('tbl_material m');
-        $this->db->join('tbl_bahan b', 'm.bahan_id = b.bahan_id');
-        $this->db->join('tbl_satuan s', 'm.satuan_gudang_id = s.satuan_id');
+        $this->db->join('tbl_bahan b', 'm.bahan_id = b.bahan_id', 'left');
+        $this->db->join('tbl_satuan s', 'm.satuan_gudang_id = s.satuan_id', 'left');
         $this->db->join('tbl_stok_gudang sg', 'm.material_id = sg.material_id', 'left');
-        $this->db->select('(SELECT COUNT(*) FROM tbl_stok_log sl WHERE sl.material_id = m.material_id) as popularity');
-        $this->db->group_by('m.material_id, b.bahan_nama, m.varian, s.satuan_nama');
+        $this->db->group_by('m.material_id, b.bahan_nama, m.varian, s.satuan_nama, m.konversi');
         $this->db->order_by('popularity', 'DESC');
         $this->db->order_by('b.bahan_nama', 'ASC');
 
         $query_results = $this->db->get()->result();
 
-        // 3. Reformat result to match expected frontend structure (optional but keeps compatibility)
         $data = [];
         foreach ($query_results as $row) {
             $item = [
                 'material_id' => $row->material_id,
-                'name' => $row->name,
-                'unit' => $row->unit,
+                'name' => $row->name ?: ('Material #' . $row->material_id),
+                'unit' => $row->unit ?: 'Unit',
                 'total_qty' => (float) $row->total_qty,
                 'warehouses' => []
             ];
 
             foreach ($warehouses as $w) {
                 $col = "wh_{$w->gudang_id}";
-                $item['warehouses'][$w->gudang_id] = (float) $row->$col;
+                $item['warehouses'][$w->gudang_id] = (float) ($row->$col ?? 0);
             }
             $data[] = $item;
         }
@@ -459,28 +463,41 @@ class Warehouse_model extends CI_Model
      */
     public function get_daily_stock_report($date_from, $date_to, $warehouse_id = null)
     {
-        $this->db->select('DATE(sl.created_at) as tanggal,
-                          b.bahan_nama, m.varian, s.satuan_nama, s_prod.satuan_nama as satuan_produksi, m.konversi,
-                          sl.trx_type, 
-                          SUM(sl.qty_in) as total_masuk, 
-                          SUM(sl.qty_out) as total_keluar,
-                          SUM(CASE WHEN sl.qty_base > 0 THEN sl.qty_base ELSE (ABS(sl.qty_out) * COALESCE(m.konversi, 1)) END) as total_produksi_keluar
-                          ');
+        // Read directly from the stock ledger. LEFT JOIN keeps historical ledger rows
+        // visible even if a material master record was later changed/deactivated.
+        $this->db->select('
+            DATE(sl.created_at) as tanggal,
+            sl.material_id,
+            COALESCE(b.bahan_nama, CONCAT("Material #", sl.material_id)) as bahan_nama,
+            COALESCE(m.varian, "-") as varian,
+            COALESCE(s.satuan_nama, s_prod.satuan_nama, "Unit") as satuan_nama,
+            s_prod.satuan_nama as satuan_produksi,
+            COALESCE(NULLIF(m.konversi, 0), 1) as konversi,
+            sl.trx_type,
+            SUM(sl.qty_in) as total_masuk,
+            SUM(sl.qty_out) as total_keluar,
+            SUM(
+                CASE
+                    WHEN sl.qty_base > 0 THEN sl.qty_base
+                    ELSE ABS(sl.qty_out) * COALESCE(NULLIF(m.konversi, 0), 1)
+                END
+            ) as total_produksi_keluar
+        ', false);
         $this->db->from('tbl_stok_log sl');
-        $this->db->join('tbl_material m', 'sl.material_id = m.material_id');
-        $this->db->join('tbl_bahan b', 'm.bahan_id = b.bahan_id');
+        $this->db->join('tbl_material m', 'sl.material_id = m.material_id', 'left');
+        $this->db->join('tbl_bahan b', 'm.bahan_id = b.bahan_id', 'left');
         $this->db->join('tbl_satuan s', 'm.satuan_gudang_id = s.satuan_id', 'left');
         $this->db->join('tbl_satuan s_prod', 'b.satuan_id = s_prod.satuan_id', 'left');
         $this->db->where('DATE(sl.created_at) >=', $date_from);
         $this->db->where('DATE(sl.created_at) <=', $date_to);
 
         if ($warehouse_id) {
-            $this->db->where('sl.gudang_id', $warehouse_id);
+            $this->db->where('sl.gudang_id', (int) $warehouse_id);
         }
 
         $this->db->group_by('DATE(sl.created_at), sl.material_id, sl.trx_type');
-        $this->db->order_by('DATE(sl.created_at) DESC, b.bahan_nama ASC');
-        
+        $this->db->order_by('DATE(sl.created_at) DESC, bahan_nama ASC');
+
         return $this->db->get()->result();
     }
 
@@ -737,24 +754,49 @@ class Warehouse_model extends CI_Model
         $date_from = $date_from ?: date('Y-m-01');
         $date_to   = $date_to   ?: date('Y-m-t');
 
+        // IMPORTANT:
+        // Mutation/Pengambilan is an internal transfer between warehouses, not consumption.
+        // Real material usage is recorded as Produksi. Counting both transfer and Produksi
+        // makes monthly usage appear much larger than the real warehouse consumption.
         $sql = "
             SELECT
-                b.bahan_nama, m.varian, m.konversi, s.satuan_nama, sp.satuan_nama as satuan_produksi,
-                IFNULL(SUM(CASE WHEN sl.trx_type = 'Pembelian' THEN sl.qty_in ELSE 0 END), 0) as total_dibeli,
-                IFNULL(SUM(CASE WHEN sl.trx_type IN ('Mutation','Produksi','Pengambilan') THEN sl.qty_out ELSE 0 END), 0) as total_terpakai,
-                IFNULL(SUM(CASE WHEN sl.trx_type = 'Pembelian' THEN sl.qty_in ELSE 0 END), 0) -
-                IFNULL(SUM(CASE WHEN sl.trx_type IN ('Mutation','Produksi','Pengambilan') THEN sl.qty_out ELSE 0 END), 0) as sisa_bersih
+                sl.material_id,
+                COALESCE(b.bahan_nama, CONCAT('Material #', sl.material_id)) as bahan_nama,
+                COALESCE(m.varian, '-') as varian,
+                COALESCE(NULLIF(m.konversi, 0), 1) as konversi,
+                COALESCE(s.satuan_nama, sp.satuan_nama, 'Unit') as satuan_nama,
+                sp.satuan_nama as satuan_produksi,
+                IFNULL(SUM(CASE
+                    WHEN sl.trx_type IN ('Pembelian', 'Pembelian/Koreksi')
+                    THEN sl.qty_in
+                    WHEN sl.trx_type = 'Koreksi/Edit Pembelian'
+                    THEN -sl.qty_out
+                    ELSE 0 END), 0) as total_dibeli,
+                IFNULL(SUM(CASE
+                    WHEN sl.trx_type = 'Produksi'
+                    THEN sl.qty_out ELSE 0 END), 0) as total_terpakai,
+                IFNULL(SUM(CASE
+                    WHEN sl.trx_type IN ('Pembelian', 'Pembelian/Koreksi')
+                    THEN sl.qty_in
+                    WHEN sl.trx_type = 'Koreksi/Edit Pembelian'
+                    THEN -sl.qty_out
+                    ELSE 0 END), 0)
+                -
+                IFNULL(SUM(CASE
+                    WHEN sl.trx_type = 'Produksi'
+                    THEN sl.qty_out ELSE 0 END), 0) as sisa_bersih
             FROM tbl_stok_log sl
-            JOIN tbl_material m ON sl.material_id = m.material_id
-            JOIN tbl_bahan b ON m.bahan_id = b.bahan_id
+            LEFT JOIN tbl_material m ON sl.material_id = m.material_id
+            LEFT JOIN tbl_bahan b ON m.bahan_id = b.bahan_id
             LEFT JOIN tbl_satuan s ON m.satuan_gudang_id = s.satuan_id
             LEFT JOIN tbl_satuan sp ON b.satuan_id = sp.satuan_id
-            WHERE DATE(sl.created_at) BETWEEN '{$date_from}' AND '{$date_to}'
-            GROUP BY sl.material_id
+            WHERE DATE(sl.created_at) BETWEEN ? AND ?
+            GROUP BY sl.material_id, b.bahan_nama, m.varian, m.konversi, s.satuan_nama, sp.satuan_nama
             HAVING (total_dibeli > 0 OR total_terpakai > 0)
-            ORDER BY total_dibeli DESC
+            ORDER BY total_terpakai DESC, bahan_nama ASC
         ";
-        return $this->db->query($sql)->result();
+
+        return $this->db->query($sql, [$date_from, $date_to])->result();
     }
 
     // =====================================================
