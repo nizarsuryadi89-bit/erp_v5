@@ -38,6 +38,8 @@
             // Step 2: Langsung fokus ke Scan Produk
             setTimeout(() => $('#productSelect').select2('open'), 500);
             syncTransactionData();
+            // Bind live price estimation for already-loaded product
+            setTimeout(() => bindPriceEstimation(), 600);
         } else {
             // Step 1: Langsung fokus ke Pilih Konsumen
             setTimeout(() => $('#konsumenSelect1').select2('open'), 500);
@@ -58,12 +60,52 @@
             $('#totalHarga').text(SPKState.formatIDR(SPKState.totalHarga));
             $('#total_pemesanan').val(SPKState.totalHarga);
 
+            // Populate Linked Item Dropdown based on table contents
+            populateLinkedItemDropdown();
+
             // Reset Checkbox state
             $('#checkAllItem').prop('checked', false);
             updateBulkActionUI();
 
             updateButtonState();
         } catch (err) { SPKState.handleAjaxError(null, 'error', err); }
+    }
+
+    function populateLinkedItemDropdown() {
+        const select = $('#linked_item_select');
+        select.empty();
+        select.append('<option value="">-- Tidak Dikaitkan --</option>');
+        
+        let hasItems = false;
+        $('#transaksi tbody tr').each(function(index) {
+            // Find product name in paragraph inside td
+            const pName = $(this).find('td:eq(2) p.fw-bold').text().trim();
+            if (pName && pName !== 'Belum Ada Item Dalam SPK Ini' && pName !== '') {
+                // Extract variations from small tags
+                let vars = [];
+                $(this).find('td:eq(2) small').each(function() {
+                    let text = $(this).text().trim();
+                    if (text !== '') vars.push(text);
+                });
+                
+                let fullName = pName;
+                if (vars.length > 0) {
+                    fullName += ' (' + vars.join(' | ') + ')';
+                }
+                
+                // Final descriptive string (removed Qty of target item to prevent operator confusion)
+                const descStr = `[Item #${index + 1}] ${fullName}`;
+                
+                select.append(`<option value="${descStr}">${descStr}</option>`);
+                hasItems = true;
+            }
+        });
+
+        if (hasItems) {
+            $('#linked-item-container').slideDown(200);
+        } else {
+            $('#linked-item-container').slideUp(200);
+        }
     }
 
     function updateBulkActionUI() {
@@ -115,10 +157,65 @@
                     $('#selected-product-name').text(p.product_nama);
                     $('#dynamic-category-view').html(res.cat_view);
                     setTimeout(() => { $('#qty').focus().select(); }, 100);
+
+                    // Bind live estimation after dynamic view loads
+                    setTimeout(() => bindPriceEstimation(), 300);
                 }
             },
             error: SPKState.handleAjaxError
         });
+    }
+
+    let _estTimer = null;
+    function estimatePrice() {
+        clearTimeout(_estTimer);
+        _estTimer = setTimeout(() => {
+            const productId = $('#hidden_product_id').val();
+            const qty = parseFloat($('#qty').val());
+            if (!productId || !qty || qty <= 0) {
+                $('#price-estimation-box').addClass('d-none');
+                $('#price-estimation-warning').addClass('d-none');
+                return;
+            }
+
+            // Collect all form data from form-add-temp
+            const formData = $('#form-add-temp').serialize();
+
+            $.ajax({
+                url: '<?= base_url('transaksi/estimate_price') ?>',
+                type: 'POST',
+                data: formData,
+                dataType: 'json',
+                success: function(res) {
+                    if (res.status === 'success') {
+                        $('#est-harga-satuan').text('Rp ' + SPKState.formatIDR(res.harga_satuan));
+                        $('#est-subtotal').text('Rp ' + SPKState.formatIDR(res.subtotal));
+                        $('#price-estimation-box').removeClass('d-none');
+                        $('#price-estimation-warning').addClass('d-none');
+                    } else if (res.status === 'not_found') {
+                        $('#price-estimation-box').addClass('d-none');
+                        $('#est-warning-text').text(res.message || 'Harga belum dikonfigurasi');
+                        $('#price-estimation-warning').removeClass('d-none');
+                    } else {
+                        $('#price-estimation-box').addClass('d-none');
+                        $('#price-estimation-warning').addClass('d-none');
+                    }
+                },
+                error: function() {
+                    $('#price-estimation-box').addClass('d-none');
+                    $('#price-estimation-warning').addClass('d-none');
+                }
+            });
+        }, 400);
+    }
+
+    function bindPriceEstimation() {
+        // Bind to qty and all dynamic form fields
+        $('#qty').off('input.est').on('input.est', estimatePrice);
+        $('#form-add-temp').find('select, input[type="radio"]').off('change.est').on('change.est', estimatePrice);
+        $('#form-add-temp').find('input[name="panjang"], input[name="lebar"]').off('input.est').on('input.est', estimatePrice);
+        // Trigger initial estimate if qty has value
+        if (parseFloat($('#qty').val()) > 0) estimatePrice();
     }
 
     function initializeEventHandlers() {
@@ -150,10 +247,24 @@
             $('.item-checkbox:checked').each(function () { ids.push($(this).val()); });
 
             if (ids.length === 0) return;
+            
+            // Check for linked items in the cart
+            let hasLinkedItems = false;
+            $('#transaksi tbody tr').each(function() {
+                const ket = $(this).find('td:eq(3)').text() || '';
+                if (ket.includes('[TERAPKAN PADA:')) {
+                    hasLinkedItems = true;
+                }
+            });
+            
+            let warningText = "Item yang dipilih akan dihapus permanen dari daftar.";
+            if (hasLinkedItems) {
+                warningText = "AWAS! Ada Jasa/Produk yang saling dikaitkan di keranjang ini. Harap periksa ulang catatan Jasa Anda jika barang utamanya dihapus.";
+            }
 
             Swal.fire({
                 title: `Hapus ${ids.length} Item?`,
-                text: "Item yang dipilih akan dihapus permanen dari daftar.",
+                text: warningText,
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: '#d33',
@@ -265,16 +376,37 @@
 
         $('#form-add-temp').on('submit', function (e) {
             e.preventDefault(); if (SPKState.isProcessing) return;
+            
+            // NEW FEATURE: LINKED ITEM (Inject into keterangan)
+            const linkedItem = $('#linked_item_select').val();
+            let originalKeterangan = $('textarea[name="keterangan"]').val();
+            if (linkedItem) {
+                const ketField = $('textarea[name="keterangan"]');
+                let currentKet = ketField.val().trim();
+                let appendText = `[TERAPKAN PADA: ${linkedItem}]`;
+                
+                if (currentKet !== '') {
+                    ketField.val(currentKet + '\n' + appendText);
+                } else {
+                    ketField.val(appendText);
+                }
+            }
+
             SPKState.setProcessing(true);
             $.ajax({
                 url: '<?= base_url('transaksi/action_add_temp') ?>', method: 'POST', data: $(this).serialize(), dataType: 'json',
                 success: (res) => {
+                    // Revert textarea to original in case of error or just to be clean
+                    $('textarea[name="keterangan"]').val(originalKeterangan);
+                    
                     SPKState.setProcessing(false);
                     if (res.status === 'success') {
                         Toast.fire({ icon: 'success', title: 'Item ditambahkan' });
                         syncTransactionData();
                         $('#productSelect').val(null).trigger('change').select2('open');
                         $('#qty').val('');
+                        $('textarea[name="keterangan"]').val(''); // Reset keterangan on success
+                        $('#linked_item_select').val(''); // Reset dropdown
                     } else { Swal.fire('Gagal', res.message, 'error'); }
                 },
                 error: SPKState.handleAjaxError
@@ -283,7 +415,22 @@
 
         $(document).on('click', '.btn_del', function () {
             const id = $(this).attr('id');
-            Swal.fire({ title: 'Hapus Item?', icon: 'warning', showCancelButton: true, confirmButtonText: 'Ya, Hapus' }).then((result) => {
+            
+            // Check for linked items in the cart
+            let hasLinkedItems = false;
+            $('#transaksi tbody tr').each(function() {
+                const ket = $(this).find('td:eq(3)').text() || '';
+                if (ket.includes('[TERAPKAN PADA:')) {
+                    hasLinkedItems = true;
+                }
+            });
+            
+            let warningText = "Anda tidak akan dapat mengembalikan ini!";
+            if (hasLinkedItems) {
+                warningText = "AWAS! Ada Jasa/Produk yang saling dikaitkan di keranjang ini. Harap periksa ulang catatan Jasa Anda jika barang utamanya dihapus.";
+            }
+
+            Swal.fire({ title: 'Hapus Item?', text: warningText, icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Ya, Hapus' }).then((result) => {
                 if (result.isConfirmed) {
                     $.ajax({ url: '<?= base_url("transaksi/delete_temp_item") ?>', type: 'POST', data: { temp_id: id }, success: () => { Toast.fire({ icon: 'success', title: 'Terhapus' }); syncTransactionData(); } });
                 }

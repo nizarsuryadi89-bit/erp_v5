@@ -246,30 +246,9 @@
     }
 </style>
 
-<div class="warehouse-header-section">
-    <div class="container-fluid px-5">
-        <div class="row align-items-start">
-            <div class="col-md-7">
-                <div class="header-content">
-                    <div class="header-icon">
-                        <i class="fa fa-file-signature"></i>
-                    </div>
-                    <div class="header-text">
-                        <p class="header-subtitle">Request Control System</p>
-                        <h1 class="header-title">Pengajuan Material Produksi</h1>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-5 text-end header-actions d-flex justify-content-end align-items-center gap-2">
-                <a href="<?= base_url('warehouse') ?>" class="btn btn-outline-light btn-premium rounded-pill px-4">
-                    <i class="fa fa-arrow-left me-2"></i>DASHBOARD
-                </a>
-            </div>
-        </div>
-    </div>
-</div>
-
+<div style="height: 35px;"></div>
 <div class="container-fluid px-5">
+    <?php $this->load->view('admin/warehouse/components/sop_stepper', ['active_step' => 1]); ?>
     <!-- Quick Stats -->
     <div class="step-indicator">
         <div class="status-bridge active">
@@ -397,69 +376,49 @@
         <div class="col-lg-4">
             <div class="content-card">
                 <h5 class="card-title-premium"><i class="fa fa-history text-dark"></i> Riwayat Terbaru</h5>
-                <div class="list-group list-group-flush">
+                <div class="list-group list-group-flush pe-2" style="max-height: 450px; overflow-y: auto;">
                     <?php if (empty($recent_requests)): ?>
                         <div class="text-center py-4">
                             <p class="text-muted small">Belum ada riwayat pengajuan.</p>
                         </div>
                     <?php else:
                         foreach ($recent_requests as $req): ?>
-                            <div class="list-group-item px-0 py-3 bg-transparent border-bottom">
-                                <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div class="list-group-item px-0 py-2 bg-transparent border-bottom">
+                                <div class="d-flex justify-content-between align-items-center">
                                     <div>
-                                        <div class="fw-900 text-dark" style="font-size: 0.9rem;">DOC#
-                                            <?= str_pad($req->pengajuan_id, 5, '0', STR_PAD_LEFT) ?>
+                                        <div class="fw-800 text-dark mb-1" style="font-size: 0.85rem;">
+                                            DOC#<?= str_pad($req->pengajuan_id, 5, '0', STR_PAD_LEFT) ?>
+                                            <?php if ($req->status == 0): ?>
+                                                <span class="badge bg-warning text-dark ms-1" style="font-size: 0.65rem;">PENDING</span>
+                                            <?php elseif ($req->status == 1): ?>
+                                                <span class="badge bg-success ms-1" style="font-size: 0.65rem;">DIPROSES</span>
+                                            <?php else: ?>
+                                                <span class="badge bg-danger ms-1" style="font-size: 0.65rem;">DITOLAK</span>
+                                            <?php endif; ?>
                                         </div>
-                                        <div class="small text-muted">
-                                            <?= date('d M Y', strtotime($req->pengajuan_tgl)) ?> &bull;
+                                        <div class="text-muted" style="font-size: 0.75rem;">
+                                            <i class="fa fa-calendar-alt me-1 opacity-50"></i> <?= date('d M y', strtotime($req->pengajuan_tgl)) ?> &bull; 
                                             <?= $req->gudang_nama ?>
                                         </div>
                                     </div>
-                                    <?php if ($req->status == 0): ?>
-                                        <span class="badge-status-pending">Pending</span>
-                                    <?php elseif ($req->status == 1): ?>
-                                        <span class="badge-status-approved">SUDAH DIPROSES</span>
-                                    <?php else: ?>
-                                        <span class="badge-status-rejected">DITOLAK</span>
-                                    <?php endif; ?>
+                                    <div class="d-flex gap-1">
+                                        <?php if ($req->status == 0): ?>
+                                            <button onclick="processRequest(<?= $req->pengajuan_id ?>)"
+                                                class="btn btn-sm btn-success rounded-circle shadow-sm d-flex align-items-center justify-content-center" style="width:28px;height:28px;padding:0;" title="Verify">
+                                                <i class="fa fa-check" style="font-size:0.7rem;"></i>
+                                            </button>
+                                            <a href="<?= base_url('warehouse/requests_reject/' . $req->pengajuan_id) ?>"
+                                                onclick="return confirm('Tolak pengajuan ini?')"
+                                                class="btn btn-sm btn-danger rounded-circle shadow-sm d-flex align-items-center justify-content-center" style="width:28px;height:28px;padding:0;" title="Tolak">
+                                                <i class="fa fa-times" style="font-size:0.7rem;"></i>
+                                            </a>
+                                        <?php endif; ?>
+                                        <button onclick="viewDetail(<?= $req->pengajuan_id ?>)"
+                                            class="btn btn-sm btn-light border rounded-circle shadow-sm d-flex align-items-center justify-content-center" style="width:28px;height:28px;padding:0;" title="Lihat Detail">
+                                            <i class="fa fa-eye text-primary" style="font-size:0.7rem;"></i>
+                                        </button>
+                                    </div>
                                 </div>
-                                <?php if ($req->status == 0): ?>
-                                    <div class="d-flex align-items-center gap-2 mt-2">
-                                        <button onclick="viewDetail(<?= $req->pengajuan_id ?>)"
-                                            class="btn btn-sm btn-light border rounded-pill flex-grow-1 fw-800">
-                                            <i class="fa fa-eye me-1"></i>
-                                        </button>
-                                        <button onclick="processRequest(<?= $req->pengajuan_id ?>)"
-                                            class="btn btn-sm btn-success rounded-pill px-3 fw-800">
-                                            <i class="fa fa-check me-1"></i> VERIFY
-                                        </button>
-                                        <a href="<?= base_url('warehouse/requests_reject/' . $req->pengajuan_id) ?>"
-                                            onclick="return confirm('Tolak pengajuan ini?')"
-                                            class="btn btn-sm btn-outline-danger rounded-pill px-2 fw-800">
-                                            <i class="fa fa-times"></i>
-                                        </a>
-                                    </div>
-                                <?php elseif ($req->status == 1): ?>
-                                    <div class="d-flex align-items-center gap-2 mt-2">
-                                        <button class="btn btn-sm btn-outline-success rounded-pill flex-grow-1 fw-800" disabled>
-                                            <i class="fa fa-check-double me-1"></i> SUDAH DIPROSES
-                                        </button>
-                                        <button onclick="viewDetail(<?= $req->pengajuan_id ?>)"
-                                            class="btn btn-sm btn-light border rounded-pill fw-800 text-primary">
-                                            <i class="fa fa-eye"></i>
-                                        </button>
-                                    </div>
-                                <?php else: ?>
-                                    <div class="d-flex align-items-center gap-2 mt-2">
-                                        <button class="btn btn-sm btn-outline-danger rounded-pill flex-grow-1 fw-800" disabled>
-                                            <i class="fa fa-times-circle me-1"></i> DITOLAK
-                                        </button>
-                                        <button onclick="viewDetail(<?= $req->pengajuan_id ?>)"
-                                            class="btn btn-sm btn-light border rounded-pill fw-800">
-                                            <i class="fa fa-eye"></i>
-                                        </button>
-                                    </div>
-                                <?php endif; ?>
                             </div>
                         <?php endforeach; endif; ?>
                 </div>
@@ -560,7 +519,8 @@
             if (res.status === 'success') {
                 let html = '';
                 res.data.forEach(item => {
-                    let stockBadge = item.stock_utama >= item.qty ? 'bg-soft-success text-success' : 'bg-soft-danger text-danger';
+                    let stockInWarehouseUnit = item.stock_utama / (item.konversi || 1);
+                    let stockBadge = stockInWarehouseUnit >= item.qty ? 'bg-soft-success text-success' : 'bg-soft-danger text-danger';
                     html += `
                     <tr>
                         <td>
@@ -570,7 +530,7 @@
                         <td class="text-center fw-900 text-primary">${parseFloat(item.qty).toLocaleString()} ${item.satuan_nama}</td>
                         <td class="text-center">
                             <span class="badge ${stockBadge} px-3 py-2 rounded-pill fw-900 border">
-                                ${parseFloat(item.stock_utama).toLocaleString()} ${item.satuan_nama}
+                                ${parseFloat(stockInWarehouseUnit).toLocaleString()} ${item.satuan_nama}
                             </span>
                         </td>
                         <td class="text-center italic small text-muted">${item.keterangan || '-'}</td>

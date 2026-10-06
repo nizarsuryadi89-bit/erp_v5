@@ -1,109 +1,49 @@
 <?php $this->load->view('layout_admin/header_modul'); ?>
-<style>
-    /* Styling khusus UX Role Checkbox */
-    .role-checkbox-card {
-        border: 2px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 0.5rem 0.8rem;
-        cursor: pointer;
-        transition: all 0.2s;
-        margin-bottom: 0;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        background: white;
-    }
 
-    .role-checkbox-card:hover {
-        border-color: #cbd5e1;
-        background: #f8fafc;
-    }
 
-    .role-checkbox-card input:checked+span {
-        color: #0f172a !important;
-        font-weight: 800 !important;
-    }
+<div class="product-catalog-shell">
 
-    /* Mengubah warna border jika dicentang (didukung browser modern) */
-    .role-checkbox-card:has(input:checked) {
-        border-color: #3b82f6;
-        background: #eff6ff;
-    }
-
-    /* Style untuk button duplikat */
-    .btn-duplicate-p {
-        background: #fef9c3;
-        color: #854d0e;
-        border: 1px solid #fde047;
-    }
-
-    .btn-duplicate-p:hover {
-        background: #fde047;
-        color: #713f12;
-    }
-</style>
-
+<!-- ====== ODOO-STYLE CONTROL PANEL ====== -->
+<div class="bg-white border-bottom px-4 py-3 mb-4 shadow-sm" style="position: sticky; top: 0; z-index: 900;">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+        <!-- Title -->
+        <div class="d-flex align-items-center gap-3">
+            <ol class="breadcrumb mb-0" style="font-size: 1.2rem; font-weight: 500;">
+                <li class="breadcrumb-item text-muted">Technical</li>
+                <li class="breadcrumb-item text-muted">User Interface</li>
+                <li class="breadcrumb-item active fw-bold text-dark" aria-current="page">Menu Items</li>
+            </ol>
+            <span class="badge bg-light text-secondary border border-secondary ms-2" style="font-size: 0.8rem; padding: 4px 8px;">
+                <?= number_format($jmlmenu) ?> Total
+            </span>
+        </div>
+        
+        <!-- Search Bar -->
+        <div class="input-group" style="max-width: 450px;">
+            <input type="text" class="form-control bg-light border-end-0 border-secondary" id="searchMenuInput" placeholder="Search Menu Name or URL..." style="border-radius: 4px 0 0 4px; box-shadow: none;">
+            <span class="input-group-text bg-light border-secondary border-start-0" style="border-radius: 0 4px 4px 0;">
+                <i class="bi bi-search text-muted"></i>
+            </span>
+        </div>
+    </div>
+    
+    <div class="d-flex flex-wrap justify-content-between align-items-center">
+        <!-- Primary Actions -->
+        <div class="d-flex align-items-center gap-2">
+            <button class="btn btn-primary fw-bold px-3 shadow-sm" data-bs-toggle="modal" data-bs-target="#modalTambahMenu" style="border-radius: 4px; font-size: 0.9rem;">
+                NEW
+            </button>
+            <button class="btn btn-outline-secondary fw-bold px-3 shadow-sm d-flex align-items-center gap-2" onclick="exportToExcel()" style="border-radius: 4px; font-size: 0.9rem;">
+                <i class="fas fa-file-excel text-success"></i> Export
+            </button>
+        </div>
+    </div>
+</div>
 
 <div class="app-content mt-2">
-    <div class="container-fluid">
-        <!-- Quick Stats -->
-        <div class="row g-3 mb-4 animate-up">
-            <div class="col-6 col-md-3">
-                <div class="summary-stat-card shadow-sm">
-                    <div class="stat-v2-icon text-white" style="background: var(--primary-gradient)"><i
-                            class="fas fa-list-check"></i></div>
-                    <div>
-                        <div class="stat-v2-label">Total Menu Utama</div>
-                        <div class="stat-v2-value"><?= number_format($jmlmenu) ?></div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="summary-stat-card shadow-sm">
-                    <div class="stat-v2-icon text-white" style="background: var(--success-gradient)"><i
-                            class="fas fa-check-circle"></i></div>
-                    <div>
-                        <div class="stat-v2-label">Menu Aktif</div>
-                        <div class="stat-v2-value"><?= $active_menu ?></div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="summary-stat-card shadow-sm">
-                    <div class="stat-v2-icon text-white" style="background: var(--info-gradient)"><i
-                            class="fas fa-link"></i></div>
-                    <div>
-                        <div class="stat-v2-label">Total Submenu</div>
-                        <div class="stat-v2-value"><?= number_format($total_submenu) ?></div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="summary-stat-card shadow-sm d-flex flex-row align-items-center justify-content-center">
-                    <button class="btn btn-primary rounded-pill px-4 fw-800 w-100 h-100"
-                        style="background: var(--primary-gradient); border: none;" data-bs-toggle="modal"
-                        data-bs-target="#modalTambahMenu">
-                        <i class="fas fa-plus-circle me-2"></i> Tambah Menu
-                    </button>
-                </div>
-            </div>
-        </div>
-
+    <div class="container-fluid px-4">
         <!-- Main Table Card -->
-        <div class="report-section-card animate-up" style="animation-delay: 0.1s">
-            <div class="section-header">
-                <h5><i class="fas fa-bars"></i> Manajemen Menu Utama</h5>
-                <div class="d-flex gap-2">
-                    <button class="btn btn-sm btn-white text-dark rounded-pill px-3 fw-bold shadow-sm"
-                        onclick="exportToExcel()">
-                        <i class="fas fa-file-excel text-success me-1"></i> Excel
-                    </button>
-                    <button class="btn btn-sm btn-white text-dark rounded-pill px-3 fw-bold shadow-sm"
-                        onclick="printTable()">
-                        <i class="fas fa-print me-1"></i> Print
-                    </button>
-                </div>
-            </div>
+        <div class="card animate-up border-0" style="animation-delay: 0.1s; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
 
             <div class="px-4 py-2 border-bottom bg-light d-flex justify-content-between align-items-center">
                 <div class="d-flex gap-2 align-items-center">
@@ -160,24 +100,28 @@
                                     </div>
                                 </td>
                                 <td>
-                                    <?php if (!empty($dt->access_levels)): ?>
-                                        <div class="d-flex flex-wrap gap-1">
-                                                <?php foreach ($dt->access_levels as $lvl):
-                                                    // Logika warna badge: Biru untuk role utama/admin, Hijau untuk operasional
-                                                    $badge_class = (strpos(strtolower($lvl->role_name), 'admin') !== false || strpos(strtolower($lvl->role_name), 'owner') !== false)
-                                                        ? 'bg-primary-subtle text-primary border-primary-subtle'
-                                                        : 'bg-success-subtle text-success border-success-subtle';
-                                                    ?>
-                                                    <span class="badge <?= $badge_class ?> border rounded-pill px-2 py-1"
-                                                        style="font-size: 0.6rem; font-weight: 600; text-transform: capitalize;">
-                                                        <?= strtolower($lvl->role_name) ?>
-                                                    </span>
-                                                <?php endforeach; ?>
-                                        </div>
-                                    <?php else: ?>
-                                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-1"
-                                            style="font-size: 0.6rem; font-weight: 600;">Belum Ada Akses</span>
-                                    <?php endif; ?>
+                                    <div class="d-flex flex-wrap gap-1">
+                                        <?php 
+                                        $active_role_ids = array_column($dt->access_levels ?: [], 'role_id');
+                                        foreach ($roles as $r): 
+                                            $is_active = in_array($r->role_id, $active_role_ids);
+                                            if ($is_active) {
+                                                $badge_class = (strpos(strtolower($r->role_name), 'admin') !== false || strpos(strtolower($r->role_name), 'owner') !== false)
+                                                    ? 'bg-primary-subtle text-primary border-primary-subtle'
+                                                    : 'bg-success-subtle text-success border-success-subtle';
+                                            } else {
+                                                $badge_class = 'bg-light text-muted border-secondary-subtle opacity-50';
+                                            }
+                                        ?>
+                                            <span class="badge <?= $badge_class ?> border rounded-pill px-2 py-1 role-toggle-badge"
+                                                data-menu-id="<?= $dt->id ?>" 
+                                                data-role-id="<?= $r->role_id ?>"
+                                                data-type="menu"
+                                                style="font-size: 0.6rem; font-weight: 600; text-transform: capitalize; cursor: pointer; transition: all 0.2s;">
+                                                <?= strtolower($r->role_name) ?>
+                                            </span>
+                                        <?php endforeach; ?>
+                                    </div>
                                 </td>
                                 <td class="text-center">
                                     <div class="form-check form-switch d-flex justify-content-center">
@@ -314,10 +258,53 @@
                     <div class="col-md-4">
                         <label class="small text-uppercase fw-bold text-muted mb-2 d-block">Tujuan Modul (Alamat URL)
                             <span class="text-danger">*</span></label>
-                        <input type="text" name="link" class="form-control" list="listModulERP"
-                            placeholder="Contoh: transaksi"
-                            style="border: 2px solid #f1f5f9; border-radius: 12px; padding: 0.75rem 1.25rem; font-weight: 600;"
-                            required>
+                        <select name="link" class="form-select select2-url" required style="border: 2px solid #f1f5f9; border-radius: 12px; padding: 0.75rem 1.25rem; font-weight: 600;">
+    <option value="">-- Pilih Tujuan atau Ketik Manual --</option>
+    <optgroup label="General & Dashboard">
+        <option value="dashboard">Dashboard Utama</option>
+        <option value="#"># (Hanya Header/Folder)</option>
+    </optgroup>
+    <optgroup label="Sales & Penjualan">
+        <option value="transaksi/transaksi_belumbayar">Halaman Kasir (Belum Bayar)</option>
+        <option value="transaksi/createspk">Buat SPK Produksi</option>
+        <option value="transaksi/daftar_piutang">Daftar Piutang</option>
+        <option value="penjualan">Rekap Penjualan</option>
+        <option value="konsumen/konsumen_list">Database Konsumen</option>
+    </optgroup>
+    <optgroup label="Produksi & Manufaktur">
+        <option value="Wip">Dashboard Produksi / WIP</option>
+        <option value="produksi">Layar Operator Produksi</option>
+        <option value="manufaktur">Katalog / Manajemen Produk</option>
+        <option value="Workcenter/operatorbersama">Workcenter - Operator Bersama</option>
+        <option value="pb">Pengambilan Barang (PB)</option>
+    </optgroup>
+    <optgroup label="Gudang & Inventory">
+        <option value="warehouse/stock">Manajemen Stok & Gudang</option>
+        <option value="warehouse/dispatch">Mutasi Bahan & Logistik</option>
+        <option value="warehouse/materials_jasa">Bahan Baku Produk</option>
+    </optgroup>
+    <optgroup label="Keuangan & Laporan">
+        <option value="laporan/financial_hub">Dashboard Keuangan Utama</option>
+        <option value="laporan/pemasukan_harian">Pemasukan Harian</option>
+        <option value="laporan/pengeluaran">Pengeluaran Kas</option>
+        <option value="laporan/laba_rugi">Laba Rugi (P&L)</option>
+        <option value="laporan/mutasi_harian">Mutasi Saldo (Kas/Bank/EDC)</option>
+    </optgroup>
+    <optgroup label="HR & Karyawan">
+        <option value="karyawan">Database Karyawan</option>
+        <option value="absensi">Log Absensi Harian</option>
+        <option value="karyawan/penggajian">Payroll / Penggajian</option>
+        <option value="karyawan/penilaian_kinerja">Kinerja Karyawan</option>
+    </optgroup>
+    <optgroup label="Pengaturan Sistem">
+        <option value="pengaturan">Dashboard Pengaturan & Sistem</option>
+        <option value="menu">Manajemen Menu & Submenu</option>
+        <option value="pengaturan/user_account">User & Password (Force Login)</option>
+        <option value="errorlog">Log Audit / Security</option>
+        <option value="backup/index">Backup Database</option>
+    </optgroup>
+</select>
+
                         <small class="text-muted mt-1 d-block" style="font-size: 0.7rem;"><i
                                 class="fas fa-info-circle"></i> Pilih modul dari daftar atau ketik manual.</small>
                     </div>
@@ -400,9 +387,53 @@
                     <div class="col-md-4">
                         <label class="small text-uppercase fw-bold text-muted mb-2 d-block">Tujuan Modul (Alamat URL)
                             <span class="text-danger">*</span></label>
-                        <input type="text" name="link" id="edit_link" class="form-control" list="listModulERP"
-                            style="border: 2px solid #f1f5f9; border-radius: 12px; padding: 0.75rem 1.25rem; font-weight: 600;"
-                            required>
+                        <select name="link" id="edit_link" class="form-select select2-url" required style="border: 2px solid #f1f5f9; border-radius: 12px; padding: 0.75rem 1.25rem; font-weight: 600;">
+    <option value="">-- Pilih Tujuan atau Ketik Manual --</option>
+    <optgroup label="General & Dashboard">
+        <option value="dashboard">Dashboard Utama</option>
+        <option value="#"># (Hanya Header/Folder)</option>
+    </optgroup>
+    <optgroup label="Sales & Penjualan">
+        <option value="transaksi/transaksi_belumbayar">Halaman Kasir (Belum Bayar)</option>
+        <option value="transaksi/createspk">Buat SPK Produksi</option>
+        <option value="transaksi/daftar_piutang">Daftar Piutang</option>
+        <option value="penjualan">Rekap Penjualan</option>
+        <option value="konsumen/konsumen_list">Database Konsumen</option>
+    </optgroup>
+    <optgroup label="Produksi & Manufaktur">
+        <option value="Wip">Dashboard Produksi / WIP</option>
+        <option value="produksi">Layar Operator Produksi</option>
+        <option value="manufaktur">Katalog / Manajemen Produk</option>
+        <option value="Workcenter/operatorbersama">Workcenter - Operator Bersama</option>
+        <option value="pb">Pengambilan Barang (PB)</option>
+    </optgroup>
+    <optgroup label="Gudang & Inventory">
+        <option value="warehouse/stock">Manajemen Stok & Gudang</option>
+        <option value="warehouse/dispatch">Mutasi Bahan & Logistik</option>
+        <option value="warehouse/materials_jasa">Bahan Baku Produk</option>
+    </optgroup>
+    <optgroup label="Keuangan & Laporan">
+        <option value="laporan/financial_hub">Dashboard Keuangan Utama</option>
+        <option value="laporan/pemasukan_harian">Pemasukan Harian</option>
+        <option value="laporan/pengeluaran">Pengeluaran Kas</option>
+        <option value="laporan/laba_rugi">Laba Rugi (P&L)</option>
+        <option value="laporan/mutasi_harian">Mutasi Saldo (Kas/Bank/EDC)</option>
+    </optgroup>
+    <optgroup label="HR & Karyawan">
+        <option value="karyawan">Database Karyawan</option>
+        <option value="absensi">Log Absensi Harian</option>
+        <option value="karyawan/penggajian">Payroll / Penggajian</option>
+        <option value="karyawan/penilaian_kinerja">Kinerja Karyawan</option>
+    </optgroup>
+    <optgroup label="Pengaturan Sistem">
+        <option value="pengaturan">Dashboard Pengaturan & Sistem</option>
+        <option value="menu">Manajemen Menu & Submenu</option>
+        <option value="pengaturan/user_account">User & Password (Force Login)</option>
+        <option value="errorlog">Log Audit / Security</option>
+        <option value="backup/index">Backup Database</option>
+    </optgroup>
+</select>
+
                         <small class="text-muted mt-1 d-block" style="font-size: 0.7rem;"><i
                                 class="fas fa-info-circle"></i> Ketik untuk mencari modul sistem.</small>
                     </div>
@@ -459,8 +490,23 @@
     <option value="menu">Konfigurasi Struktur Menu</option>
 </datalist>
 
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11">
+        // Initialize Select2 for URL with Tags
+        if($.fn.select2) {
+            $('.select2-url').select2({
+                theme: 'bootstrap-5',
+                tags: true,
+                placeholder: '-- Pilih Tujuan atau Ketik Manual --',
+                dropdownParent: function() {
+                    return $(this).closest('.modal');
+                }
+            });
+        }
+    </script>
 <script>
+    let csrfName = '<?= $this->security->get_csrf_token_name() ?>';
+    let csrfHash = '<?= $this->security->get_csrf_hash() ?>';
+
     $(document).ready(function () {
         // Inisiasi auto tooltips bootstrap untuk action button
         const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
@@ -469,10 +515,15 @@
         });
 
         if ($.fn.DataTable) {
-            $('#datatable-menu').DataTable({
+            var tableMenu = $('#datatable-menu').DataTable({
                 "language": { "sSearch": "Cari Menu:", "oPaginate": { "sNext": "<i class='fas fa-chevron-right'></i>", "sPrevious": "<i class='fas fa-chevron-left'></i>" } },
                 "pageLength": 10,
-                "dom": "<'row px-4 py-3'<'col-md-6'l><'col-md-6 d-flex justify-content-end text-end'f>>t<'row px-4 py-3'<'col-md-6'i><'col-md-6 d-flex justify-content-end text-end'p>>"
+                "dom": "<'row px-4 py-3'<'col-md-6'l><'col-md-6 d-none justify-content-end text-end'f>>t<'row px-4 py-3'<'col-md-6'i><'col-md-6 d-flex justify-content-end text-end'p>>"
+            });
+            
+            // Bind custom search input to datatable
+            $('#searchMenuInput').on('keyup', function () {
+                tableMenu.search(this.value).draw();
             });
         }
 
@@ -482,16 +533,22 @@
             const id = self.data('id');
             const status = self.is(':checked') ? 1 : 0;
 
+            let payload = {
+                id: id,
+                status: status
+            };
+            payload[csrfName] = csrfHash;
+
             $.ajax({
                 url: '<?= base_url('menu/actionToggleMenuStatus') ?>',
                 type: 'POST',
-                data: {
-                    id: id,
-                    status: status,
-                    '<?= $this->security->get_csrf_token_name() ?>': '<?= $this->security->get_csrf_hash() ?>'
-                },
+                data: payload,
                 dataType: 'json',
                 success: function (res) {
+                    if (res.csrf_name && res.csrf_hash) {
+                        csrfName = res.csrf_name;
+                        csrfHash = res.csrf_hash;
+                    }
                     if (res.status === 'success') {
                         const toast = Swal.mixin({
                             toast: true,
@@ -519,7 +576,13 @@
             $('#edit_nama_menu').val($(this).data('nama_menu'));
             $('#edit_alias').val($(this).data('alias'));
             $('#edit_icon_input').val($(this).data('icon')).trigger('change');
-            $('#edit_link').val($(this).data('link'));
+            var val = $(this).data('link');
+            if ($('#edit_link').find("option[value='" + val + "']").length) {
+                $('#edit_link').val(val).trigger('change');
+            } else { 
+                var newOption = new Option(val, val, true, true);
+                $('#edit_link').append(newOption).trigger('change');
+            }
             $('#edit_urutan').val($(this).data('urutan'));
 
             let accessLevels = $(this).data('access_levels');
@@ -551,7 +614,13 @@
             $('input[name="nama_menu"]').val($(this).data('nama_menu') + ' (Copy)');
             $('input[name="alias"]').val($(this).data('alias'));
             $('#input_icon_add').val($(this).data('icon')).trigger('change');
-            $('input[name="link"]').val($(this).data('link'));
+            var val = $(this).data('link');
+            if ($('select[name="link"]').find("option[value='" + val + "']").length) {
+                $('select[name="link"]').val(val).trigger('change');
+            } else { 
+                var newOption = new Option(val, val, true, true);
+                $('select[name="link"]').append(newOption).trigger('change');
+            }
             $('input[name="urutan"]').val($(this).data('urutan'));
 
             let accessLevels = $(this).data('access_levels');
@@ -610,6 +679,54 @@
         });
 
         // ICON PICKER GRID LOGIC
+
+        // TOGGLE ROLE BADGE INLINE
+        $(document).on('click', '.role-toggle-badge', function () {
+            const badge = $(this);
+            const menuId = badge.data('menu-id');
+            const roleId = badge.data('role-id');
+            const type = badge.data('type');
+            const roleName = badge.text().trim().toLowerCase();
+
+            const isCurrentlyActive = !badge.hasClass('bg-light');
+            
+            const adminClasses = 'bg-primary-subtle text-primary border-primary-subtle';
+            const userClasses = 'bg-success-subtle text-success border-success-subtle';
+            const inactiveClasses = 'bg-light text-muted border-secondary-subtle opacity-50';
+
+            // Optimistic Update
+            if (isCurrentlyActive) {
+                badge.removeClass(adminClasses + ' ' + userClasses).addClass(inactiveClasses);
+            } else {
+                badge.removeClass(inactiveClasses).addClass((roleName.includes('admin') || roleName.includes('owner')) ? adminClasses : userClasses);
+            }
+
+            let payload = {
+                type: type,
+                menu_id: menuId,
+                role_id: roleId
+            };
+            payload[csrfName] = csrfHash;
+
+            $.ajax({
+                url: "<?= base_url('menu/actionToggleRole') ?>",
+                type: "POST",
+                data: payload,
+                dataType: "JSON",
+                success: function (res) {
+                    if (res.csrf_name && res.csrf_hash) {
+                        csrfName = res.csrf_name;
+                        csrfHash = res.csrf_hash;
+                    }
+                    if (res.status !== 'success') {
+                        location.reload();
+                    }
+                },
+                error: function () {
+                    location.reload();
+                }
+            });
+        });
         $(document).on('click', '.icon-btn-select', function () {
             let target = $(this).data('target');
             $(target).val($(this).data('icon')).trigger('change');
@@ -659,16 +776,22 @@
                 cancelButtonText: 'Batal'
             }).then((result) => {
                 if (result.isConfirmed) {
+                    let payload = {
+                        ids: selectedIds,
+                        status: status
+                    };
+                    payload[csrfName] = csrfHash;
+
                     $.ajax({
                         url: '<?= base_url('menu/actionBulkToggleMenuStatus') ?>',
                         type: 'POST',
-                        data: {
-                            ids: selectedIds,
-                            status: status,
-                            '<?= $this->security->get_csrf_token_name() ?>': '<?= $this->security->get_csrf_hash() ?>'
-                        },
+                        data: payload,
                         dataType: 'json',
                         success: function (res) {
+                            if (res.csrf_name && res.csrf_hash) {
+                                csrfName = res.csrf_name;
+                                csrfHash = res.csrf_hash;
+                            }
                             if (res.status === 'success') {
                                 Swal.fire('Berhasil!', res.pesan, 'success').then(() => location.reload());
                             } else {
@@ -696,4 +819,16 @@
     function printTable() {
         window.print();
     }
-</script>
+
+        // Initialize Select2 for URL with Tags
+        if($.fn.select2) {
+            $('.select2-url').select2({
+                theme: 'bootstrap-5',
+                tags: true,
+                placeholder: '-- Pilih Tujuan atau Ketik Manual --',
+                dropdownParent: function() {
+                    return $(this).closest('.modal');
+                }
+            });
+        }
+    </script></div>

@@ -16,28 +16,11 @@
         defaultCategoryId: '<?= $default_category_id ?? 1 ?>'
     };
 
-    // Helper for updating URL parameters without using new URL() which can conflict
     function updateWipFilter(key, value) {
-        var uri = window.location.href;
-
-        // Always reset to page 1 when changing filters
-        if (key !== 'page') {
-            var rePage = new RegExp("([?&])page=.*?(&|$)", "i");
-            var separator = uri.indexOf('?') !== -1 ? "&" : "?";
-            if (uri.match(rePage)) {
-                uri = uri.replace(rePage, '$1' + 'page=1' + '$2');
-            } else {
-                uri = uri + separator + 'page=1';
-            }
-        }
-
-        var re = new RegExp("([?&])" + key + "=.*?(&|$)", "i");
-        var separator = uri.indexOf('?') !== -1 ? "&" : "?";
-        if (uri.match(re)) {
-            window.location.href = uri.replace(re, '$1' + key + "=" + value + '$2');
-        } else {
-            window.location.href = uri + separator + key + "=" + value;
-        }
+        const locationUrl = new URL(window.location.href);
+        if (key !== 'page') locationUrl.searchParams.set('page', '1');
+        locationUrl.searchParams.set(key, value);
+        window.location.href = locationUrl.toString();
     }
 </script>
 
@@ -94,6 +77,9 @@
                 ?>
             </h5>
             <div class="d-flex align-items-center gap-2">
+                <a href="<?= site_url('wip/quality') ?>" class="btn btn-sm btn-warning rounded-pill px-3 fw-bold">
+                    <i class="fas fa-clipboard-check me-1"></i> Pemeriksaan QC
+                </a>
                 <button onclick="openGlobalSearchModal()"
                     class="btn btn-sm btn-primary rounded-pill px-3 fw-bold shadow-sm">
                     <i class="fas fa-search me-1"></i> Lacak SPK Global
@@ -197,7 +183,7 @@
 
             <?php if (!empty($pagination)): ?>
                 <div
-                    class="d-flex flex-column flex-md-row justify-content-between align-items-center p-3 border-top bg-light">
+                    id="wip-pagination" class="d-flex flex-column flex-md-row justify-content-between align-items-center p-3 border-top bg-light">
                     <div class="text-muted small mb-2 mb-md-0">
                         Menampilkan <span class="fw-bold text-dark"><?= $offset + 1 ?></span>
                         sampai <span class="fw-bold text-dark"><?= min($offset + $per_page, $total_products) ?></span>
@@ -254,11 +240,11 @@
                                 onchange="toggleRijekQty(this)">
                             <label class="form-check-label w-100" for="rjk_${item.id}">
                                 <div class="d-flex justify-content-between">
-                                    <span class="fw-bold small text-dark">${item.nama}</span>
+                                    <span class="fw-bold small text-dark">${ProductionApp.escapeText(item.nama)}</span>
                                     ${badge}
                                 </div>
                                 <div class="text-muted small" style="font-size: 0.7rem;">
-                                    Total Order: <b>${item.qty}</b> pcs | ${item.dimensi}
+                                    Total Order: <b>${item.qty}</b> pcs | ${ProductionApp.escapeText(item.dimensi)}
                                 </div>
                             </label>
                         </div>
@@ -340,7 +326,7 @@
             const qtyVal = parseInt($(`#qty_rjk_${id}`).val());
             const maxQty = parseInt($(this).data('qty'));
 
-            if (!qtyVal || qtyVal <= 0) {
+            if (!qtyVal || qtyVal <= 0 || qtyVal > maxQty) {
                 hasError = true;
                 $(`#qty_rjk_${id}`).addClass('is-invalid');
             } else {
@@ -353,7 +339,7 @@
         });
 
         if (hasError) {
-            Swal.fire('Error', 'Pastikan Qty Rijek diisi dengan benar (min 1)!', 'error');
+            Swal.fire('Error', 'Qty rijek harus antara 1 dan jumlah order!', 'error');
             return;
         }
 
@@ -396,7 +382,7 @@
                         keterangan: ket,
                         is_reprint: reprint,
                         pin_operator: pin,
-                        csrf_token_name: WIP_CONFIG.csrfHash
+                        [WIP_CONFIG.csrfTokenName]: ProductionApp.state.csrfHash
                     },
                     dataType: 'json',
                     success: function (response) {
@@ -450,7 +436,7 @@
             type: 'POST',
             data: {
                 nospk: nospk,
-                csrf_token_name: WIP_CONFIG.csrfHash
+                [WIP_CONFIG.csrfTokenName]: ProductionApp.state.csrfHash
             },
             dataType: 'json',
             success: function (response) {
@@ -462,7 +448,7 @@
                     response.items.forEach((item) => {
                         let qtyStr = parseFloat(item.qty);
                         let sat = item.satuan_nama ? item.satuan_nama : 'Pcs';
-                        html += `- ${item.product_nama} ${qtyStr} ${sat}<br>`;
+                        html += `- ${ProductionApp.escapeText(item.product_nama)} ${qtyStr} ${ProductionApp.escapeText(sat)}<br>`;
                     });
 
                     // 2. Work Center
@@ -475,7 +461,7 @@
                         }
                     });
                     if (wcSet.size > 0) {
-                        html += `<br><b>Work Center :</b><br>${Array.from(wcSet).join(', ')}<br>`;
+                        html += `<br><b>Work Center :</b><br>${Array.from(wcSet).map(v => ProductionApp.escapeText(v)).join(', ')}<br>`;
                     }
 
                     // 3. Bahan
@@ -500,7 +486,7 @@
                         bahanKeys.forEach(key => {
                             let b = bahanMap[key];
                             let qtyFmt = b.qty.toLocaleString('id-ID', { maximumFractionDigits: 2 });
-                            html += `- ${key} ${qtyFmt} ${b.unit}<br>`;
+                            html += `- ${ProductionApp.escapeText(key)} ${qtyFmt} ${ProductionApp.escapeText(b.unit)}<br>`;
                         });
                     }
 
@@ -511,7 +497,7 @@
                     });
                     if (catatanSet.size > 0) {
                         html += `<br><b>Catatan :</b> `;
-                        html += Array.from(catatanSet).join(' | ') + `<br>`;
+                        html += Array.from(catatanSet).map(v => ProductionApp.escapeText(v)).join(' | ') + `<br>`;
                     }
 
                     html += `</div>`;
@@ -542,29 +528,41 @@
         window.location.href = url.toString();
     }
 
-    // --- AUTO REFRESH SCRIPT ---
-    // Halaman akan otomatis refresh setiap 60 detik untuk memperbarui antrean
+    // Refresh only an idle screen; selected batches and active requests retain their state.
     let autoRefreshInterval;
-    const REFRESH_TIME = 60000; // 60 detik
-
+    let wipRefreshBusy = false;
+    function wipCanRefresh(ownRequest = false) {
+        return !document.hidden && !wipRefreshBusy && $.active <= (ownRequest ? 1 : 0)
+            && $('.modal.show, .swal2-container').length === 0
+            && $('input:focus, textarea:focus, select:focus').length === 0
+            && $('.check-item-nesting:checked').length === 0
+            && $('.search-wip-table, input[type="search"]').filter(function () { return String($(this).val() || '').trim() !== ''; }).length === 0;
+    }
     function startAutoRefresh() {
         clearInterval(autoRefreshInterval);
         autoRefreshInterval = setInterval(() => {
-            // JANGAN refresh jika ada modal (bootstrap/sweetalert) yang sedang terbuka
-            if ($('.modal.show').length > 0 || $('.swal2-container').length > 0) {
-                return;
-            }
-            // JANGAN refresh jika operator sedang mengetik sesuatu di input/search
-            if ($('input:focus, textarea:focus, select:focus').length > 0) {
-                return;
-            }
-
-            // Jika aman, refresh halaman tanpa membuang filter yang sedang aktif
-            location.reload();
-        }, REFRESH_TIME);
+            if (!wipCanRefresh()) return;
+            wipRefreshBusy = true;
+            $.ajax({ url: window.location.href, type: 'GET', dataType: 'html' })
+                .done(html => {
+                    // Recheck user activity after the response; never replace newly selected rows.
+                    wipRefreshBusy = false;
+                    if (!wipCanRefresh(true)) return;
+                    const parsed = new DOMParser().parseFromString(html, 'text/html');
+                    if (!parsed.querySelector('#container-view-item')) return; // Login/error page.
+                    if ($.fn.DataTable && $.fn.DataTable.isDataTable('#tableSemuaProduksi')) {
+                        $('#tableSemuaProduksi').DataTable().destroy();
+                    }
+                    ['#container-view-spk', '#container-view-item', '#wip-pagination'].forEach(selector => {
+                        const fresh = parsed.querySelector(selector);
+                        if (fresh && document.querySelector(selector)) $(selector).html(fresh.innerHTML);
+                    });
+                    const tabs = parsed.querySelector('.status-tabs-container');
+                    if (tabs) $('.status-tabs-container').html(tabs.innerHTML);
+                    ProductionApp.initDataTable();
+                })
+                .always(() => { wipRefreshBusy = false; });
+        }, 60000);
     }
-
-    $(document).ready(function () {
-        startAutoRefresh();
-    });
+    $(document).ready(startAutoRefresh);
 </script>

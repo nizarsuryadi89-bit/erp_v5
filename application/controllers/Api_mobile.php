@@ -26,8 +26,8 @@ class Api_mobile extends MY_Controller
     public function __construct()
     {
         parent::__construct();
-        error_reporting(0);
-        ini_set('display_errors', 0);
+        error_reporting(E_ALL);
+        ini_set('display_errors', 1);
 
         $this->secret_key = 'RahasiaNegara123!@#';
         date_default_timezone_set("Asia/Jakarta");
@@ -625,6 +625,15 @@ class Api_mobile extends MY_Controller
                 $row[$jenis] = $path;
             }
 
+            $year = date('Y');
+            $q_cuti = $this->db->get_where('tbl_quota_cuti', ['karyawan_id' => $u->karyawan_id, 'tahun' => $year]);
+            if ($q_cuti && $q_cuti->num_rows() > 0) {
+                $cuti_data = $q_cuti->row();
+                $row['sisa_cuti_tahunan'] = (int) $cuti_data->sisa;
+            } else {
+                $row['sisa_cuti_tahunan'] = 12; // Default jika belum diinisialisasi
+            }
+
             $this->json_response(true, 'OK', $row);
         } catch (Exception $e) {
             $this->json_response(false, $e->getMessage());
@@ -679,6 +688,7 @@ class Api_mobile extends MY_Controller
             ];
 
             $this->db->insert('tbl_pengajuan_izin', $data);
+            broadcast_notifikasi("Pengajuan Izin Baru", "Ada pengajuan " . $tipe . " dari ID Karyawan " . $karyawan_id, "absensi/approval_cuti");
             $this->json_response(true, 'Pengajuan Berhasil Dikirim');
 
         } catch (Exception $e) {
@@ -745,9 +755,9 @@ class Api_mobile extends MY_Controller
 
             $used_annual_approved = 0;
             $used_annual_pending = 0;
-            $limits = ['cuti menikah' => 7, 'cuti duka' => 3, 'cuti keluarga sakit' => 2, 'cuti melahirkan suami' => 3];
-            $usage_special_approved = ['cuti menikah' => 0, 'cuti duka' => 0, 'cuti keluarga sakit' => 0, 'cuti melahirkan suami' => 0];
-            $usage_special_pending = ['cuti menikah' => 0, 'cuti duka' => 0, 'cuti keluarga sakit' => 0, 'cuti melahirkan suami' => 0];
+            $limits = ['cuti menikah' => 7, 'cuti duka' => 3, 'cuti keluarga sakit' => 2, 'cuti melahirkan suami' => 3, 'cuti melahirkan' => 90];
+            $usage_special_approved = ['cuti menikah' => 0, 'cuti duka' => 0, 'cuti keluarga sakit' => 0, 'cuti melahirkan suami' => 0, 'cuti melahirkan' => 0];
+            $usage_special_pending = ['cuti menikah' => 0, 'cuti duka' => 0, 'cuti keluarga sakit' => 0, 'cuti melahirkan suami' => 0, 'cuti melahirkan' => 0];
 
             foreach ($requests as $req) {
                 $status_lower = strtolower($req->status);
@@ -790,35 +800,45 @@ class Api_mobile extends MY_Controller
             $menikah_used = min($limits['cuti menikah'], $usage_special_approved['cuti menikah'] + $usage_special_pending['cuti menikah']);
             $duka_used = min($limits['cuti duka'], $usage_special_approved['cuti duka'] + $usage_special_pending['cuti duka']);
             $sakitkel_used = min($limits['cuti keluarga sakit'], $usage_special_approved['cuti keluarga sakit'] + $usage_special_pending['cuti keluarga sakit']);
-            $melahirkan_used = min($limits['cuti melahirkan suami'], $usage_special_approved['cuti melahirkan suami'] + $usage_special_pending['cuti melahirkan suami']);
+            $melahirkansuami_used = min($limits['cuti melahirkan suami'], $usage_special_approved['cuti melahirkan suami'] + $usage_special_pending['cuti melahirkan suami']);
+            $melahirkan_used = min($limits['cuti melahirkan'], $usage_special_approved['cuti melahirkan'] + $usage_special_pending['cuti melahirkan']);
+
+            $update_data = [
+                'quota_awal' => $quota_total,
+                'terpakai' => $final_used_annual,
+                'sisa' => $sisa_quota
+            ];
+
+            // Cegah error di server online jika belum di-migrate (belum ada kolomnya)
+            if ($this->db->field_exists('menikah_terpakai', 'tbl_quota_cuti')) {
+                $update_data['menikah_terpakai'] = $menikah_used;
+                $update_data['menikah_sisa'] = max(0, $limits['cuti menikah'] - $menikah_used);
+                $update_data['duka_terpakai'] = $duka_used;
+                $update_data['duka_sisa'] = max(0, $limits['cuti duka'] - $duka_used);
+                $update_data['sakitkel_terpakai'] = $sakitkel_used;
+                $update_data['sakitkel_sisa'] = max(0, $limits['cuti keluarga sakit'] - $sakitkel_used);
+                $update_data['melahirkansuami_terpakai'] = $melahirkansuami_used;
+                $update_data['melahirkansuami_sisa'] = max(0, $limits['cuti melahirkan suami'] - $melahirkansuami_used);
+                $update_data['melahirkan_terpakai'] = $melahirkan_used;
+                $update_data['melahirkan_sisa'] = max(0, $limits['cuti melahirkan'] - $melahirkan_used);
+            }
 
             $this->db->where(['karyawan_id' => $karyawan_id, 'tahun' => $year])
-                ->update('tbl_quota_cuti', [
-                    'quota_awal' => $quota_total,
-                    'terpakai' => $final_used_annual,
-                    'sisa' => $sisa_quota,
-                    'menikah_terpakai' => $menikah_used,
-                    'menikah_sisa' => max(0, $limits['cuti menikah'] - $menikah_used),
-                    'duka_terpakai' => $duka_used,
-                    'duka_sisa' => max(0, $limits['cuti duka'] - $duka_used),
-                    'sakitkel_terpakai' => $sakitkel_used,
-                    'sakitkel_sisa' => max(0, $limits['cuti keluarga sakit'] - $sakitkel_used),
-                    'melahirkansuami_terpakai' => $melahirkan_used,
-                    'melahirkansuami_sisa' => max(0, $limits['cuti melahirkan suami'] - $melahirkan_used)
-                ]);
+                ->update('tbl_quota_cuti', $update_data);
 
             $eligible_tahunan = ($months_worked >= 12);
 
             $this->json_response(true, 'OK', [
                 'eligible_tahunan' => $eligible_tahunan,
-                'months_worked' => $months_worked,
-                'quota_total' => $quota_total,
-                'used_annual' => $final_used_annual,
-                'sisa_quota' => $sisa_quota,
-                'menikah_sisa' => max(0, $limits['cuti menikah'] - $menikah_used),
-                'duka_sisa' => max(0, $limits['cuti duka'] - $duka_used),
-                'sakitkel_sisa' => max(0, $limits['cuti keluarga sakit'] - $sakitkel_used),
-                'melahirkansuami_sisa' => max(0, $limits['cuti melahirkan suami'] - $melahirkan_used),
+                'months_worked' => (int) $months_worked,
+                'quota_total' => (int) $quota_total,
+                'used_annual' => (int) $final_used_annual,
+                'sisa_quota' => (int) $sisa_quota,
+                'menikah_sisa' => (int) max(0, $limits['cuti menikah'] - $menikah_used),
+                'duka_sisa' => (int) max(0, $limits['cuti duka'] - $duka_used),
+                'sakitkel_sisa' => (int) max(0, $limits['cuti keluarga sakit'] - $sakitkel_used),
+                'melahirkansuami_sisa' => (int) max(0, $limits['cuti melahirkan suami'] - $melahirkansuami_used),
+                'melahirkan_sisa' => (int) max(0, $limits['cuti melahirkan'] - $melahirkan_used),
                 'limits' => $limits,
                 'usage_special_approved' => $usage_special_approved,
                 'usage_special_pending' => $usage_special_pending
@@ -915,7 +935,8 @@ class Api_mobile extends MY_Controller
                 'jam_mulai' => $jam_mulai, // H:i:s
                 'jam_selesai' => '00:00:00',
                 'status' => 'menunggu',
-                'create_at' => date('Y-m-d H:i:s')
+                'create_at' => date('Y-m-d H:i:s'),
+                'lokasi' => $this->input->post('lokasi', true)
             ];
 
             if (!$this->db->insert('tbl_lembur', $data)) {
@@ -1035,12 +1056,42 @@ class Api_mobile extends MY_Controller
         return null;
     }
 
+    private function _calculate_distance($lat1, $lon1, $lat2, $lon2) {
+        $earth_radius = 6371000; // Radius bumi dalam meter
+        
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLon = deg2rad($lon2 - $lon1);
+        
+        $a = sin($dLat/2) * sin($dLat/2) + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLon/2) * sin($dLon/2);
+        $c = 2 * asin(sqrt($a));
+        
+        return $earth_radius * $c; // Jarak dalam meter
+    }
+
     public function absen_masuk()
     {
         try {
             $u = $this->verify_token();
             $karyawan_id = $u->karyawan_id;
             $tanggal = date('Y-m-d');
+
+            // Cek Hari Libur / Minggu
+            $is_holiday = false;
+            $holiday_name = '';
+            if ($this->db->table_exists('hari_libur')) {
+                $h = $this->db->get_where('hari_libur', ['tanggal' => $tanggal])->row();
+                if ($h) {
+                    $is_holiday = true;
+                    $holiday_name = $h->keterangan ?? 'Hari Libur';
+                }
+            }
+            if (!$is_holiday && date('N') == 7) {
+                $is_holiday = true;
+                $holiday_name = 'Hari Minggu (Libur)';
+            }
+            if ($is_holiday) {
+                $this->json_response(false, "Absensi ditutup: $holiday_name", null, 400);
+            }
 
             // Cek Double
             $q_cek = $this->db->get_where('absensi', ['karyawan_id' => $karyawan_id, 'tanggal' => $tanggal]);
@@ -1050,9 +1101,24 @@ class Api_mobile extends MY_Controller
                 $this->json_response(false, 'Anda sudah absen masuk hari ini!', null, 400);
             }
 
-            $foto = $this->input->post('foto', true);
+            $foto = $this->input->post('foto', false);
             $lat = $this->input->post('latitude', true);
             $long = $this->input->post('longitude', true);
+
+            // Validasi Geofencing
+            $q_karyawan = $this->db->get_where('tbl_karyawan', ['id_karyawan' => $karyawan_id])->row();
+            if ($q_karyawan && !empty($q_karyawan->perusahaan_id)) {
+                $q_perusahaan = $this->db->get_where('tbl_perusahaan', ['id_perusahaan' => $q_karyawan->perusahaan_id])->row();
+                if ($q_perusahaan && !empty($q_perusahaan->latitude) && !empty($q_perusahaan->longitude)) {
+                    $jarak = $this->_calculate_distance((float)$lat, (float)$long, (float)$q_perusahaan->latitude, (float)$q_perusahaan->longitude);
+                    $radius_maks = (float)($q_perusahaan->radius_meter > 0 ? $q_perusahaan->radius_meter : 100);
+                    
+                    if ($jarak > $radius_maks) {
+                        $this->json_response(false, 'Anda berada di luar jangkauan area absen. (Jarak Anda: ' . round($jarak) . ' meter, Maksimal: ' . $radius_maks . ' meter)', null, 400);
+                        return;
+                    }
+                }
+            }
 
             $foto_path = $this->_save_base64_image($foto, 'masuk');
 
@@ -1105,7 +1171,27 @@ class Api_mobile extends MY_Controller
                 $this->json_response(false, 'Anda sudah absen pulang hari ini!', null, 400);
             }
 
-            $foto = $this->input->post('foto', true);
+            $lat = $this->input->post('latitude', true);
+            $long = $this->input->post('longitude', true);
+
+            // Validasi Geofencing
+            if (!empty($lat) && !empty($long)) {
+                $q_karyawan = $this->db->get_where('tbl_karyawan', ['id_karyawan' => $karyawan_id])->row();
+                if ($q_karyawan && !empty($q_karyawan->perusahaan_id)) {
+                    $q_perusahaan = $this->db->get_where('tbl_perusahaan', ['id_perusahaan' => $q_karyawan->perusahaan_id])->row();
+                    if ($q_perusahaan && !empty($q_perusahaan->latitude) && !empty($q_perusahaan->longitude)) {
+                        $jarak = $this->_calculate_distance((float)$lat, (float)$long, (float)$q_perusahaan->latitude, (float)$q_perusahaan->longitude);
+                        $radius_maks = (float)($q_perusahaan->radius_meter > 0 ? $q_perusahaan->radius_meter : 100);
+                        
+                        if ($jarak > $radius_maks) {
+                            $this->json_response(false, 'Anda berada di luar jangkauan area absen. (Jarak Anda: ' . round($jarak) . ' meter, Maksimal: ' . $radius_maks . ' meter)', null, 400);
+                            return;
+                        }
+                    }
+                }
+            }
+
+            $foto = $this->input->post('foto', false);
             $foto_path = $this->_save_base64_image($foto, 'pulang');
 
             $device = $this->input->post('device_type', true);

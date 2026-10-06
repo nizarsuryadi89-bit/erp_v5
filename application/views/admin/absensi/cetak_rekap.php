@@ -308,7 +308,13 @@
                             <?php if ($att && $att->status && $att->status != 'Hadir'): ?>
                                 <span class="text-danger fw-700"><?= strtoupper($att->status) ?></span>
                             <?php else: ?>
-                                <?= ($att && $att->jam_masuk && $att->jam_masuk != '00:00:00') ? substr($att->jam_masuk, 0, 5) : '-' ?>
+                                <?php
+                                $check_jk = isset($jk_map[$dayIndo]) ? $jk_map[$dayIndo]->jam_masuk : '08:00:00';
+                                $is_late = $att && $att->jam_masuk && strtotime($att->jam_masuk) > strtotime($check_jk . ' +1 minute');
+                                ?>
+                                <span class="<?= $is_late ? 'text-danger' : '' ?>">
+                                    <?= ($att && $att->jam_masuk && $att->jam_masuk != '00:00:00') ? substr($att->jam_masuk, 0, 5) : '-' ?>
+                                </span>
                                 —
                                 <?= ($att && $att->jam_pulang && $att->jam_pulang != '00:00:00') ? substr($att->jam_pulang, 0, 5) : '-' ?>
                             <?php endif; ?>

@@ -461,9 +461,20 @@
                 </div>
 
                 <div class="d-flex align-items-center">
+                    <button class="btn btn-premium-primary me-2" data-bs-toggle="modal" data-bs-target="#modalMasterBahan" onclick="resetMasterBahanForm()">
+                        <i class="fa fa-plus-circle me-1"></i>Tambah Master
+                    </button>
                     <button class="btn btn-light btn-premium" onclick="refreshTable()">
                         <i class="fa fa-sync-alt me-2"></i>Refresh
                     </button>
+                </div>
+            </div>
+
+            <div class="alert bg-soft-blue border-0 d-flex align-items-center p-3 mb-4" style="border-radius: 14px;">
+                <i class="fa fa-info-circle text-primary fs-4 me-3"></i>
+                <div>
+                    <strong class="text-dark">Informasi Satuan:</strong>
+                    <span class="text-muted ms-1" style="font-size: 0.85rem;">Data material, termasuk <b>Batas Stok Minimal</b> pada tabel ini mengacu pada <b>Satuan Produksi / Satuan Terkecil</b>.</span>
                 </div>
             </div>
 
@@ -475,6 +486,7 @@
                             <th>Nama Induk Item</th>
                             <th>Kategori</th>
                             <th>Unit Dasar (Step 1)</th>
+                            <th class="text-end" style="min-width: 140px;">Info Harga</th>
                             <th class="text-center">Jml Varian</th>
                             <th class="text-center" style="width: 250px;">Opsi</th>
                         </tr>
@@ -552,10 +564,14 @@
                                 <h6
                                     class="fw-bold text-secondary mb-3 text-uppercase small d-flex justify-content-between align-items-center">
                                     Daftar Varian Aktif
-                                    <button class="btn btn-sm btn-outline-dark btn-premium" id="btnPrintVariantBulk">
-                                        <i class="fa fa-print me-1"></i> Cetak Terpilih
-                                    </button>
-
+                                    <div>
+                                        <button class="btn btn-sm btn-outline-danger btn-premium me-2" id="btnDeleteVariantBulk">
+                                            <i class="fa fa-trash-alt me-1"></i> Hapus Terpilih
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-dark btn-premium" id="btnPrintVariantBulk">
+                                            <i class="fa fa-print me-1"></i> Cetak Terpilih
+                                        </button>
+                                    </div>
                                 </h6>
                                 <div class="table-responsive flex-grow-1" style="max-height: calc(100vh - 200px); overflow-y: auto;">
                                     <table class="table table-hover align-middle mb-0" id="modalMaterialTable">
@@ -567,6 +583,7 @@
                                                 <th>Barcode</th>
                                                 <th>Satuan</th>
                                                 <th>Konversi</th>
+                                                <th>Stok Min.</th>
                                                 <th>Status</th>
                                                 <th class="text-center">Aksi</th>
                                             </tr>
@@ -632,12 +649,18 @@
                                         </small>
                                     </div>
                                 </div>
-                                <div class="mb-3">
-                                    <label class="form-label fw-bold small text-secondary text-uppercase">Status</label>
-                                    <select name="status" class="form-select form-control-premium">
-                                        <option value="1">Aktif</option>
-                                        <option value="0">Nonaktif</option>
-                                    </select>
+                                <div class="row g-2 mb-3">
+                                    <div class="col-6">
+                                        <label class="form-label fw-bold small text-secondary text-uppercase">Status</label>
+                                        <select name="status" class="form-select form-control-premium">
+                                            <option value="1">Aktif</option>
+                                            <option value="0">Nonaktif</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label fw-bold small text-secondary text-uppercase">Stok Minimum</label>
+                                        <input name="stok_min" type="number" class="form-control form-control-premium" value="0" min="0" step="1">
+                                    </div>
                                 </div>
                                 <div class="d-grid mt-4">
                                     <button type="submit" class="btn btn-premium btn-premium-primary"
@@ -694,12 +717,18 @@
                                     class="form-control form-control-premium" required min="0" step="0.01">
                             </div>
                         </div>
-                        <div class="mb-4">
-                            <label class="form-label fw-bold small text-secondary text-uppercase">Status</label>
-                            <select name="status" id="edit_status" class="form-select form-control-premium">
-                                <option value="1">Aktif</option>
-                                <option value="0">Nonaktif</option>
-                            </select>
+                        <div class="row g-2 mb-4">
+                            <div class="col-6">
+                                <label class="form-label fw-bold small text-secondary text-uppercase">Status</label>
+                                <select name="status" id="edit_status" class="form-select form-control-premium">
+                                    <option value="1">Aktif</option>
+                                    <option value="0">Nonaktif</option>
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-bold small text-secondary text-uppercase">Stok Minimum</label>
+                                <input name="stok_min" id="edit_stok_min" type="number" class="form-control form-control-premium" value="0" min="0" step="1">
+                            </div>
                         </div>
                     </div>
                     <div class="modal-footer border-top-0 pt-0">
@@ -765,11 +794,101 @@
         </div>
     </div>
 
+    <!-- Modal Form Tambah/Edit Master Bahan -->
+    <div class="modal fade" id="modalMasterBahan" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header bg-soft-indigo">
+                    <h5 class="modal-title fw-bold text-dark" id="modalMasterBahanTitle">
+                        <i class="fa fa-box me-2 text-primary"></i>Tambah Master Bahan
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="formMasterBahan">
+                    <div class="modal-body p-4">
+                        <input type="hidden" name="bahanbaku_id" id="form_bahanbaku_id">
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-secondary text-uppercase">Nama Bahan Induk <span class="text-danger">*</span></label>
+                            <input type="text" name="bahanbaku_nama" id="form_bahanbaku_nama" class="form-control form-control-premium" required placeholder="Contoh: Kertas HVS, Tinta, dll.">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-secondary text-uppercase">Kategori Barang <span class="text-danger">*</span></label>
+                            <select name="jenis_barang" id="form_jenis_barang" class="form-select form-control-premium" required>
+                                <option value="bahan_baku">Bahan Baku Produksi</option>
+                                <option value="bahan_operasional">Barang Operasional</option>
+                                <option value="barang_jadi">Barang Jadi</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-secondary text-uppercase">Satuan Dasar <span class="text-danger">*</span></label>
+                            <select name="satuan_id" id="form_satuan_id" class="form-select form-control-premium" required>
+                                <option value="">- Pilih Satuan -</option>
+                                <?php foreach ($satuan as $s): ?>
+                                    <option value="<?= $s->satuan_id ?>"><?= $s->satuan_nama ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        
+                        <div class="mb-2">
+                            <label class="form-label fw-bold small text-secondary text-uppercase">Barcode (Opsional)</label>
+                            <input type="text" name="barcode" id="form_barcode" class="form-control form-control-premium font-monospace" placeholder="Kosongkan untuk auto-generate">
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light border-top-0">
+                        <button type="button" class="btn btn-light fw-bold" data-bs-dismiss="modal">Batal</button>
+                        <button type="submit" class="btn btn-primary fw-bold" id="btnSaveMasterBahan"><i class="fa fa-save me-2"></i>Simpan</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <!-- Modal History Harga -->
+    <div class="modal fade" id="modalHistoryHarga" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content border-0 shadow-lg" style="border-radius: 16px;">
+                <div class="modal-header bg-light border-0 px-4 py-3">
+                    <h5 class="modal-title fw-bold text-dark"><i class="fa fa-history text-primary me-2"></i>History Pembelian</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4 bg-white">
+                    <h6 class="fw-bold mb-3 text-secondary" id="historyBahanNama">Nama Bahan</h6>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0" id="tableHistoryHarga">
+                            <thead class="bg-light text-muted small fw-bold">
+                                <tr>
+                                    <th>Tanggal</th>
+                                    <th>No Faktur</th>
+                                    <th>Supplier</th>
+                                    <th>Varian</th>
+                                    <th class="text-end">Harga Beli</th>
+                                    <th class="text-center">Qty</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         $(document).ready(function () {
             const controllerUrl = '<?= base_url('warehouse') ?>';
+
+            // Auto-fill search input from URL parameter 'q'
+            const urlParams = new URLSearchParams(window.location.search);
+            const queryParam = urlParams.get('q');
+            if (queryParam) {
+                $('#searchInput').val(queryParam);
+            }
 
             let bahanData = [];
             let bahanCurrentPage = 1;
@@ -839,12 +958,21 @@
                             </td>
                             <td><span class="badge badge-premium ${getJenisClass(item.jenis_barang)}">${getJenisLabel(item.jenis_barang)}</span></td>
                             <td class="fw-bold text-secondary small">${item.satuan_nama || '-'}</td>
+                            <td class="text-end">
+                                <a href="javascript:void(0)" class="text-decoration-none btn-view-history" data-id="${item.bahan_id}" data-nama="${item.bahan_nama}" title="Klik untuk lihat History Pembelian">
+                                    <div class="fw-bold text-success" style="font-size:0.85rem;">Rp ${item.harga_beli ? new Intl.NumberFormat('id-ID').format(item.harga_beli) : '-'} <i class="fa fa-info-circle ms-1 small text-muted"></i></div>
+                                    <div class="text-muted" style="font-size:0.65rem;">Avg: Rp ${item.rata_rata_beli ? new Intl.NumberFormat('id-ID').format(item.rata_rata_beli) : '-'}</div>
+                                </a>
+                            </td>
                             <td class="text-center">
                                 <span class="badge bg-soft-primary text-primary fw-bold" style="font-size: 0.85rem;">${item.jml_varian || 0} Varian</span>
                             </td>
                             <td class="text-center">
-                                <button class="btn btn-sm btn-outline-primary btn-premium px-4 btn-manage-variants" data-id="${item.bahan_id}" data-nama="${item.bahan_nama}">
-                                    <i class="fa fa-cubes me-1"></i> ATUR VARIAN & KONVERSI
+                                <button class="btn btn-sm btn-outline-warning btn-premium px-3 me-1 btn-edit-master" data-id="${item.bahan_id}" data-nama="${item.bahan_nama}" data-jenis="${item.jenis_barang}" data-satuan="${item.satuan_id}" data-barcode="${item.barcode || ''}">
+                                    <i class="fa fa-edit"></i> Edit
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary btn-premium px-3 btn-manage-variants" data-id="${item.bahan_id}" data-nama="${item.bahan_nama}">
+                                    <i class="fa fa-cubes me-1"></i> ATUR VARIAN
                                 </button>
                             </td>
                         </tr>
@@ -921,6 +1049,41 @@
                 renderBahanTable();
             });
 
+
+            // View History Pembelian
+            $(document).on('click', '.btn-view-history', function() {
+                const id = $(this).data('id');
+                const nama = $(this).data('nama');
+                
+                $('#historyBahanNama').text(nama);
+                $('#tableHistoryHarga tbody').html('<tr><td colspan="6" class="text-center py-4"><i class="fa fa-spinner fa-spin fa-2x text-primary"></i> Memuat data...</td></tr>');
+                $('#modalHistoryHarga').modal('show');
+
+                $.post(`${controllerUrl}/get_purchase_history_json`, {bahan_id: id}, function(res) {
+                    if(res.status === 'success') {
+                        let html = '';
+                        if(res.data.length === 0) {
+                            html = '<tr><td colspan="6" class="text-center py-4 text-muted">Belum ada riwayat pembelian untuk material ini.</td></tr>';
+                        } else {
+                            res.data.forEach(item => {
+                                html += `<tr>
+                                    <td class="small fw-bold">${item.pembelian_tgl ? item.pembelian_tgl.substring(0,10) : '-'}</td>
+                                    <td class="small text-muted">${item.no_faktur || '-'}</td>
+                                    <td class="small fw-bold text-dark">${item.supplier_nama || '-'}</td>
+                                    <td class="small text-primary">${item.varian || '-'}</td>
+                                    <td class="text-end fw-bold text-success">Rp ${new Intl.NumberFormat('id-ID').format(item.harga_beli)}</td>
+                                    <td class="text-center fw-bold small">${new Intl.NumberFormat('id-ID', {maximumFractionDigits: 4}).format(item.qty)}</td>
+                                </tr>`;
+                            });
+                        }
+                        $('#tableHistoryHarga tbody').html(html);
+                    } else {
+                        $('#tableHistoryHarga tbody').html('<tr><td colspan="6" class="text-center py-4 text-danger">Gagal mengambil data.</td></tr>');
+                    }
+                }, 'json').fail(function() {
+                    $('#tableHistoryHarga tbody').html('<tr><td colspan="6" class="text-center py-4 text-danger">Terjadi kesalahan pada server.</td></tr>');
+                });
+            });
 
             // Copy Material Name Logic
             $('#btnCopyMaterialName').on('click', function () {
@@ -1044,9 +1207,10 @@
                             </td>
                             <td>${m.satuan_nama}</td>
                             <td class="fw-bold text-primary">${m.konversi}</td>
+                            <td class="fw-900 text-danger">${m.stok_min || 0}</td>
                             <td><span class="badge ${m.status == 1 ? 'bg-success' : 'bg-secondary'}">${m.status == 1 ? 'Aktif' : 'Nonaktif'}</span></td>
                             <td class="text-center">
-                                <button class="btn btn-sm btn-outline-warning btn-edit-variant" data-id="${m.material_id}" data-varian="${m.varian}" data-barcode="${m.barcode}" data-satuan="${m.satuan_gudang_id}" data-konversi="${m.konversi}" data-status="${m.status}" data-bahan="${$('#material_bahan_id').val()}"><i class="fa fa-edit"></i></button>
+                                <button class="btn btn-sm btn-outline-warning btn-edit-variant" data-id="${m.material_id}" data-varian="${m.varian}" data-barcode="${m.barcode}" data-satuan="${m.satuan_gudang_id}" data-konversi="${m.konversi}" data-status="${m.status}" data-stok-min="${m.stok_min}" data-bahan="${$('#material_bahan_id').val()}"><i class="fa fa-edit"></i></button>
                                 <button class="btn btn-sm btn-outline-danger btn-delete-variant" data-id="${m.material_id}" data-bahan="${$('#material_bahan_id').val()}"><i class="fa fa-trash"></i></button>
                             </td>
                         </tr>
@@ -1112,6 +1276,7 @@
                 $('#edit_satuan_gudang_id').val($(this).data('satuan'));
                 $('#edit_konversi').val($(this).data('konversi'));
                 $('#edit_status').val($(this).data('status'));
+                $('#edit_stok_min').val($(this).data('stok-min') || 0);
                 $('#modalEditMaterial').modal('show');
             });
 
@@ -1500,6 +1665,53 @@
                 document.body.removeChild(form);
             });
 
+            $(document).on('click', '#btnDeleteVariantBulk', function () {
+                const selected = [];
+                $('.check-variant:checked').each(function () {
+                    selected.push($(this).val());
+                });
+
+                if (selected.length === 0) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Peringatan',
+                        text: 'Silakan pilih varian yang akan dihapus.'
+                    });
+                    return;
+                }
+
+                Swal.fire({
+                    title: 'Hapus ' + selected.length + ' Varian?',
+                    text: 'Data yang dihapus tidak dapat dikembalikan!',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#d33',
+                    cancelButtonColor: '#3085d6',
+                    confirmButtonText: 'Ya, Hapus!',
+                    cancelButtonText: 'Batal'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        Swal.fire({
+                            title: 'Menghapus...',
+                            allowOutsideClick: false,
+                            didOpen: () => { Swal.showLoading(); }
+                        });
+
+                        $.post(`${controllerUrl}/actionDeleteMaterialBulk`, { ids: selected }, function (res) {
+                            if (res.status === 'success') {
+                                Swal.fire('Berhasil!', res.pesan, 'success');
+                                $('#checkAllVariants').prop('checked', false);
+                                loadVariants($('#material_bahan_id').val());
+                            } else {
+                                Swal.fire('Gagal!', res.pesan, 'error');
+                            }
+                        }, 'json').fail(function() {
+                            Swal.fire('Error!', 'Terjadi kesalahan sistem.', 'error');
+                        });
+                    }
+                });
+            });
+
 
             function saveQuickBarcodeBahan(input) {
                 let bahan_id = input.data('id');
@@ -1652,7 +1864,76 @@
                 form.submit();
                 document.body.removeChild(form);
             });
+        // -------------------------------------------------------------
+        // CRUD MASTER BAHAN LOGIC
+        // -------------------------------------------------------------
+        
+        // Reset form for Tambah
+        window.resetMasterBahanForm = function() {
+            $('#formMasterBahan')[0].reset();
+            $('#form_bahanbaku_id').val('');
+            $('#modalMasterBahanTitle').html('<i class="fa fa-box me-2 text-primary"></i>Tambah Master Bahan');
+        };
+
+        // Open Edit modal
+        $(document).on('click', '.btn-edit-master', function() {
+            const id = $(this).data('id');
+            const nama = $(this).data('nama');
+            const jenis = $(this).data('jenis');
+            const satuan = $(this).data('satuan');
+            const barcode = $(this).data('barcode');
+
+            $('#form_bahanbaku_id').val(id);
+            $('#form_bahanbaku_nama').val(nama);
+            $('#form_jenis_barang').val(jenis);
+            $('#form_satuan_id').val(satuan);
+            $('#form_barcode').val(barcode);
+
+            $('#modalMasterBahanTitle').html('<i class="fa fa-edit me-2 text-warning"></i>Edit Master Bahan');
+            $('#modalMasterBahan').modal('show');
         });
+
+        // Submit form
+        $('#formMasterBahan').on('submit', function(e) {
+            e.preventDefault();
+            const btn = $('#btnSaveMasterBahan');
+            const isEdit = $('#form_bahanbaku_id').val() !== '';
+            const actionUrl = isEdit ? `${controllerUrl}/actionEditBahanBaku` : `${controllerUrl}/actionAddBahanBaku`;
+            
+            const formData = $(this).serialize();
+
+            btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin me-2"></i>Menyimpan...');
+
+            $.ajax({
+                url: actionUrl,
+                type: 'POST',
+                data: formData,
+                dataType: 'json',
+                success: function(res) {
+                    if (res.status === 'success') {
+                        $('#modalMasterBahan').modal('hide');
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Berhasil',
+                            text: res.pesan,
+                            showConfirmButton: false,
+                            timer: 1500
+                        });
+                        refreshTable(); // reload data
+                    } else {
+                        Swal.fire('Gagal', res.pesan || 'Terjadi kesalahan sistem', 'error');
+                    }
+                },
+                error: function() {
+                    Swal.fire('Error', 'Gagal menghubungi server.', 'error');
+                },
+                complete: function() {
+                    btn.prop('disabled', false).html('<i class="fa fa-save me-2"></i>Simpan');
+                }
+            });
+        });
+
+        }); // End of $(document).ready()
     </script>
 
     <?php $this->load->view('admin/warehouse/components/v_modal_materials_guide'); ?>

@@ -1438,6 +1438,17 @@ class Dashboard extends MY_Controller
         $this->db->limit(10);
         $data['attendance_feed'] = $this->db->get()->result();
 
+        // 6.5 Employees who are absent/sick/leave today
+        $this->db->select('k.nama_lengkap, k.foto, a.status, a.keterangan');
+        $this->db->from('absensi a');
+        $this->db->join('tbl_karyawan k', 'k.karyawan_id = a.karyawan_id', 'left');
+        $this->db->where('a.tanggal', $harian);
+        $this->db->where_in('a.status', ['Sakit', 'Izin', 'Alpha', 'Cuti']);
+        if ($pid) {
+            $this->db->where('k.perusahaan_id', $pid);
+        }
+        $data['absen_hari_ini'] = $this->db->get()->result();
+
         // 7. System Audit Trail (Audit Log)
         $this->db->select('al.*, u.username');
         $this->db->from('user_activity_log al');
@@ -1482,6 +1493,14 @@ class Dashboard extends MY_Controller
             $this->db->where('tbl_karyawan.perusahaan_id', $pid);
         }
         $data['pending_payroll_count'] = $this->db->count_all_results('tbl_slip_gaji');
+
+        // 8.3 Pending Koreksi Absen
+        $this->db->where('status', 'Pending');
+        if ($pid) {
+            $this->db->join('tbl_karyawan', 'tbl_pengajuan_koreksi_absen.karyawan_id = tbl_karyawan.karyawan_id');
+            $this->db->where('tbl_karyawan.perusahaan_id', $pid);
+        }
+        $data['pending_koreksi_count'] = $this->db->count_all_results('tbl_pengajuan_koreksi_absen');
 
         // 9. Data Keuangan (Finance Integration for HR)
         $bulanini = date('Y-m');

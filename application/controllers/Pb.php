@@ -98,21 +98,20 @@ class Pb extends MY_Controller
             $this->db->trans_start();
 
             // 1. Dapatkan detail produksi yang dipilih
-            $productions = $this->db->select('produksi_id, catatan, nospk')
-                ->where_in('produksi_id', $produksi_ids)
-                ->get('tbl_produksi')->result();
+            try {
+                $this->load->model('Wip_workflow_model', 'wip_workflow');
+                $productions = $this->wip_workflow->customer_handover_items($produksi_ids, $this->wip_workflow->actor(), $nospk);
+            } catch (Exception $e) {
+                $this->db->trans_rollback();
+                $this->output->set_content_type('application/json')->set_output(json_encode(['success' => false,
+                    'message' => $e instanceof DomainException ? $e->getMessage() : 'Serah terima gagal divalidasi.']));
+                return;
+            }
 
             if (empty($productions)) {
                 $response = ['success' => false, 'message' => 'Item produksi tidak ditemukan'];
             } else {
-                // 2. Update status di detail_produksi
-                $this->db->where_in('produksi_id', $produksi_ids);
-                $this->db->where('status_produksi', 'on_pb');
-                $this->db->update('detail_produksi', [
-                    'status_produksi' => 'on_costumer',
-                    'update_time' => date('Y-m-d H:i:s'),
-                    'waktu_selesai' => date('Y-m-d H:i:s')
-                ]);
+                // Customer handover updates the header; operation history remains unchanged.
 
                 // 3. Update header tbl_produksi
                 foreach ($productions as $p) {
@@ -240,18 +239,17 @@ class Pb extends MY_Controller
         $this->db->trans_start();
 
         // 1. Dapatkan catatan saat ini
-        $productions = $this->db->select('produksi_id, catatan')
-            ->where_in('produksi_id', $ids)
-            ->get('tbl_produksi')->result();
+        try {
+            $this->load->model('Wip_workflow_model', 'wip_workflow');
+            $productions = $this->wip_workflow->customer_handover_items($ids, $this->wip_workflow->actor());
+        } catch (Exception $e) {
+            $this->db->trans_rollback();
+            $this->output->set_content_type('application/json')->set_output(json_encode(['success' => false,
+                'message' => $e instanceof DomainException ? $e->getMessage() : 'Serah terima gagal divalidasi.']));
+            return;
+        }
 
-        // 2. Update status di detail_produksi
-        $this->db->where_in('produksi_id', $ids);
-        $this->db->where('status_produksi', 'on_pb');
-        $this->db->update('detail_produksi', [
-            'status_produksi' => 'on_costumer',
-            'update_time' => date('Y-m-d H:i:s'),
-            'waktu_selesai' => date('Y-m-d H:i:s')
-        ]);
+        // Customer handover updates the header; operation history remains unchanged.
 
         // 3. Update header tbl_produksi
         foreach ($productions as $p) {
@@ -327,7 +325,7 @@ class Pb extends MY_Controller
     {
         $nospk = $this->input->post('nospk', true);
 
-        $this->db->select('p.*, pr.product_nama, pr.kategori_id, s.satuan_nama, pm.status_pembayaran, (CASE WHEN pr.kategori_id = 1 THEN hp.jenisprint_id ELSE hp.ket_1 END) as sisi');
+        $this->db->select('p.*, pr.product_nama, pr.kategori_id, s.satuan_nama, pm.status_pembayaran, hp.detail_product, (CASE WHEN pr.kategori_id = 1 THEN hp.jenisprint_id ELSE hp.ket_1 END) as sisi');
         $this->db->from('tbl_produksi p');
         $this->db->join('tbl_product pr', 'pr.product_id = p.product_id', 'left');
         $this->db->join('tbl_satuan s', 's.satuan_id = pr.satuan_id', 'left');
@@ -364,32 +362,9 @@ class Pb extends MY_Controller
 
     public function update_output_qty_ajax()
     {
-        $level = $this->session->userdata('level');
-        // Only Admin (1), Manager (17) or special level (21)
-        if (!in_array((int) $level, [1, 17, 21], true)) {
-            header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'message' => 'Anda tidak memiliki hak akses untuk koreksi.']);
-            return;
-        }
-
-        $id = $this->input->post('detail_id', true);
-        $qty = $this->input->post('qty', true);
-
-        if (!$id || $qty === null) {
-            header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'message' => 'Data tidak lengkap.']);
-            return;
-        }
-
-        $this->db->where('detail_produksi_id', $id);
-        $update = $this->db->update('detail_produksi', ['qty_output' => $qty]);
-
-        header('Content-Type: application/json');
-        if ($update) {
-            echo json_encode(['success' => true, 'message' => 'Output berhasil dikoreksi.']);
-        } else {
-            echo json_encode(['success' => false, 'message' => 'Gagal memperbarui database.']);
-        }
+        $this->output->set_content_type('application/json')->set_output(json_encode([
+            'success' => false, 'message' => 'Hasil produksi historis tidak dapat ditimpa. Koreksi memerlukan transaksi revisi terpisah.'
+        ]));
     }
 
     public function print_tag($produksi_id = null)
@@ -410,7 +385,7 @@ class Pb extends MY_Controller
 
         $nospk = $row->nospk;
 
-        $this->db->select('tbl_produksi.*, tbl_product.product_nama, tbl_product.kategori_id, tbl_kategori.kategori_nama, tbl_konsumen.konsumen_nama, tbl_satuan.satuan_nama, (CASE WHEN tbl_product.kategori_id = 1 THEN tbl_harga_product.jenisprint_id ELSE tbl_harga_product.ket_1 END) as sisi, tbl_perusahaan.nama_perusahaan as cabang_asal, tbl_perusahaan.tag_paper, tbl_perusahaan.tag_font_size, tbl_perusahaan.tag_font_family, tbl_perusahaan.tag_show_logo, tbl_perusahaan.tag_logo_width, tbl_perusahaan.tag_show_qr, tbl_perusahaan.tag_qr_width, tbl_perusahaan.tag_footer_note, tbl_perusahaan.tag_section_spacing, tbl_perusahaan.invoice_font_size, tbl_perusahaan.invoice_font_family, tbl_perusahaan.invoice_section_spacing, tbl_pemesanan.created_at as tgl_spk, tbl_pemesanan.status_pembayaran, dk.nama_lengkap as deskprint_nama');
+        $this->db->select('tbl_produksi.*, tbl_product.product_nama, tbl_product.kategori_id, tbl_kategori.kategori_nama, tbl_konsumen.konsumen_nama, tbl_satuan.satuan_nama, tbl_harga_product.detail_product, (CASE WHEN tbl_product.kategori_id = 1 THEN tbl_harga_product.jenisprint_id ELSE tbl_harga_product.ket_1 END) as sisi, tbl_perusahaan.nama_perusahaan as cabang_asal, tbl_perusahaan.tag_paper, tbl_perusahaan.tag_font_size, tbl_perusahaan.tag_font_family, tbl_perusahaan.tag_show_logo, tbl_perusahaan.tag_logo_width, tbl_perusahaan.tag_show_qr, tbl_perusahaan.tag_qr_width, tbl_perusahaan.tag_footer_note, tbl_perusahaan.tag_section_spacing, tbl_perusahaan.invoice_font_size, tbl_perusahaan.invoice_font_family, tbl_perusahaan.invoice_section_spacing, tbl_pemesanan.created_at as tgl_spk, tbl_pemesanan.status_pembayaran, dk.nama_lengkap as deskprint_nama');
         $this->db->select('(SELECT mesin_nama FROM tbl_mesin m JOIN detail_produksi dp ON dp.mesin_id = m.mesin_id WHERE dp.produksi_id = tbl_produksi.produksi_id AND dp.mesin_id IS NOT NULL LIMIT 1) as mesin_nama');
         $this->db->select('(SELECT nama_lengkap FROM tbl_karyawan k JOIN detail_produksi dp ON dp.operator_id = k.karyawan_id WHERE dp.produksi_id = tbl_produksi.produksi_id AND dp.operator_id IS NOT NULL AND dp.status_produksi = \'2\' LIMIT 1) as nama_operator');
         $this->db->from('tbl_produksi');
@@ -450,7 +425,7 @@ class Pb extends MY_Controller
 
         $ids = explode(',', $ids_str);
 
-        $this->db->select('tbl_produksi.*, tbl_product.product_nama, tbl_product.kategori_id, tbl_kategori.kategori_nama, tbl_konsumen.konsumen_nama, tbl_satuan.satuan_nama, (CASE WHEN tbl_product.kategori_id = 1 THEN tbl_harga_product.jenisprint_id ELSE tbl_harga_product.ket_1 END) as sisi, tbl_perusahaan.nama_perusahaan as cabang_asal, tbl_perusahaan.tag_paper, tbl_perusahaan.tag_font_size, tbl_perusahaan.tag_font_family, tbl_perusahaan.tag_show_logo, tbl_perusahaan.tag_logo_width, tbl_perusahaan.tag_show_qr, tbl_perusahaan.tag_qr_width, tbl_perusahaan.tag_footer_note, tbl_perusahaan.tag_section_spacing, tbl_perusahaan.invoice_font_size, tbl_perusahaan.invoice_font_family, tbl_perusahaan.invoice_section_spacing, tbl_pemesanan.created_at as tgl_spk, tbl_pemesanan.status_pembayaran, dk.nama_lengkap as deskprint_nama');
+        $this->db->select('tbl_produksi.*, tbl_product.product_nama, tbl_product.kategori_id, tbl_kategori.kategori_nama, tbl_konsumen.konsumen_nama, tbl_satuan.satuan_nama, tbl_harga_product.detail_product, (CASE WHEN tbl_product.kategori_id = 1 THEN tbl_harga_product.jenisprint_id ELSE tbl_harga_product.ket_1 END) as sisi, tbl_perusahaan.nama_perusahaan as cabang_asal, tbl_perusahaan.tag_paper, tbl_perusahaan.tag_font_size, tbl_perusahaan.tag_font_family, tbl_perusahaan.tag_show_logo, tbl_perusahaan.tag_logo_width, tbl_perusahaan.tag_show_qr, tbl_perusahaan.tag_qr_width, tbl_perusahaan.tag_footer_note, tbl_perusahaan.tag_section_spacing, tbl_perusahaan.invoice_font_size, tbl_perusahaan.invoice_font_family, tbl_perusahaan.invoice_section_spacing, tbl_pemesanan.created_at as tgl_spk, tbl_pemesanan.status_pembayaran, dk.nama_lengkap as deskprint_nama');
         $this->db->select('(SELECT mesin_nama FROM tbl_mesin m JOIN detail_produksi dp ON dp.mesin_id = m.mesin_id WHERE dp.produksi_id = tbl_produksi.produksi_id AND dp.mesin_id IS NOT NULL LIMIT 1) as mesin_nama');
         $this->db->select('(SELECT nama_lengkap FROM tbl_karyawan k JOIN detail_produksi dp ON dp.operator_id = k.karyawan_id WHERE dp.produksi_id = tbl_produksi.produksi_id AND dp.operator_id IS NOT NULL AND dp.status_produksi = \'2\' LIMIT 1) as nama_operator');
         $this->db->from('tbl_produksi');
@@ -484,91 +459,31 @@ class Pb extends MY_Controller
 
     public function reproduce_rijek_ajax()
     {
-        $nospk = $this->input->post('nospk', true);
-        $reason = $this->input->post('reason', true);
-        $pin = $this->input->post('pin', true);
-
-        // 1. Verify PIN (Must be Admin or Owner)
-        $officer_name = $this->_verify_pin_privileged($pin);
-        if (!$officer_name) {
-            header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'message' => 'PIN Petugas Salah atau Anda tidak memiliki akses (Admin/Owner Only)!']);
-            return;
-        }
-
-        // 2. Get original SPK data
-        $this->db->where('nospk', $nospk);
-        $originals = $this->db->get('tbl_produksi')->result_array();
-
-        if (empty($originals)) {
-            header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'message' => 'Data SPK asli tidak ditemukan!']);
-            return;
-        }
-
-        $this->db->trans_start();
-
-        $rijek_note = "[DIKEMBALIKAN KE PRODUKSI]\nOleh: " . $officer_name . "\nAlasan: " . $reason;
-
-        foreach ($originals as $item) {
-            $old_id = $item['produksi_id'];
-            
-            // 1. Update tbl_produksi status to approved (queue)
-            $update_prod = [
-                'status_produksi' => 'approved', // Back to queue
-                'catatan' => $rijek_note,
-                'update_time' => date('Y-m-d H:i:s'),
-                'tgl_kirim_pb' => '0000-00-00 00:00:00',
-                'foto_handover' => '',
-                'tgl_selesai' => '0000-00-00 00:00:00'
-            ];
-            $this->db->where('produksi_id', $old_id);
-            $this->db->update('tbl_produksi', $update_prod);
-
-            // 2. Get routings
-            $this->db->select('dp.*, r.routing_name');
-            $this->db->from('detail_produksi dp');
-            $this->db->join('routing r', 'r.routing_id = dp.routing_id', 'left');
-            $this->db->where('dp.produksi_id', $old_id);
-            $routings = $this->db->get()->result_array();
-
-            foreach ($routings as $route) {
-                $r_name = strtolower($route['routing_name'] ?? '');
-                
-                // SKIP LIST: Deskprint, Antrian, Kasir, Admin (Internal steps)
-                if (strpos($r_name, 'deskprint') !== false || 
-                    strpos($r_name, 'admin') !== false || 
-                    strpos($r_name, 'kasir') !== false ||
-                    strpos($r_name, 'order') !== false) {
-                    continue; // Leave them as Done (status 2)
-                }
-
-                // Reset this routing step
-                $update_route = [
-                    'status_produksi' => '0', // Pending
-                    'qty_output' => 0,
-                    'operator_id' => null,
-                    'mesin_id' => null,
-                    'waktu_mulai' => null,
-                    'waktu_selesai' => null,
-                    'update_time' => null
-                ];
-                
-                $this->db->where('detail_produksi_id', $route['detail_produksi_id']);
-                $this->db->update('detail_produksi', $update_route);
+        $response = ['success' => false, 'message' => 'Aksi harus dikirim melalui POST.'];
+        if (strtolower($this->input->method()) !== 'post') {
+            $this->output->set_status_header(405)->set_header('Allow: POST');
+        } else {
+            try {
+                $nospk = $this->input->post('nospk', true);
+                $reason = trim((string) $this->input->post('reason', true));
+                $pin = $this->input->post('pin', true);
+                if (!$nospk || !$reason || !$this->_verify_pin_privileged($pin)) throw new DomainException('SPK, alasan, dan PIN supervisor yang valid wajib diisi.');
+                $this->load->model('Wip_workflow_model', 'wip_workflow');
+                $ids = array_column($this->db->select('produksi_id')->where('nospk', $nospk)->get('tbl_produksi')->result_array(), 'produksi_id');
+                $actor = $this->wip_workflow->actor($pin);
+                $response = $this->wip_workflow->execute($ids, 'report', $actor, [], [], function ($item, $step, $actor) use ($reason) {
+                    $note = '[MASALAH] [PB] Permintaan produksi ulang: ' . $reason;
+                    if (!$this->db->where('produksi_id', $item->produksi_id)->update('tbl_produksi', ['catatan' => trim(($item->catatan ?? '') . "\n" . $note), 'update_time' => date('Y-m-d H:i:s')])) throw new RuntimeException('Gagal menyimpan laporan.');
+                    if (!$this->db->insert('tbl_produksi_log', ['produksi_id' => $item->produksi_id, 'user_id' => $actor['user_id'], 'status_asal' => $item->status_produksi, 'status_tujuan' => $item->status_produksi, 'catatan' => $note])) throw new RuntimeException('Gagal menyimpan riwayat.');
+                    return [];
+                });
+                if ($response['success']) $response['message'] = 'Permintaan produksi ulang dicatat untuk ditinjau supervisor. Riwayat dan status tahap tidak direset.';
+                $response['new_nospk'] = $nospk;
+            } catch (Exception $e) {
+                $response = ['success' => false, 'message' => $e instanceof DomainException ? $e->getMessage() : 'Gagal mencatat permintaan.'];
             }
         }
-
-        $this->db->trans_complete();
-
-        if ($this->db->trans_status() === FALSE) {
-            $response = ['success' => false, 'message' => 'Gagal mereset data produksi. Cek log database.'];
-        } else {
-            $response = ['success' => true, 'new_nospk' => $nospk, 'message' => 'Berhasil mengembalikan SPK ke Antrian Produksi.'];
-        }
-
-        header('Content-Type: application/json');
-        echo json_encode($response);
+        $this->output->set_content_type('application/json')->set_output(json_encode($response));
     }
 
     private function _verify_pin_privileged($pin)

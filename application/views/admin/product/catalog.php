@@ -13,6 +13,32 @@
         border-radius: 0 0 2rem 2rem;
     }
 
+    .catalog-view {
+        position: relative;
+    }
+
+    .view-toggle {
+        background: rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 0.9rem;
+        overflow: hidden;
+        backdrop-filter: blur(8px);
+    }
+
+    .view-btn {
+        border: 0;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.8);
+        font-weight: 700;
+        padding: 0.7rem 1rem;
+        transition: all 0.2s ease;
+    }
+
+    .view-btn.active {
+        background: #fff;
+        color: #111827;
+    }
+
     .catalog-card {
         border: none;
         border-radius: 1.25rem;
@@ -159,6 +185,67 @@
         background: transparent;
         opacity: 0.4;
     }
+
+    .catalog-view.list .catalog-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .catalog-view.list .catalog-item {
+        width: 100% !important;
+        max-width: 100% !important;
+        flex: 0 0 100% !important;
+    }
+
+    .catalog-view.list .catalog-card {
+        display: flex;
+        flex-direction: row;
+        align-items: stretch;
+        min-height: 220px;
+    }
+
+    .catalog-view.list .product-img-container {
+        width: 240px;
+        min-width: 240px;
+        height: 100%;
+        padding-top: 0;
+        border-right: 1px solid #f1f5f9;
+    }
+
+    .catalog-view.list .catalog-card > .p-4 {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+
+    .catalog-view.list .catalog-card > .p-3 {
+        min-width: 220px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 0.5rem;
+    }
+
+    .catalog-view.card .catalog-grid {
+        display: flex;
+        flex-wrap: wrap;
+    }
+
+    @media (max-width: 767px) {
+        .catalog-view.list .catalog-card {
+            flex-direction: column;
+        }
+
+        .catalog-view.list .product-img-container {
+            width: 100%;
+            min-width: auto;
+            height: 220px;
+            border-right: none;
+            border-bottom: 1px solid #f1f5f9;
+        }
+    }
 </style>
 
 <div class="app-content p-0">
@@ -211,6 +298,18 @@
     </div>
 
     <div class="container pb-5">
+        <div class="d-flex justify-content-end mb-3">
+            <div class="view-toggle" role="group" aria-label="Tampilan katalog">
+                <button type="button" class="view-btn active" data-view="list" aria-label="List view">
+                    <i class="bi bi-list-ul me-1"></i>List
+                </button>
+                <button type="button" class="view-btn" data-view="card" aria-label="Card view">
+                    <i class="bi bi-grid-3x3-gap me-1"></i>Card
+                </button>
+            </div>
+        </div>
+
+        <div id="catalogViewWrapper" class="catalog-view list" data-view="list">
         <?php if(empty($products)): ?>
             <div class="empty-catalog">
                 <i class="bi bi-folder-x fs-1 opacity-25 d-block mb-3"></i>
@@ -219,9 +318,9 @@
                 <a href="<?= base_url('manufaktur/catalog') ?>" class="btn btn-link">Reset Pencarian</a>
             </div>
         <?php else: ?>
-            <div class="row g-4">
+            <div class="catalog-grid row g-4">
                 <?php foreach($products as $p): ?>
-                    <div class="col-lg-3 col-md-4">
+                    <div class="catalog-item col-lg-3 col-md-4">
                         <div class="catalog-card shadow-sm border border-faint">
                             <div class="product-img-container">
                                 <span class="category-badge"><?= $p['kategori_nama'] ?></span>
@@ -442,13 +541,43 @@
                 </div>
             <?php endforeach; ?>
         <?php endif; ?>
+        </div>
     </div>
-</div>
 </div>
 
 <!-- html2pdf.js CDN -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script>
+function setCatalogView(view) {
+    const wrapper = document.getElementById('catalogViewWrapper');
+    const buttons = document.querySelectorAll('.view-btn');
+
+    if (!wrapper) return;
+
+    wrapper.classList.remove('list', 'card');
+    wrapper.classList.add(view);
+    wrapper.setAttribute('data-view', view);
+
+    buttons.forEach((btn) => {
+        const isActive = btn.dataset.view === view;
+        btn.classList.toggle('active', isActive);
+    });
+
+    try {
+        localStorage.setItem('catalogViewMode', view);
+    } catch (e) {}
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const preferred = localStorage.getItem('catalogViewMode') || 'list';
+    setCatalogView(preferred);
+
+    document.querySelectorAll('.view-btn').forEach((btn) => {
+        btn.addEventListener('click', function() {
+            setCatalogView(this.dataset.view);
+        });
+    });
+});
 function downloadProductBrosur(productId, productName) {
     const element = document.querySelector('#modalPrices' + productId + ' .modal-content');
     

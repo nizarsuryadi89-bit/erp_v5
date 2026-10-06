@@ -22,7 +22,10 @@
                             </div>
                             <h3 id="totalTransaksi"><?= $total_transaksi ?></h3>
                             <p>Transaksi Hari Ini</p>
-                            <small class="text-muted"><?= date('d F Y', strtotime($selected_date)) ?></small>
+                            <small class="text-muted d-block pb-2" id="tanggalTransaksi"><?= date('d F Y', strtotime($selected_date)) ?></small>
+                            <small class="text-primary fw-bold border-top pt-2 d-block">
+                                <i class="bi bi-calendar-month me-1"></i> Bulan Ini: <?= $total_transaksi_bulan ?> Transaksi
+                            </small>
                         </div>
                     </div>
                 </div>
@@ -34,7 +37,10 @@
                             </div>
                             <h3 id="totalNilai">Rp <?= number_format($total_nilai) ?></h3>
                             <p>Total Nilai Pembelian</p>
-                            <small class="text-muted">Hari ini</small>
+                            <small class="text-muted d-block pb-2" id="tanggalNilai">Hari ini</small>
+                            <small class="text-success fw-bold border-top pt-2 d-block">
+                                <i class="bi bi-wallet2 me-1"></i> Bulan Ini: Rp <?= number_format($total_nilai_bulan) ?>
+                            </small>
                         </div>
                     </div>
                 </div>
@@ -116,10 +122,16 @@
             <div class="row">
                 <div class="col-12">
                     <div class="card border-0 shadow-sm">
-                        <div class="card-header bg-dark text-white">
+                        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center flex-wrap">
                             <h5 class="mb-0">
                                 <i class="bi bi-table me-2"></i>Data Pembelian - <span id="selectedDateDisplay"><?= date('d F Y', strtotime($selected_date)) ?></span>
                             </h5>
+                            <div class="d-flex gap-2 align-items-center mt-2 mt-md-0">
+                                <input type="text" id="searchPembelian" class="form-control form-control-sm" placeholder="Cari data..." onkeyup="searchTable()" style="width: 200px;">
+                                <a href="javascript:void(0)" onclick="cetakLaporanHarian()" class="btn btn-primary btn-sm text-nowrap">
+                                    <i class="bi bi-printer me-1"></i>Cetak Laporan
+                                </a>
+                            </div>
                         </div>
                         <div class="card-body">
                             <div id="purchaseTable">
@@ -388,6 +400,14 @@
     function updateStatistics(data) {
         document.getElementById('totalTransaksi').textContent = data.total_transaksi;
         document.getElementById('totalNilai').textContent = `Rp ${formatNumber(data.total_nilai)}`;
+        
+        // Also update the daily date label
+        if(document.getElementById('tanggalTransaksi')) {
+            document.getElementById('tanggalTransaksi').textContent = formatDate(selectedDate);
+        }
+        if(document.getElementById('tanggalNilai')) {
+            document.getElementById('tanggalNilai').textContent = formatDate(selectedDate);
+        }
     }
 
     function updateSelectedDateDisplay(date) {
@@ -592,6 +612,27 @@
     function exportToExcel() {
         // Implementation for Excel export
         alert('Fitur export Excel akan segera tersedia');
+    }
+
+    function searchTable() {
+        let input = document.getElementById("searchPembelian");
+        let filter = input.value.toLowerCase();
+        let table = document.querySelector("#purchaseTable table");
+        if (!table) return;
+        let tr = table.getElementsByTagName("tr");
+        
+        for (let i = 1; i < tr.length; i++) {
+            let textContent = tr[i].textContent || tr[i].innerText;
+            if (textContent.toLowerCase().indexOf(filter) > -1) {
+                tr[i].style.display = "";
+            } else {
+                tr[i].style.display = "none";
+            }
+        }
+    }
+
+    function cetakLaporanHarian() {
+        window.open('<?= base_url('warehouse/cetak_laporan_pembelian_harian?date=') ?>' + selectedDate, '_blank');
     }
     </script>
 </body>

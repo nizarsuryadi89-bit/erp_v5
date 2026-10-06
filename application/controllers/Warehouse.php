@@ -103,17 +103,72 @@ class Warehouse extends MY_Controller
         $low_stock_materials = $this->warehouse->get_low_stock_materials();
         $recent_mutations = $this->warehouse->get_all_mutations(['limit' => 1]);
         $pending_requests = $this->warehouse->get_pending_requests();
+        $rack_utilization = $this->warehouse->get_rack_utilization();
+        $dead_stock_count = $this->warehouse->get_dead_stock_count();
 
         $data = [
-            'total_gudang' => count($this->warehouse->get_all_warehouses()),
-            'total_material' => number_format(array_sum(array_column($stock_summary, 'total_materials'))),
+            'inbound_today' => $this->warehouse->get_today_inbound_count(),
+            'outbound_today' => $this->warehouse->get_today_outbound_count(),
             'low_stock_count' => count($low_stock_materials),
             'mutation_count' => count($this->warehouse->get_all_mutations(['date' => date('Y-m-d')])),
-            'pending_requests_count' => count($pending_requests)
+            'pending_requests_count' => count($pending_requests),
+            'monthly_spending' => 'Rp ' . number_format($this->warehouse->get_monthly_spending(), 0, ',', '.'),
+            'rack_utilization_pct' => $rack_utilization['percentage'],
+            'rack_utilization_used' => $rack_utilization['used'],
+            'rack_utilization_total' => $rack_utilization['total'],
+            'dead_stock_count' => $dead_stock_count,
+            'total_inventory_value' => 'Rp ' . number_format($this->warehouse->get_total_inventory_value(), 0, ',', '.')
         ];
 
         header('Content-Type: application/json');
         echo json_encode($data);
+    }
+
+    /**
+     * AJAX: Get Today's Transactions for Modal
+     */
+    public function ajax_today_transactions($type)
+    {
+        $today = date('Y-m-d');
+        if ($type === 'inbound') {
+            $this->db->join('tbl_supplier', 'tbl_pembelian.supplier_id = tbl_supplier.supplier_id', 'left');
+            $this->db->where('DATE(pembelian_tgl)', $today);
+            $this->db->order_by('pembelian_id', 'DESC');
+            $transactions = $this->db->get('tbl_pembelian')->result();
+            
+            foreach ($transactions as $t) {
+                $this->db->select("GROUP_CONCAT(CONCAT(b.bahan_nama, ' (', pd.qty, ')') SEPARATOR '|||') as materials");
+                $this->db->from('tbl_pembelian_detail pd');
+                $this->db->join('tbl_material m', 'pd.material_id = m.material_id');
+                $this->db->join('tbl_bahan b', 'm.bahan_id = b.bahan_id');
+                $this->db->where('pd.pembelian_id', $t->pembelian_id);
+                $detail = $this->db->get()->row();
+                $t->materials_summary = $detail && $detail->materials ? $detail->materials : '-';
+            }
+
+            $data['transactions'] = $transactions;
+            $data['type'] = 'inbound';
+        } else {
+            $this->db->join('tbl_karyawan', 'tbl_pengambilan.karyawan_id = tbl_karyawan.karyawan_id', 'left');
+            $this->db->join('tbl_gudang', 'tbl_pengambilan.gudang_id = tbl_gudang.gudang_id', 'left');
+            $this->db->where('DATE(pengambilan_tgl)', $today);
+            $this->db->order_by('pengambilan_id', 'DESC');
+            $transactions = $this->db->get('tbl_pengambilan')->result();
+
+            foreach ($transactions as $t) {
+                $this->db->select("GROUP_CONCAT(CONCAT(b.bahan_nama, ' (', pd.qty, ')') SEPARATOR '|||') as materials");
+                $this->db->from('tbl_pengambilan_detail pd');
+                $this->db->join('tbl_material m', 'pd.material_id = m.material_id');
+                $this->db->join('tbl_bahan b', 'm.bahan_id = b.bahan_id');
+                $this->db->where('pd.pengambilan_id', $t->pengambilan_id);
+                $detail = $this->db->get()->row();
+                $t->materials_summary = $detail && $detail->materials ? $detail->materials : '-';
+            }
+
+            $data['transactions'] = $transactions;
+            $data['type'] = 'outbound';
+        }
+        $this->load->view('admin/warehouse/components/modal_today_transactions', $data);
     }
 
     /**
@@ -626,6 +681,108 @@ class Warehouse extends MY_Controller
     }
 
     /**
+     * RESET STOK GUDANG & LOG PENGGUNAAN
+     */
+    public function reset_stock_gudang($gudang_id)
+    {
+        // Require specific permission or just allow if it's accessible.
+        // Assuming user has access to warehouse module.
+        if ($gudang_id) {
+            $this->db->trans_start();
+
+            // Reset stok_gudang to 0
+            $this->db->where('gudang_id', $gudang_id);
+            $this->db->update('tbl_stok_gudang', ['qty' => 0]);
+
+            // Clear log usage (tbl_stok_log) for this warehouse
+            $this->db->where('gudang_id', $gudang_id);
+            $this->db->delete('tbl_stok_log');
+
+            $this->db->trans_complete();
+
+            if ($this->db->trans_status() === TRUE) {
+                // Log action
+                $this->_log_manual("Reset Stok & Penggunaan", "Gudang ID: $gudang_id", 'DELETE');
+                $this->session->set_flashdata('success', 'Stok dan log penggunaan bahan gudang berhasil direset.');
+            } else {
+                $this->session->set_flashdata('error', 'Gagal mereset stok gudang.');
+            }
+        }
+        redirect('warehouse/stock?gudang_id=' . $gudang_id);
+    }
+
+    /**
+     * AJAX Detail Dispatch
+     */
+    public function ajax_detail_dispatch($material_id)
+    {
+        $gudang_id = $this->input->get('gudang_id');
+        $start_date = date('Y-m-01');
+        $end_date = date('Y-m-t');
+
+        $this->db->select('sl.*, m.varian as material_nama, m.konversi, b.bahan_nama, s.satuan_nama as satuan_gudang, s_prod.satuan_nama as satuan_produksi, p.pengambilan_id as nospk, k.nama_lengkap as operator_nama, g.gudang_nama');
+        $this->db->from('tbl_stok_log sl');
+        $this->db->join('tbl_material m', 'm.material_id = sl.material_id', 'left');
+        $this->db->join('tbl_bahan b', 'b.bahan_id = m.bahan_id', 'left');
+        $this->db->join('tbl_satuan s', 's.satuan_id = m.satuan_gudang_id', 'left');
+        $this->db->join('tbl_satuan s_prod', 's_prod.satuan_id = b.satuan_id', 'left');
+        $this->db->join('tbl_pengambilan p', 'p.pengambilan_id = sl.trx_id', 'left');
+        $this->db->join('users u', 'u.user_id = sl.user_id', 'left');
+        $this->db->join('tbl_karyawan k', 'k.karyawan_id = COALESCE(sl.karyawan_id, u.karyawan_id, p.karyawan_id)', 'left');
+        $this->db->join('tbl_gudang g', 'g.gudang_id = sl.gudang_id', 'left');
+        
+        $this->db->where('sl.trx_type', 'Mutation');
+        $this->db->where('sl.material_id', $material_id);
+        if ($gudang_id) {
+            $this->db->where('sl.gudang_id', $gudang_id);
+        }
+        $this->db->where('DATE(sl.created_at) >=', $start_date);
+        $this->db->where('DATE(sl.created_at) <=', $end_date);
+        $this->db->order_by('sl.created_at', 'DESC');
+        
+        $data['logs'] = $this->db->get()->result();
+        
+        $html = $this->load->view('admin/warehouse/partial_dispatch_detail', $data, true);
+        echo json_encode(['status' => 'success', 'html' => $html]);
+    }
+
+    /**
+     * AJAX Detail Pembelian
+     */
+    public function ajax_detail_pembelian($material_id)
+    {
+        $gudang_id = $this->input->get('gudang_id');
+        $start_date = date('Y-m-01');
+        $end_date = date('Y-m-t');
+
+        $this->db->select('sl.*, m.varian as material_nama, m.konversi, b.bahan_nama, s.satuan_nama as satuan_gudang, s_prod.satuan_nama as satuan_produksi, p.no_faktur as nospk, sup.supplier_nama, k.nama_lengkap as operator_nama, g.gudang_nama');
+        $this->db->from('tbl_stok_log sl');
+        $this->db->join('tbl_material m', 'm.material_id = sl.material_id', 'left');
+        $this->db->join('tbl_bahan b', 'b.bahan_id = m.bahan_id', 'left');
+        $this->db->join('tbl_satuan s', 's.satuan_id = m.satuan_gudang_id', 'left');
+        $this->db->join('tbl_satuan s_prod', 's_prod.satuan_id = b.satuan_id', 'left');
+        $this->db->join('tbl_pembelian p', 'p.pembelian_id = sl.trx_id', 'left');
+        $this->db->join('tbl_supplier sup', 'sup.supplier_id = p.supplier_id', 'left');
+        $this->db->join('users u', 'u.user_id = sl.user_id', 'left');
+        $this->db->join('tbl_karyawan k', 'k.karyawan_id = COALESCE(sl.karyawan_id, u.karyawan_id, p.karyawan_id)', 'left');
+        $this->db->join('tbl_gudang g', 'g.gudang_id = sl.gudang_id', 'left');
+        
+        $this->db->where('sl.trx_type', 'Pembelian');
+        $this->db->where('sl.material_id', $material_id);
+        if ($gudang_id) {
+            $this->db->where('sl.gudang_id', $gudang_id);
+        }
+        $this->db->where('DATE(sl.created_at) >=', $start_date);
+        $this->db->where('DATE(sl.created_at) <=', $end_date);
+        $this->db->order_by('sl.created_at', 'DESC');
+        
+        $data['logs'] = $this->db->get()->result();
+        
+        $html = $this->load->view('admin/warehouse/partial_pembelian_detail', $data, true);
+        echo json_encode(['status' => 'success', 'html' => $html]);
+    }
+
+    /**
      * 4. PENGIRIMAN STOK KE GUDANG PRODUKSI (Distribution)
      */
     public function dispatch()
@@ -1003,7 +1160,7 @@ class Warehouse extends MY_Controller
         $warehouse_id = $this->input->post('gudang_id', true) ?: $this->input->post('warehouse_id', true);
 
         // Get Metadata FIRST to get conversion
-        $this->db->select('m.konversi, sg.satuan_nama as satuan_gudang, sp.satuan_nama as satuan_produksi');
+        $this->db->select('m.bahan_id, m.konversi, sg.satuan_nama as satuan_gudang, sp.satuan_nama as satuan_produksi');
         $this->db->from('tbl_material m');
         $this->db->join('tbl_bahan b', 'b.bahan_id = m.bahan_id', 'left');
         $this->db->join('tbl_satuan sg', 'sg.satuan_id = m.satuan_gudang_id', 'left');
@@ -1024,13 +1181,39 @@ class Warehouse extends MY_Controller
         // CONVERT for Display (Display unit = Satuan Gudang)
         $display_qty = $base_qty / $konversi;
 
+        // Get Products Using this Material (Limit 5 to avoid bloating)
+        $usage_info = [];
+        if ($meta && !empty($meta->bahan_id)) {
+            $this->db->select('p.product_nama, bl.quantity, bl.calc_type');
+            $this->db->from('bom_lines bl');
+            $this->db->join('tbl_product p', 'p.product_id = bl.product_id', 'left');
+            $this->db->where('bl.bahan_id', $meta->bahan_id);
+            $this->db->group_by('p.product_id');
+            $this->db->limit(10);
+            $products = $this->db->get()->result();
+
+            foreach ($products as $p) {
+                $qty = (float)$p->quantity;
+                if ($qty > 0 && $qty < 1) {
+                    $cap = floor(1 / $qty) . ' Pcs/Bhn';
+                } else {
+                    $cap = '1 Pcs = ' . $qty . ' Bhn';
+                }
+                $usage_info[] = [
+                    'product_nama' => $p->product_nama,
+                    'kapasitas' => $cap
+                ];
+            }
+        }
+
         header('Content-Type: application/json');
         echo json_encode([
             'current_stock' => $display_qty, // In Satuan Gudang
             'base_stock' => $base_qty,       // In Satuan Produksi
             'satuan_gudang' => !empty($meta->satuan_gudang) ? $meta->satuan_gudang : 'Unit',
             'satuan_produksi' => !empty($meta->satuan_produksi) ? $meta->satuan_produksi : (!empty($meta->satuan_gudang) ? $meta->satuan_gudang : 'Pcs'),
-            'konversi' => $konversi
+            'konversi' => $konversi,
+            'usage_info' => $usage_info
         ]);
     }
 
@@ -1084,12 +1267,14 @@ class Warehouse extends MY_Controller
     public function ledger($gudang_id = 0)
     {
         $conf = $this->_get_conf();
+        $warehouses = $this->db->get('tbl_gudang')->result();
 
-        $this->db->select('l.*, m.varian, b.bahan_nama, g.gudang_nama, u.username, m.konversi, sg.satuan_nama as satuan_gudang, sp.satuan_nama as satuan_produksi');
+        $this->db->select('l.*, m.varian, b.bahan_nama, g.gudang_nama, r.rak_nama, u.username, m.konversi, sg.satuan_nama as satuan_gudang, sp.satuan_nama as satuan_produksi');
         $this->db->from('tbl_stok_log l');
         $this->db->join('tbl_material m', 'm.material_id = l.material_id');
         $this->db->join('tbl_bahan b', 'b.bahan_id = m.bahan_id');
         $this->db->join('tbl_gudang g', 'g.gudang_id = l.gudang_id');
+        $this->db->join('tbl_rak r', 'r.rak_id = l.rak_id', 'left');
         $this->db->join('users u', 'u.user_id = l.user_id', 'left');
         $this->db->join('tbl_satuan sg', 'sg.satuan_id = m.satuan_gudang_id', 'left');
         $this->db->join('tbl_satuan sp', 'sp.satuan_id = b.satuan_id', 'left');
@@ -1102,6 +1287,29 @@ class Warehouse extends MY_Controller
         $this->db->limit(100);
         $logs = $this->db->get()->result();
 
+        // Fetch Stock Summary
+        $stock_summary = [];
+        if ($gudang_id > 0) {
+            $stock_summary = $this->m_gudang->get_warehouse_stock($gudang_id);
+        } else {
+            $all_stock = $this->m_gudang->get_all_warehouse_stock();
+            $grouped = [];
+            foreach ($all_stock as $row) {
+                if (!isset($grouped[$row->material_id])) {
+                    $grouped[$row->material_id] = clone $row;
+                    $grouped[$row->material_id]->gudang_qtys = [];
+                    $grouped[$row->material_id]->qty_base = 0;
+                }
+                
+                if (!isset($grouped[$row->material_id]->gudang_qtys[$row->gudang_id])) {
+                    $grouped[$row->material_id]->gudang_qtys[$row->gudang_id] = 0;
+                }
+                $grouped[$row->material_id]->gudang_qtys[$row->gudang_id] += (float) $row->qty_base;
+                $grouped[$row->material_id]->qty_base += (float) $row->qty_base;
+            }
+            $stock_summary = array_values($grouped);
+        }
+
         $data = [
             'controller' => 'warehouse',
             'function' => 'ledger',
@@ -1109,9 +1317,9 @@ class Warehouse extends MY_Controller
             'perusahaan' => $conf['perusahaan']['nama_perusahaan'],
             'hakakses' => $conf['hakakses']['divisi_nama'],
             'current_gudang' => $gudang_id,
-            'warehouses' => $this->db->get('tbl_gudang')->result(),
+            'warehouses' => $warehouses,
             'logs' => $logs,
-            'stock_summary' => ($gudang_id > 0) ? $this->m_gudang->get_warehouse_stock($gudang_id) : []
+            'stock_summary' => $stock_summary
         ];
 
         if ($this->input->is_ajax_request()) {
@@ -1128,13 +1336,18 @@ class Warehouse extends MY_Controller
     {
         $material_id = $this->input->post('material_id', true);
         $gudang_id = $this->input->post('gudang_id', true);
-        $qty_aktual = (float) $this->input->post('qty_aktual', true);
+        $qty_aktual_input = (float) $this->input->post('qty_aktual', true);
         $catatan = $this->input->post('catatan', true) ?: 'Saldo Awal / Adjustment Manual';
 
         if (empty($material_id) || empty($gudang_id)) {
             echo json_encode(['success' => false, 'message' => 'Material dan Gudang harus dipilih.']);
             return;
         }
+        
+        // Convert display unit (from UI) to base unit
+        $material = $this->db->where('material_id', $material_id)->get('tbl_material')->row();
+        $konversi = ($material && !empty($material->konversi)) ? (float) $material->konversi : 1;
+        $qty_aktual = $qty_aktual_input * $konversi;
 
         // 1. Get current stock in system
         $current = $this->db->where([
@@ -1144,13 +1357,15 @@ class Warehouse extends MY_Controller
 
         $qty_sistem = $current ? (float) $current->qty : 0;
 
-        // 2. Calculate difference
         $diff = $qty_aktual - $qty_sistem;
 
         if ($diff == 0) {
             echo json_encode(['success' => false, 'message' => 'Stok aktual sama dengan stok sistem. Tidak ada perubahan.']);
             return;
         }
+
+        // Convert diff back to display units because update_stock_with_log expects display units
+        $diff_display = $diff / $konversi;
 
         // 3. Verify Owner/Developer PIN from tbl_karyawan (pin_produksi)
         $submitted_pin = $this->input->post('owner_pin', true);
@@ -1160,25 +1375,25 @@ class Warehouse extends MY_Controller
         $this->db->join('users u', 'u.karyawan_id = k.karyawan_id');
         $this->db->where('k.pin_produksi', $submitted_pin);
         $this->db->group_start();
-        $this->db->where('u.role_id', 17); // Owner Role
+        $this->db->where_in('u.role_id', [1, 5, 17]); // Admin, Operator Gudang, Owner Role
         $this->db->or_where('u.username', 'nizarsuryadi'); // Developer Bypass
         $this->db->group_end();
-
+        
         $authorizer = $this->db->get()->row();
 
         if (!$authorizer) {
-            echo json_encode(['success' => false, 'message' => 'VERIFIKASI GAGAL! PIN salah atau Anda tidak memiliki otoritas Owner.']);
+            echo json_encode(['success' => false, 'message' => 'VERIFIKASI GAGAL! PIN salah atau Anda tidak memiliki otoritas (Admin/Operator/Owner).']);
             return;
         }
 
         $catatan .= " - Diotorisasi oleh: " . $authorizer->nama_lengkap;
 
-        // 4. Update stock with log
-        $result = $this->m_gudang->update_stock_with_log($material_id, $gudang_id, $diff, 'Adjustment', 0, $catatan);
+        // 4. Update stock with log (pass display units!)
+        $result = $this->m_gudang->update_stock_with_log($material_id, $gudang_id, $diff_display, 'Adjustment', 0, $catatan);
 
         if ($result) {
             // [AUDIT LOG]
-            $this->_log_manual("Adjustment Stok Manual: $material_id", "Qty Aktual: $qty_aktual, Catatan: $catatan", 'WRITE');
+            $this->_log_manual("Adjustment Stok Manual: $material_id", "Qty Aktual (Base Unit): $qty_aktual, Diff: $diff_display (Display Unit), Catatan: $catatan", 'WRITE');
             // [USER ACTIVITY]
             log_activity($this->session->userdata('id'), 'stock_adjustment', 'Warehouse', $material_id);
 
@@ -1209,6 +1424,51 @@ class Warehouse extends MY_Controller
 
         header('Content-Type: application/json');
         echo json_encode($data);
+    }
+
+    /**
+     * MASTER DATA: Audit Trail (Rekam Jejak)
+     */
+    public function audit_log()
+    {
+        $conf = $this->_get_conf();
+        $data = [
+            'controller' => 'warehouse',
+            'function' => 'audit_log',
+            'conf' => $conf
+        ];
+
+        // Filter parameters
+        $filters = [
+            'start_date' => $this->input->get('start_date'),
+            'end_date'   => $this->input->get('end_date'),
+            'material_id'=> $this->input->get('material_id'),
+            'gudang_id'  => $this->input->get('gudang_id'),
+        ];
+        $data['filters'] = $filters;
+
+        // Fetch logs (user activity and stock mutations)
+        $this->load->model('Warehouse_model', 'warehouse_mdl');
+        $data['activity_logs'] = $this->warehouse_mdl->get_operator_logs(500); // larger limit for the main page
+        $data['stock_logs'] = $this->warehouse_mdl->get_stock_mutations_filtered($filters, 500);
+        
+        // If specific material is selected, get starting balance
+        $data['saldo_awal'] = 0;
+        if (!empty($filters['material_id'])) {
+            $data['saldo_awal'] = $this->warehouse_mdl->get_saldo_awal($filters);
+        }
+
+        // Fetch master data for dropdowns
+        $this->db->select('m.material_id, b.bahan_nama, m.varian');
+        $this->db->from('tbl_material m');
+        $this->db->join('tbl_bahan b', 'm.bahan_id = b.bahan_id');
+        $this->db->where('m.status', '1');
+        $this->db->order_by('b.bahan_nama', 'ASC');
+        $data['materials'] = $this->db->get()->result();
+        
+        $data['warehouses'] = $this->db->get('tbl_gudang')->result();
+
+        $this->load_admin_view('admin/warehouse/audit_log', $data);
     }
 
     /**
@@ -1386,6 +1646,29 @@ class Warehouse extends MY_Controller
         echo json_encode(['status' => 'success', 'data' => $data]);
     }
 
+    public function get_purchase_history_json()
+    {
+        header('Content-Type: application/json');
+        $bahan_id = $this->input->post('bahan_id', true);
+        if (!$bahan_id) {
+            echo json_encode(['status' => 'error', 'message' => 'ID Bahan wajib diisi!']);
+            return;
+        }
+
+        $this->db->select('pd.harga_beli, pd.qty, p.pembelian_tgl, p.no_faktur, s.supplier_nama, m.varian, m.konversi');
+        $this->db->from('tbl_pembelian_detail pd');
+        $this->db->join('tbl_pembelian p', 'p.pembelian_id = pd.pembelian_id', 'left');
+        $this->db->join('tbl_supplier s', 's.supplier_id = p.supplier_id', 'left');
+        $this->db->join('tbl_material m', 'm.material_id = pd.material_id', 'left');
+        $this->db->where('m.bahan_id', $bahan_id);
+        $this->db->order_by('p.pembelian_tgl', 'DESC');
+        $this->db->order_by('pd.detail_id', 'DESC');
+        $this->db->limit(30);
+        $data = $this->db->get()->result();
+
+        echo json_encode(['status' => 'success', 'data' => $data]);
+    }
+
     public function actionAddBahanBaku()
     {
         $nama = trim($this->input->post('bahanbaku_nama', true));
@@ -1398,22 +1681,22 @@ class Warehouse extends MY_Controller
             return;
         }
 
+        // Jika barcode kosong, generate otomatis
         if (empty($barcode)) {
-            $last = $this->db->select('barcode')->from('tbl_bahan')->order_by('bahan_id', 'DESC')->limit(1)->get()->row();
+            $last = $this->db->select('barcode')->from('tbl_bahan')->order_by('CAST(barcode AS UNSIGNED)', 'DESC')->limit(1)->get()->row();
             $barcode = ($last && is_numeric($last->barcode)) ? str_pad($last->barcode + 1, 8, '0', STR_PAD_LEFT) : '00000001';
         }
 
         $data = [
             'bahan_nama' => $nama,
             'barcode' => $barcode,
-            'satuan_id' => $satuan_id,
             'jenis_barang' => $jenis,
-            'active' => '1'
+            'satuan_id' => $satuan_id
         ];
 
         if ($this->db->insert('tbl_bahan', $data)) {
             $new_id = $this->db->insert_id();
-            // [AUDIT LOG]
+            // [LOGGING]
             $this->_log_manual("Tambah Master Bahan Baku: $nama", json_encode($data), 'WRITE');
             // [USER ACTIVITY]
             log_activity($this->session->userdata('id'), 'add_master_bahan', 'Warehouse', $new_id);
@@ -1432,6 +1715,11 @@ class Warehouse extends MY_Controller
         $jenis = $this->input->post('jenis_barang', true);
         $satuan_id = $this->input->post('satuan_id', true);
 
+        if (empty($nama) || empty($satuan_id) || empty($jenis) || empty($id)) {
+            echo json_encode(['status' => 'error', 'pesan' => 'Data wajib harus diisi.']);
+            return;
+        }
+
         $data = [
             'bahan_nama' => $nama,
             'barcode' => $barcode,
@@ -1441,6 +1729,11 @@ class Warehouse extends MY_Controller
 
         $this->db->where('bahan_id', $id);
         if ($this->db->update('tbl_bahan', $data)) {
+            // [LOGGING]
+            $this->_log_manual("Edit Master Bahan Baku: $nama (ID: $id)", json_encode($data), 'WRITE');
+            // [USER ACTIVITY]
+            log_activity($this->session->userdata('id'), 'edit_master_bahan', 'Warehouse', $id);
+
             echo json_encode(['status' => 'success', 'pesan' => 'Bahan berhasil diupdate.']);
         } else {
             echo json_encode(['status' => 'error', 'pesan' => 'Gagal update data.']);
@@ -1521,6 +1814,7 @@ class Warehouse extends MY_Controller
             'barcode' => $barcode,
             'satuan_gudang_id' => empty($satuan) ? 0 : $satuan,
             'konversi' => $konversi,
+            'stok_min' => (float)$this->input->post('stok_min', true),
             'status' => $this->input->post('status', true),
             'created_at' => date('Y-m-d H:i:s')
         ];
@@ -1560,6 +1854,7 @@ class Warehouse extends MY_Controller
             'barcode' => $barcode,
             'satuan_gudang_id' => empty($satuan) ? 0 : $satuan,
             'konversi' => $konversi,
+            'stok_min' => (float)$this->input->post('stok_min', true),
             'status' => $this->input->post('status', true),
             'updated_at' => date('Y-m-d H:i:s')
         ];
@@ -1666,6 +1961,39 @@ class Warehouse extends MY_Controller
             // Audit log for deletion
             $this->_log_manual('Delete Material Variant', "Material ID: $id", 'DELETE');
             echo json_encode(['status' => 'success', 'pesan' => 'Varian berhasil dihapus beserta data terkait.']);
+        }
+    }
+
+    public function actionDeleteMaterialBulk()
+    {
+        $ids = $this->input->post('ids', true);
+        if (empty($ids) || !is_array($ids)) {
+            echo json_encode(['status' => 'error', 'pesan' => 'Tidak ada varian yang dipilih.']);
+            return;
+        }
+
+        $this->db->trans_start();
+        $this->db->where_in('material_id', $ids);
+        $this->db->delete('tbl_stok_gudang');
+        $this->db->where_in('material_id', $ids);
+        $this->db->delete('tbl_stok_log');
+        $this->db->where_in('material_id', $ids);
+        $this->db->delete('tbl_pembelian_detail');
+        $this->db->where_in('material_id', $ids);
+        $this->db->delete('tbl_pengambilan_detail');
+        $this->db->where_in('material_id', $ids);
+        $this->db->delete('tbl_stok_opname');
+        $this->db->where_in('material_id', $ids);
+        $this->db->delete('tbl_return_pembelian_detail');
+        $this->db->where_in('material_id', $ids);
+        $this->db->delete('tbl_material');
+        $this->db->trans_complete();
+
+        if ($this->db->trans_status() === FALSE) {
+            echo json_encode(['status' => 'error', 'pesan' => 'Gagal menghapus varian dan data terkait.']);
+        } else {
+            $this->_log_manual('Delete Bulk Material Variant', "Material IDs: " . implode(',', $ids), 'DELETE');
+            echo json_encode(['status' => 'success', 'pesan' => count($ids) . ' varian berhasil dihapus.']);
         }
     }
 
@@ -2190,11 +2518,16 @@ class Warehouse extends MY_Controller
 
         $calendar_data = $this->m_gudang->getPembelianCalendarData($year, $month)->result();
         $calendar_events = [];
+        $total_transaksi_bulan = 0;
+        $total_nilai_bulan = 0;
+        
         foreach ($calendar_data as $event) {
             $calendar_events[$event->tanggal] = [
                 'jumlah_transaksi' => $event->jumlah_transaksi,
                 'total_nilai' => $event->total_nilai
             ];
+            $total_transaksi_bulan += $event->jumlah_transaksi;
+            $total_nilai_bulan += $event->total_nilai;
         }
 
         $pembelian_data = $this->m_gudang->getPembelianByDate($selected_date);
@@ -2218,6 +2551,8 @@ class Warehouse extends MY_Controller
             'pembelian_detail' => $pembelian_detail,
             'total_transaksi' => $total_transaksi,
             'total_nilai' => $total_nilai,
+            'total_transaksi_bulan' => $total_transaksi_bulan,
+            'total_nilai_bulan' => $total_nilai_bulan,
             'supplier_list' => $this->db->get('tbl_supplier')->result(),
             'bahan_list' => $this->db->get('tbl_bahan')->result(),
         ];
@@ -2254,6 +2589,32 @@ class Warehouse extends MY_Controller
 
         header('Content-Type: application/json');
         echo json_encode($response);
+    }
+
+    public function cetak_laporan_pembelian_harian()
+    {
+        $date = $this->input->get('date', true) ?: date('Y-m-d');
+        
+        $pembelian_data = $this->m_gudang->getPembelianByDate($date);
+        $pembelian_detail = $this->m_gudang->getPembelianDetailByDate($date)->result();
+        
+        $total_transaksi = count($pembelian_data);
+        $total_nilai = 0;
+        foreach ($pembelian_data as $pembelian) {
+            $total_nilai += (float) $pembelian->pembelian_total;
+        }
+
+        $data = [
+            'title' => 'Laporan Pembelian Harian',
+            'date' => $date,
+            'pembelian_data' => $pembelian_data,
+            'pembelian_detail' => $pembelian_detail,
+            'total_transaksi' => $total_transaksi,
+            'total_nilai' => $total_nilai,
+            'formatted_date' => date('d F Y', strtotime($date))
+        ];
+
+        $this->load->view('admin/gudang/cetak_laporan_pembelian_harian', $data);
     }
 
     // =====================================================
@@ -2403,7 +2764,9 @@ class Warehouse extends MY_Controller
 
     public function laporan_barang_keluar()
     {
-        $pengambilan_data = $this->m_gudang->getPengambilanWithDetails();
+        $current_month = date('m');
+        $current_year = date('Y');
+        $pengambilan_data = $this->m_gudang->getPengambilanWithDetails($current_month, $current_year);
         $data = array(
             'controller' => $this->uri->segment(1),
             'function' => $this->uri->segment(2),
@@ -2436,7 +2799,9 @@ class Warehouse extends MY_Controller
 
     public function barang_keluar()
     {
-        $pengambilan_data = $this->m_gudang->getPengambilanWithDetails();
+        $current_month = date('m');
+        $current_year = date('Y');
+        $pengambilan_data = $this->m_gudang->getPengambilanWithDetails($current_month, $current_year);
         $data = array(
             'controller' => $this->uri->segment(1),
             'function' => $this->uri->segment(2),
@@ -2484,7 +2849,9 @@ class Warehouse extends MY_Controller
 
     public function DaftarPengambilan()
     {
-        $pengambilan_data = $this->m_gudang->getPengambilanWithDetails()->result();
+        $current_month = date('m');
+        $current_year = date('Y');
+        $pengambilan_data = $this->m_gudang->getPengambilanWithDetails($current_month, $current_year)->result();
         $pengambilan_bulan_ini = 0;
         foreach ($pengambilan_data as $pengambilan) {
             if (date('Y-m') == date('Y-m', strtotime($pengambilan->pengambilan_tgl)))
@@ -2992,7 +3359,7 @@ class Warehouse extends MY_Controller
             'materials' => $this->warehouse->get_materials_dropdown(),
             'warehouses' => $this->warehouse->get_all_warehouses(),
             'temp_items' => $this->warehouse->get_temp_requests($user_id),
-            'recent_requests' => $this->warehouse->get_requests()
+            'recent_requests' => $this->warehouse->get_requests(['current_month' => true])
         ];
 
         $this->load_admin_view('admin/warehouse/requests', $data);
@@ -3241,5 +3608,192 @@ class Warehouse extends MY_Controller
         header('Content-Type: application/json');
         $data = $this->db->get('tbl_supplier')->result();
         echo json_encode(['status' => 'success', 'data' => $data]);
+    }
+
+    public function export_laporan_barang_keluar()
+    {
+        // Add export logic for items out report
+    }
+
+    /**
+     * LAPORAN PENGIRIMAN (DISPATCH) DENGAN KALENDER
+     */
+    public function laporan_pengiriman()
+    {
+        $year = $this->input->get('year', true) ?: date('Y');
+        $month = $this->input->get('month', true) ?: date('m');
+        $selected_date = $this->input->get('date', true) ?: date('Y-m-d');
+
+        $calendar_data = $this->m_gudang->getPengambilanCalendarData($year, $month)->result();
+        $calendar_events = [];
+        $total_transaksi_bulan = 0;
+        $total_qty_bulan = 0;
+        
+        foreach ($calendar_data as $event) {
+            $calendar_events[$event->tanggal] = [
+                'jumlah_transaksi' => $event->jumlah_transaksi,
+                'total_qty' => (float)$event->total_qty
+            ];
+            $total_transaksi_bulan += $event->jumlah_transaksi;
+            $total_qty_bulan += $event->total_qty;
+        }
+
+        $pengiriman_data = $this->m_gudang->getPengambilanByDate($selected_date);
+        $pengiriman_detail = $this->m_gudang->getPengambilanDetailByDate($selected_date)->result();
+
+        $total_transaksi = count($pengiriman_data);
+        $total_qty = 0;
+        foreach ($pengiriman_detail as $detail) {
+            $total_qty += $detail->qty;
+        }
+
+        $data = [
+            'title' => 'Laporan Pengiriman (Dispatch)',
+            'calendar_events' => $calendar_events,
+            'selected_date' => $selected_date,
+            'selected_year' => $year,
+            'selected_month' => $month,
+            'pengiriman_data' => $pengiriman_data,
+            'pengiriman_detail' => $pengiriman_detail,
+            'total_transaksi' => $total_transaksi,
+            'total_qty' => $total_qty,
+            'total_transaksi_bulan' => $total_transaksi_bulan,
+            'total_qty_bulan' => $total_qty_bulan,
+            'karyawan_list' => $this->db->get('tbl_karyawan')->result(),
+            'gudang_list' => $this->db->get('tbl_gudang')->result(),
+        ];
+        $this->load_admin_view('admin/gudang/laporan_pengiriman', $data);
+    }
+
+    public function get_pengiriman_by_date()
+    {
+        $date = $this->input->post('date', true);
+        if (!$date) {
+            echo json_encode(['success' => false, 'message' => 'Tanggal tidak boleh kosong']);
+            return;
+        }
+
+        $pengiriman_data = $this->m_gudang->getPengambilanByDate($date);
+        $pengiriman_detail = $this->m_gudang->getPengambilanDetailByDate($date)->result();
+
+        $total_transaksi = count($pengiriman_data);
+        $total_qty = 0;
+        foreach ($pengiriman_detail as $detail) {
+            $total_qty += (float) $detail->qty;
+        }
+
+        $response = [
+            'success' => true,
+            'data' => [
+                'pengiriman_data' => $pengiriman_data,
+                'pengiriman_detail' => $pengiriman_detail,
+                'total_transaksi' => $total_transaksi,
+                'total_qty' => $total_qty,
+                'formatted_date' => date_indo($date)
+            ]
+        ];
+
+        $this->output
+            ->set_content_type('application/json')
+            ->set_output(json_encode($response));
+    }
+    public function cetak_laporan_pengiriman_harian()
+    {
+        $date = $this->input->get('date', true) ?: date('Y-m-d');
+        
+        $pengiriman_data = $this->m_gudang->getPengambilanByDate($date);
+        $pengiriman_detail = $this->m_gudang->getPengambilanDetailByDate($date)->result();
+        
+        $total_transaksi = count($pengiriman_data);
+        $total_qty = 0;
+        foreach ($pengiriman_detail as $detail) {
+            $total_qty += (float) $detail->qty;
+        }
+
+        $data = [
+            'title' => 'Laporan Pengiriman Harian',
+            'date' => $date,
+            'pengiriman_data' => $pengiriman_data,
+            'pengiriman_detail' => $pengiriman_detail,
+            'total_transaksi' => $total_transaksi,
+            'total_qty' => $total_qty,
+            'formatted_date' => date_indo($date)
+        ];
+
+        $this->load->view('admin/gudang/cetak_laporan_pengiriman_harian', $data);
+    }
+
+    public function ajax_get_material_history()
+    {
+        if (!$this->input->is_ajax_request()) {
+            exit('No direct script access allowed');
+        }
+
+        $material_id = (int)$this->input->get('material_id');
+        $gudang_id = (int)$this->input->get('gudang_id');
+
+        if ($material_id <= 0 || $gudang_id <= 0) {
+            echo json_encode(['status' => 'error', 'message' => 'Invalid parameters']);
+            return;
+        }
+
+        $history = $this->warehouse->get_material_history($material_id, $gudang_id);
+        
+        $formatted_data = [];
+        foreach ($history as $row) {
+            $konversi = (float)$row->konversi > 0 ? (float)$row->konversi : 1;
+            $satuan_produksi = $row->satuan_produksi ?: 'pcs';
+            $satuan_gudang = $row->satuan_gudang ?: 'pcs';
+            
+            // Calculate in big units (satuan gudang)
+            $qty_in_big = (float)$row->qty_in;
+            $qty_out_big = (float)$row->qty_out;
+            $qty_balance_big = (float)$row->qty_balance / $konversi;
+
+            // Calculate in base units (satuan produksi)
+            $qty_in_base = round((float)$row->qty_in * $konversi);
+            $qty_out_base = round((float)$row->qty_out * $konversi);
+            $qty_balance_base = round((float)$row->qty_balance);
+
+            // Clean up redundant (Total Base: ...) text from catatan to make it simpler
+            $clean_catatan = preg_replace('/\s*\(Total Base: -?\d+(\.\d+)?\)/i', '', $row->catatan);
+
+            $format_compound = function($qty_base) use ($konversi, $satuan_gudang, $satuan_produksi) {
+                if ($konversi <= 1 || $qty_base == 0) {
+                    return rtrim(rtrim(number_format($qty_base / max(1, $konversi), 3, ',', '.'), '0'), ',') . ' ' . $satuan_gudang;
+                }
+                $is_negative = $qty_base < 0;
+                $abs_base = abs($qty_base);
+                $whole = floor($abs_base / $konversi);
+                $pieces = $abs_base % $konversi;
+                
+                $res = "";
+                if ($whole > 0 || ($whole == 0 && $pieces == 0)) {
+                    $res .= $whole . " " . $satuan_gudang;
+                }
+                if ($pieces > 0) {
+                    $res .= ($res ? " " : "") . $pieces . " " . $satuan_produksi;
+                }
+                return ($is_negative && $res !== '0 ' . $satuan_gudang ? '-' : '') . $res;
+            };
+
+            $formatted_data[] = [
+                'tanggal' => date('d/m/Y H:i', strtotime($row->created_at)),
+                'trx_type' => $row->trx_type,
+                'qty_in' => $qty_in_big,
+                'qty_out' => $qty_out_big,
+                'qty_balance' => $qty_balance_big,
+                'qty_in_fmt' => $format_compound($qty_in_base),
+                'qty_out_fmt' => $format_compound($qty_out_base),
+                'qty_balance_fmt' => $format_compound($qty_balance_base),
+                'qty_in_base_fmt' => number_format($qty_in_base, 0, ',', '.') . ' ' . $satuan_produksi,
+                'qty_out_base_fmt' => number_format($qty_out_base, 0, ',', '.') . ' ' . $satuan_produksi,
+                'qty_balance_base_fmt' => number_format($qty_balance_base, 0, ',', '.') . ' ' . $satuan_produksi,
+                'catatan' => $clean_catatan,
+                'username' => $row->username
+            ];
+        }
+
+        echo json_encode(['status' => 'success', 'data' => $formatted_data]);
     }
 }

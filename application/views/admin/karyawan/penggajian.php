@@ -426,10 +426,12 @@
                         PANEL PAYROLL</h6>
                 </div>
                 <div class="badge bg-white text-primary-tgm border border-primary-tgm border-opacity-25 px-3 py-2 font-mono"
-                    style="border-radius: 50px; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.05);">
+                    style="border-radius: 50px; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.05); cursor: pointer;"
+                    data-bs-toggle="modal" data-bs-target="#modalPayrollRange">
                     <i class="bi bi-calendar3 me-2"></i>
                     <?= date('d M Y', strtotime($payroll_range['start'])) ?> —
                     <?= date('d M Y', strtotime($payroll_range['end'])) ?>
+                    <i class="bi bi-gear-fill ms-2 text-muted" title="Ubah Periode"></i>
                 </div>
             </div>
 
@@ -735,12 +737,12 @@
                                     <?= (isset($salary['biaya_makan_lembur']) && $salary['biaya_makan_lembur'] > 0) ? number_format($salary['biaya_makan_lembur']) : '-' ?>
                                 </td>
                                 <td class="text-end font-mono">
-                                    <?php $total_bonus = $salary['reward'] + $salary['bpjs'] + $salary['tunjangan_extra'] + $salary['tunjangan_kinerja_manual'] + $salary['bonus_kinerja'] + $salary['bonus_kehadiran']; ?>
+                                    <?php $total_bonus = $salary['reward'] + $salary['bpjs'] + $salary['tunjangan_extra'] + $salary['tunjangan_kinerja_manual'] + $salary['bonus_kinerja'] + $salary['bonus_kehadiran'] + ($salary['custom_in1_nom']??0) + ($salary['custom_in2_nom']??0) + ($salary['custom_in3_nom']??0); ?>
                                     <span class="text-primary-tgm"><?= number_format($total_bonus) ?></span>
                                 </td>
                                 <td class="text-end font-mono text-rose">
                                     <?php
-                                    $total_potongan = $salary['potongan_alpha'] + $salary['kasbon'] + $salary['potongan_terlambat'] + $salary['pinjaman'];
+                                    $total_potongan = $salary['potongan_alpha'] + $salary['kasbon'] + $salary['potongan_terlambat'] + $salary['pinjaman'] + ($salary['custom_out1_nom']??0) + ($salary['custom_out2_nom']??0) + ($salary['custom_out3_nom']??0);
                                     $total_alpha_days = $salary['total_alpha'] ?? 0;
                                     $total_telat_detik = $salary['total_detik_telat'] ?? 0;
                                     ?>
@@ -767,8 +769,33 @@
                                 </td>
                                 <td class="text-center pe-3">
                                     <div class="d-flex gap-1 justify-content-center">
+                                        <?php
+                                        $manual_data = [
+                                            'karyawan_id' => $salary['karyawan_id'],
+                                            'nama_lengkap' => $salary['nama_lengkap'],
+                                            'bulan' => $bulan,
+                                            'reward' => $salary['reward'],
+                                            'bpjs' => $salary['bpjs'],
+                                            'tunjangan_extra' => $salary['tunjangan_extra'],
+                                            'tunjangan_kinerja_manual' => $salary['tunjangan_kinerja_manual'],
+                                            'kasbon' => $salary['kasbon'],
+                                            'pinjaman' => $salary['pinjaman'],
+                                            'custom_in1_nama' => $salary['custom_in1_nama'] ?? '',
+                                            'custom_in1_nom' => $salary['custom_in1_nom'] ?? 0,
+                                            'custom_in2_nama' => $salary['custom_in2_nama'] ?? '',
+                                            'custom_in2_nom' => $salary['custom_in2_nom'] ?? 0,
+                                            'custom_in3_nama' => $salary['custom_in3_nama'] ?? '',
+                                            'custom_in3_nom' => $salary['custom_in3_nom'] ?? 0,
+                                            'custom_out1_nama' => $salary['custom_out1_nama'] ?? '',
+                                            'custom_out1_nom' => $salary['custom_out1_nom'] ?? 0,
+                                            'custom_out2_nama' => $salary['custom_out2_nama'] ?? '',
+                                            'custom_out2_nom' => $salary['custom_out2_nom'] ?? 0,
+                                            'custom_out3_nama' => $salary['custom_out3_nama'] ?? '',
+                                            'custom_out3_nom' => $salary['custom_out3_nom'] ?? 0,
+                                        ];
+                                        ?>
                                         <button type="button" class="btn-action-mini text-warning" title="Edit Manual"
-                                            onclick="showEditManual('<?= $salary['karyawan_id'] ?>', '<?= $salary['nama_lengkap'] ?>', '<?= $bulan ?>', <?= $salary['reward'] ?>, <?= $salary['bpjs'] ?>, <?= $salary['tunjangan_extra'] ?>, <?= $salary['tunjangan_kinerja_manual'] ?>, <?= $salary['kasbon'] ?>, <?= $salary['pinjaman'] ?>)">
+                                            onclick="showEditManual(<?= htmlspecialchars(json_encode($manual_data), ENT_QUOTES, 'UTF-8') ?>)">
                                             <i class="bi bi-pencil-square"></i>
                                         </button>
                                         <?php
@@ -1537,7 +1564,7 @@
 </div>
 <!-- Modal Edit Manual Payroll -->
 <div class="modal fade" id="modalEditManual" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
         <div class="modal-content border-0 shadow">
             <div class="modal-header bg-warning text-dark">
                 <h5 class="modal-title"><i class="fa fa-edit me-2"></i>Edit Manual Payroll</h5>
@@ -1583,6 +1610,33 @@
                             <input type="number" class="form-control form-control-sm" id="editPinjaman" name="pinjaman"
                                 value="0" min="0">
                         </div>
+
+                        <!-- Custom Incomes -->
+                        <div class="col-12 mt-2 pt-2 border-top">
+                            <span class="badge bg-success rounded-pill px-3 py-1 mb-2">Tambahan Pendapatan (Custom)</span>
+                        </div>
+                        <?php for ($i=1; $i<=3; $i++): ?>
+                        <div class="col-md-6">
+                            <input type="text" class="form-control form-control-sm mb-1" id="editCustomIn<?= $i ?>Nama" name="custom_in<?= $i ?>_nama" placeholder="Nama Komponen <?= $i ?>">
+                        </div>
+                        <div class="col-md-6">
+                            <input type="number" class="form-control form-control-sm" id="editCustomIn<?= $i ?>Nom" name="custom_in<?= $i ?>_nom" value="0" min="0">
+                        </div>
+                        <?php endfor; ?>
+
+                        <!-- Custom Deductions -->
+                        <div class="col-12 mt-2 pt-2 border-top">
+                            <span class="badge bg-danger rounded-pill px-3 py-1 mb-2">Tambahan Potongan (Custom)</span>
+                        </div>
+                        <?php for ($i=1; $i<=3; $i++): ?>
+                        <div class="col-md-6">
+                            <input type="text" class="form-control form-control-sm mb-1" id="editCustomOut<?= $i ?>Nama" name="custom_out<?= $i ?>_nama" placeholder="Nama Potongan <?= $i ?>">
+                        </div>
+                        <div class="col-md-6">
+                            <input type="number" class="form-control form-control-sm" id="editCustomOut<?= $i ?>Nom" name="custom_out<?= $i ?>_nom" value="0" min="0">
+                        </div>
+                        <?php endfor; ?>
+
                         <div class="col-12 mt-3 pt-3 border-top">
                             <div class="bg-light p-2 rounded-3 text-center">
                                 <small class="text-muted italic"><i class="fa fa-info-circle me-1"></i>Komponen Kasbon &
@@ -1775,16 +1829,23 @@
 </div>
 
 <script>
-    function showEditManual(karyawanId, namaLengkap, bulan, reward, bpjs, tunjExtra, tunjKinerja, kasbon, pinjaman) {
-        document.getElementById('editManualName').innerText = namaLengkap;
-        document.getElementById('editManualKaryawanId').value = karyawanId;
-        document.getElementById('editManualBulan').value = bulan;
-        document.getElementById('editReward').value = reward;
-        document.getElementById('editBPJS').value = bpjs;
-        document.getElementById('editTunjExtra').value = tunjExtra;
-        document.getElementById('editTunjKinerja').value = tunjKinerja;
-        document.getElementById('editKasbon').value = kasbon;
-        document.getElementById('editPinjaman').value = pinjaman;
+    function showEditManual(data) {
+        document.getElementById('editManualName').innerText = data.nama_lengkap;
+        document.getElementById('editManualKaryawanId').value = data.karyawan_id;
+        document.getElementById('editManualBulan').value = data.bulan;
+        document.getElementById('editReward').value = data.reward;
+        document.getElementById('editBPJS').value = data.bpjs;
+        document.getElementById('editTunjExtra').value = data.tunjangan_extra;
+        document.getElementById('editTunjKinerja').value = data.tunjangan_kinerja_manual;
+        document.getElementById('editKasbon').value = data.kasbon;
+        document.getElementById('editPinjaman').value = data.pinjaman;
+
+        for(let i=1; i<=3; i++) {
+            document.getElementById('editCustomIn'+i+'Nama').value = data['custom_in'+i+'_nama'] || '';
+            document.getElementById('editCustomIn'+i+'Nom').value = data['custom_in'+i+'_nom'] || 0;
+            document.getElementById('editCustomOut'+i+'Nama').value = data['custom_out'+i+'_nama'] || '';
+            document.getElementById('editCustomOut'+i+'Nom').value = data['custom_out'+i+'_nom'] || 0;
+        }
 
         const myModal = new bootstrap.Modal(document.getElementById('modalEditManual'));
         myModal.show();
@@ -2247,3 +2308,80 @@
         background: #3b82f6;
     }
 </style>
+<!-- Modal Pengaturan Periode Payroll -->
+<div class="modal fade" id="modalPayrollRange" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 1.25rem;">
+            <div class="modal-header border-0 bg-light pb-2">
+                <h6 class="modal-title fw-900 text-dark"><i class="bi bi-calendar-range me-2 text-primary-tgm"></i>PENGATURAN PERIODE PAYROLL</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="formPayrollRange">
+                <div class="modal-body p-4">
+                    <p class="text-muted small mb-4">Atur tanggal mulai dan selesai periode penggajian untuk cabang ini.</p>
+                    <input type="hidden" name="perusahaan_id" value="<?= isset($perusahaan_id) && $perusahaan_id ? $perusahaan_id : $this->session->userdata('perusahaan_id') ?>">
+                    
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <label class="form-label text-muted small fw-bold text-uppercase ls-1">Tanggal Mulai</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control fw-bold font-mono" name="start_day" value="<?= isset($payroll_range['start']) ? date('d', strtotime($payroll_range['start'])) : 26 ?>" min="1" max="31" required>
+                            </div>
+                            <div class="form-text x-small">Tgl bulan sebelumnya</div>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label text-muted small fw-bold text-uppercase ls-1">Tanggal Akhir</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control fw-bold font-mono" name="end_day" value="<?= isset($payroll_range['end']) ? date('d', strtotime($payroll_range['end'])) : 25 ?>" min="1" max="31" required>
+                            </div>
+                            <div class="form-text x-small">Tgl bulan berjalan</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 p-4 bg-light">
+                    <button type="button" class="btn btn-white rounded-pill px-4 fw-bold shadow-sm" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-primary-tgm rounded-pill px-4 fw-bold shadow-sm"><i class="bi bi-save me-2"></i>Simpan Pengaturan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    $('#formPayrollRange').on('submit', function(e) {
+        e.preventDefault();
+        let btn = $(this).find('button[type="submit"]');
+        let originalText = btn.html();
+        
+        btn.html('<i class="spinner-border spinner-border-sm me-2"></i>Menyimpan...').prop('disabled', true);
+        
+        $.ajax({
+            url: '<?= base_url('karyawan/update_payroll_range') ?>',
+            type: 'POST',
+            data: $(this).serialize(),
+            dataType: 'json',
+            success: function(res) {
+                if (res.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Berhasil',
+                        text: res.message,
+                        showConfirmButton: false,
+                        timer: 1500
+                    }).then(() => {
+                        location.reload();
+                    });
+                } else {
+                    Swal.fire('Error', res.message, 'error');
+                    btn.html(originalText).prop('disabled', false);
+                }
+            },
+            error: function() {
+                Swal.fire('Error', 'Terjadi kesalahan server.', 'error');
+                btn.html(originalText).prop('disabled', false);
+            }
+        });
+    });
+});
+</script>

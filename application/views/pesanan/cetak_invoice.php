@@ -432,6 +432,15 @@ if (!function_exists('invoice_detail_metadata')) {
                                                     }
                                                 }
                                             }
+                                        } else {
+                                            $cat_sch = !empty($dt->kategori_schema) ? json_decode($dt->kategori_schema, true) : [];
+                                            $prd_sch = !empty($dt->product_schema) ? json_decode($dt->product_schema, true) : [];
+                                            if (is_array($cat_sch)) {
+                                                foreach ($cat_sch as $s) if (isset($s['name'])) $schema_map[$s['name']] = $s;
+                                            }
+                                            if (is_array($prd_sch)) {
+                                                foreach ($prd_sch as $s) if (isset($s['name'])) $schema_map[$s['name']] = $s;
+                                            }
                                         }
 
                                         // 3. Render Combined Metadata
@@ -458,8 +467,8 @@ if (!function_exists('invoice_detail_metadata')) {
                                                 }
                                             }
 
-                                            // Skip ket_1 and lebar for Tekstil/DTF because we already display it in P x L
-                                            if (in_array($dt->kategori_id, [5, 9]) && in_array($key_lower, ['ket_1', 'lebar'])) {
+                                            // Skip ket_1 and lebar for DTF because we already display it in P x L
+                                            if ($dt->kategori_id == 9 && in_array($key_lower, ['ket_1', 'lebar'])) {
                                                 continue;
                                             }
 
@@ -493,6 +502,15 @@ if (!function_exists('invoice_detail_metadata')) {
                                             if (strpos($key_lower, 'ket_') === 0 && !$is_in_schema) {
                                                 $val = trim($val, '[]');
                                                 if (!empty($val)) {
+                                                    if (isset($dt->kategori_id) && $dt->kategori_id == 1) {
+                                                        if ($val == '1' || strtolower(trim($val)) == '1 side')
+                                                            $val = '1 Sisi';
+                                                        elseif ($val == '2' || strtolower(trim($val)) == '2 side')
+                                                            $val = '2 Sisi';
+                                                        elseif ($val == '3' || stripos($val, 'Tidak Ada') !== false)
+                                                            continue;
+                                                    }
+
                                                     $val_clean = strtolower(trim($val));
                                                     if (!in_array($val_clean, $printed_values)) {
                                                         $meta_str .= "$val &bull; ";
@@ -504,7 +522,7 @@ if (!function_exists('invoice_detail_metadata')) {
 
                                             $val_clean = strtolower(trim($val));
                                             if (!in_array($val_clean, $printed_values)) {
-                                                $meta_str .= "$label: $val &bull; ";
+                                                $meta_str .= "$val &bull; ";
                                                 $printed_values[] = $val_clean;
                                             }
                                         }
@@ -547,11 +565,38 @@ if (!function_exists('invoice_detail_metadata')) {
 
                     <!-- Payment Summary -->
                     <table class='bayar'>
+                        <?php
+                        $diskon = isset($pembayaran->diskon_total) ? floatval($pembayaran->diskon_total) : (isset($pembayaran->diskon) ? floatval($pembayaran->diskon) : 0);
+                        $ongkir = isset($pembayaran->ongkir) ? floatval($pembayaran->ongkir) : 0;
+                        $total_tagihan_calc = (isset($pembayaran->total_tagihan) && $pembayaran->total_tagihan > 0) ? floatval($pembayaran->total_tagihan) : ($subtotal + $ongkir - $diskon);
+                        $is_lunas = $pembayaran->total_bayar >= $total_tagihan_calc;
+                        ?>
                         <tr>
                             <td width="50%"></td>
                             <td colspan="3">Sub Total</td>
                             <td align="right"><?= number_format($subtotal, 0, ".", ".") ?></td>
                         </tr>
+                        <?php if ($diskon > 0): ?>
+                            <tr>
+                                <td></td>
+                                <td colspan="3">Diskon</td>
+                                <td align="right"><?= number_format($diskon, 0, ".", ".") ?></td>
+                            </tr>
+                        <?php endif; ?>
+                        <?php if ($ongkir > 0): ?>
+                            <tr>
+                                <td></td>
+                                <td colspan="3">Ongkir</td>
+                                <td align="right"><?= number_format($ongkir, 0, ".", ".") ?></td>
+                            </tr>
+                        <?php endif; ?>
+                        <?php if ($diskon > 0 || $ongkir > 0 || (isset($pembayaran->total_tagihan) && $pembayaran->total_tagihan != $subtotal)): ?>
+                            <tr>
+                                <td></td>
+                                <td colspan="3">Total Tagihan</td>
+                                <td align="right"><?= number_format($total_tagihan_calc, 0, ".", ".") ?></td>
+                            </tr>
+                        <?php endif; ?>
                         <tr>
                             <td colspan="5">
                                 <hr style="margin: 5px 0;">
@@ -570,17 +615,17 @@ if (!function_exists('invoice_detail_metadata')) {
                         </tr>
                         <tr>
                             <td></td>
-                            <td colspan="3"><?= ($pembayaran->total_bayar >= $subtotal) ? 'Kembali' : 'Kekurangan' ?>
+                            <td colspan="3"><?= ($is_lunas) ? 'Kembali' : 'Kekurangan' ?>
                             </td>
                             <td align="right">
-                                <?= number_format(abs($pembayaran->total_bayar - $subtotal), 0, ".", ".") ?>
+                                <?= number_format(abs($pembayaran->total_bayar - $total_tagihan_calc), 0, ".", ".") ?>
                             </td>
                         </tr>
                         <tr>
                             <td colspan="5" align="center" style="padding-top: 15px;">
                                 <div
                                     style="border: 2px solid #333; display: inline-block; padding: 5px 15px; font-weight: bold; border-radius: 5px;">
-                                    <?= ($pembayaran->total_bayar >= $subtotal) ? 'LUNAS' : 'BELUM LUNAS' ?>
+                                    <?= ($is_lunas) ? 'LUNAS' : 'BELUM LUNAS' ?>
                                 </div>
                             </td>
                         </tr>

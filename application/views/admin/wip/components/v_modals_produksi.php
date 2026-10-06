@@ -325,7 +325,7 @@ $operators = $operators ?? [];
                                 <div id="compItemList" class="mt-2 border rounded-3 overflow-auto bg-light p-1 shadow-inner" style="max-height: 420px;">
                                     <!-- Items will be injected here via JS -->
                                 </div>
-                                <div class="form-text mt-2 text-danger" style="font-size: 0.7rem;"><i class="fas fa-info-circle me-1"></i> Item yang ditandai <b>GAGAL (REJEK)</b> akan kembali ke Antrian.</div>
+                                <div class="form-text mt-2 text-danger" style="font-size: 0.7rem;"><i class="fas fa-info-circle me-1"></i> Item yang ditandai <b>GAGAL (REJEK)</b> tetap pada tahap aktif. Hasil dan pemakaian bahan aktual dicatat.</div>
                             </div>
                         </div>
                     </div>
@@ -452,12 +452,11 @@ $operators = $operators ?? [];
 
                     <div class="mb-4">
                         <div class="form-check form-switch bg-light p-3 rounded-3 border">
-                            <input class="form-check-input ms-0 me-2" type="checkbox" id="rijekReprint" checked
+                            <input class="form-check-input ms-0 me-2" type="checkbox" id="rijekReprint"
                                 style="float: none;">
-                            <label class="form-check-label fw-bold text-danger" for="rijekReprint">Cetak Ulang
+                            <label class="form-check-label fw-bold text-danger" for="rijekReprint">Ajukan Cetak Ulang
                                 (Reprint)?</label>
-                            <div class="small text-muted mt-1">Jika aktif, status item yang dipilih akan di-reset ke
-                                <b>Antrian Awal</b>.
+                            <div class="small text-muted mt-1">Permintaan dicatat untuk ditinjau supervisor. Riwayat produksi dan pemakaian bahan tetap tersimpan.
                             </div>
                         </div>
                     </div>

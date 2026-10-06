@@ -143,6 +143,17 @@ class Konsumen extends MY_Controller
             'konsumen_alamat' => $this->input->post('konsumen_alamat', true),
             'konsumen_nohp' => $this->input->post('konsumen_nohp', true),
             'konsumen_email' => $this->input->post('konsumen_email', true),
+            'tipe_konsumen' => $this->input->post('tipe_konsumen', true) ?: 'B2C',
+            'perusahaan' => $this->input->post('perusahaan', true),
+            'npwp' => $this->input->post('npwp', true),
+            'pic_nama' => $this->input->post('pic_nama', true),
+            'provinsi_id' => $this->input->post('provinsi_id', true) ?: null,
+            'kota_id' => $this->input->post('kota_id', true) ?: null,
+            'kecamatan_id' => $this->input->post('kecamatan_id', true) ?: null,
+            'kode_pos' => $this->input->post('kode_pos', true),
+            'kredit_limit' => $this->input->post('kredit_limit', true) ? floatval(str_replace(',', '', $this->input->post('kredit_limit', true))) : 0,
+            'top_hari' => $this->input->post('top_hari', true) ?: 0,
+            'password' => $this->input->post('password') ? password_hash($this->input->post('password'), PASSWORD_DEFAULT) : null
         );
         
         $add = $this->M_master->addData($table, $data);
@@ -176,6 +187,14 @@ class Konsumen extends MY_Controller
             'konsumen_alamat' => $this->input->post('konsumen_alamat', true),
             'konsumen_nohp' => $this->input->post('konsumen_nohp', true),
             'konsumen_email' => $this->input->post('konsumen_email', true),
+            'tipe_konsumen' => $this->input->post('tipe_konsumen', true) ?: 'B2C',
+            'perusahaan' => $this->input->post('perusahaan', true),
+            'npwp' => $this->input->post('npwp', true),
+            'pic_nama' => $this->input->post('pic_nama', true),
+            'provinsi_id' => $this->input->post('provinsi_id', true) ?: null,
+            'kota_id' => $this->input->post('kota_id', true) ?: null,
+            'kecamatan_id' => $this->input->post('kecamatan_id', true) ?: null,
+            'kode_pos' => $this->input->post('kode_pos', true),
             // Default fields jika tidak disertakan dalam AJAX
             // 'password'              => md5($this->input->post('konsumen_nohp', true)),
             // 'status'                => '1'
@@ -229,8 +248,24 @@ class Konsumen extends MY_Controller
             'konsumen_alamat' => $this->input->post('konsumen_alamat', true),
             'konsumen_nohp' => $this->input->post('konsumen_nohp', true),
             'konsumen_email' => $this->input->post('konsumen_email', true),
-            'status' => $this->input->post('status', true)
+            'status' => $this->input->post('status', true),
+            'tipe_konsumen' => $this->input->post('tipe_konsumen', true) ?: 'B2C',
+            'perusahaan' => $this->input->post('perusahaan', true),
+            'npwp' => $this->input->post('npwp', true),
+            'pic_nama' => $this->input->post('pic_nama', true),
+            'provinsi_id' => $this->input->post('provinsi_id', true) ?: null,
+            'kota_id' => $this->input->post('kota_id', true) ?: null,
+            'kecamatan_id' => $this->input->post('kecamatan_id', true) ?: null,
+            'kode_pos' => $this->input->post('kode_pos', true),
+            'kredit_limit' => $this->input->post('kredit_limit', true) ? floatval(str_replace(',', '', $this->input->post('kredit_limit', true))) : 0,
+            'top_hari' => $this->input->post('top_hari', true) ?: 0
         ];
+        
+        // Update password if provided (for marketplace login)
+        $password = $this->input->post('password');
+        if (!empty($password)) {
+            $data['password'] = password_hash($password, PASSWORD_DEFAULT);
+        }
 
         // Validasi input
         if ($id && !empty($data['konsumen_nama'])) {

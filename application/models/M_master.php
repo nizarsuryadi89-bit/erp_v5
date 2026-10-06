@@ -340,6 +340,7 @@ class M_master extends CI_model
 
     function routingbykode($kode, $harga_id = null)
     {
+        $this->db->select('routing.*, tbl_operator.operator_nama, tbl_operator.operator_keterangan, bom_lines.panjang, bom_lines.lebar, bom_lines.quantity, bom_lines.calc_type, bom_lines.satuan_id, bom_lines.scrap_factor, bom_lines.bahan_id');
         $this->db->where('routing.product_id', $kode);
         $this->db->join('tbl_operator', 'tbl_operator.operator_id = routing.operator_id', 'left');
         $this->db->join('bom_lines', 'bom_lines.bom_line_id = routing.bom_line_id', 'left');
@@ -378,6 +379,38 @@ class M_master extends CI_model
 
         // If we found specific routes, use ONLY them. Otherwise, use global routes.
         $final_routes = count($specific_routes) > 0 ? $specific_routes : $global_routes;
+
+        // [NEW] Fallback Logic: If no final routes are found, try sibling price tiers of the same variation
+        if (empty($final_routes) && $harga_id !== null) {
+            $current_harga = $this->db->get_where('tbl_harga_product', ['harga_id' => $harga_id])->row();
+            if ($current_harga && !empty($current_harga->metadata)) {
+                $sibling_hargas = $this->db->select('harga_id')
+                    ->where('product_id', $kode)
+                    ->where('metadata', $current_harga->metadata)
+                    ->where('harga_id !=', $harga_id)
+                    ->get('tbl_harga_product')->result_array();
+                
+                if (!empty($sibling_hargas)) {
+                    $sibling_ids = array_column($sibling_hargas, 'harga_id');
+                    $this->db->where('routing.product_id', $kode);
+                    $this->db->where_in('routing.harga_id', $sibling_ids);
+                    $this->db->join('tbl_operator', 'tbl_operator.operator_id = routing.operator_id', 'left');
+                    $this->db->join('bom_lines', 'bom_lines.bom_line_id = routing.bom_line_id', 'left');
+                    $this->db->order_by('routing.routing_urutan', 'ASC');
+                    $sibling_routes = $this->db->get('routing')->result_array();
+
+                    if (!empty($sibling_routes)) {
+                        // Filter to use only ONE sibling's routes to avoid mixing if multiple siblings have routes
+                        $first_sibling_harga_id = $sibling_routes[0]['harga_id'];
+                        foreach ($sibling_routes as $sr) {
+                            if ($sr['harga_id'] == $first_sibling_harga_id) {
+                                $final_routes[] = $sr;
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Ensure they are sorted by sequence number
         usort($final_routes, function($a, $b) {
@@ -793,8 +826,8 @@ class M_master extends CI_model
                     tbl_type.tipe_nama,
                     tbl_side.side_name,
                     tbl_metode.metode_nama,
-                    0 as min_price,
-                    0 as max_price,
+                    (SELECT MIN(harga_1) FROM tbl_harga_product WHERE product_id = tbl_product.product_id) as min_price,
+                    (SELECT MAX(harga_1) FROM tbl_harga_product WHERE product_id = tbl_product.product_id) as max_price,
                     0 as calculated_hpp
                 ');
 
@@ -941,10 +974,17 @@ class M_master extends CI_model
 
     function getHarga($id)
     {
+        $this->db->select('tbl_product.*, tbl_satuan.*, tbl_range.*, tbl_harga_product.*');
         $this->db->join('tbl_product', 'tbl_product.product_id = tbl_harga_product.product_id');
         $this->db->join('tbl_satuan', 'tbl_satuan.satuan_id = tbl_product.satuan_id');
         $this->db->join('tbl_range', 'tbl_range.range_id = tbl_harga_product.range_id', 'left');
         $this->db->where('tbl_harga_product.product_id', $id);
+        $this->db->order_by('tbl_harga_product.detail_product', 'ASC');
+        $this->db->order_by('tbl_harga_product.ket_1', 'ASC');
+        $this->db->order_by('tbl_harga_product.jenisprint_id', 'ASC');
+        $this->db->order_by('tbl_harga_product.side_id', 'ASC');
+        $this->db->order_by('tbl_harga_product.qty_min', 'ASC');
+        $this->db->order_by('tbl_harga_product.qty_max', 'ASC');
         return $this->db->get('tbl_harga_product');
     }
 

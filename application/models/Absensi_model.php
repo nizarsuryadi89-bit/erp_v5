@@ -63,6 +63,11 @@ class Absensi_model extends CI_Model
         $this->db->where('k.nik NOT LIKE', 'STATION-%');
         $this->db->where('k.nik NOT LIKE', 'TERM%');
 
+        $ci =& get_instance();
+        if (!empty($ci->session->userdata('perusahaan_id')) && $ci->session->userdata('perusahaan_id') != 1) {
+            $this->db->where('k.perusahaan_id', $ci->session->userdata('perusahaan_id'));
+        }
+
         if (!empty($karyawan_id)) {
             $this->db->where('k.karyawan_id', $karyawan_id);
         }
@@ -110,6 +115,12 @@ class Absensi_model extends CI_Model
         $this->db->where("k.nik NOT LIKE 'STATION-%'");
         $this->db->where("k.nik NOT LIKE 'TERM%'");
         $this->db->where('a.tanggal', $tanggal);
+        
+        $ci =& get_instance();
+        if (!empty($ci->session->userdata('perusahaan_id')) && $ci->session->userdata('perusahaan_id') != 1) {
+            $this->db->where('k.perusahaan_id', $ci->session->userdata('perusahaan_id'));
+        }
+
         return $this->db->get()->result();
     }
 
@@ -215,6 +226,12 @@ class Absensi_model extends CI_Model
         $this->db->where('u.role_id !=', 17);
         $this->db->or_where('u.role_id IS NULL');
         $this->db->group_end();
+
+        $ci =& get_instance();
+        if (!empty($ci->session->userdata('perusahaan_id')) && $ci->session->userdata('perusahaan_id') != 1) {
+            $this->db->where('k.perusahaan_id', $ci->session->userdata('perusahaan_id'));
+        }
+
         $this->db->group_by('k.karyawan_id');
         $this->db->order_by('k.nama_lengkap ASC');
         $result = $this->db->get()->result();
@@ -291,6 +308,11 @@ class Absensi_model extends CI_Model
 
         if ($perusahaan_id) {
             $this->db->where('k.perusahaan_id', $perusahaan_id);
+        }
+
+        $ci =& get_instance();
+        if (!empty($ci->session->userdata('perusahaan_id')) && $ci->session->userdata('perusahaan_id') != 1) {
+            $this->db->where('k.perusahaan_id', $ci->session->userdata('perusahaan_id'));
         }
 
         $this->db->order_by('a.jam_masuk ASC');

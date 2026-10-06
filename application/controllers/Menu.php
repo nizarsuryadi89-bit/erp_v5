@@ -380,7 +380,8 @@ class Menu extends MY_Controller
             'total_submenu' => $this->getTotalSubmenu(),
             'active_submenu' => $this->getActiveSubmenuCount($submenu),
             'inactive_submenu' => $this->getInactiveSubmenuCount($submenu),
-            'roles' => $this->db->order_by($role_pk, 'ASC')->get('roles')->result()
+            'roles' => $this->db->order_by($role_pk, 'ASC')->get('roles')->result(),
+            'all_users' => $this->db->select('user_id, username, email')->where('active', 1)->order_by('username', 'ASC')->get('users')->result()
         );
 
         // [NEW] Enrich submenus with access levels
@@ -389,6 +390,14 @@ class Menu extends MY_Controller
                 ->from('tbl_submenu_access sa')
                 ->join('roles r', "r.$role_pk = sa.role_id")
                 ->where('sa.submenu_id', $sm->id)
+                ->get()
+                ->result();
+                
+            // [NEW] Fetch user specific access
+            $sm->user_access_levels = $this->db->select("u.user_id, u.username")
+                ->from('tbl_user_submenu_access usa')
+                ->join('users u', "u.user_id = usa.user_id")
+                ->where('usa.submenu_id', $sm->id)
                 ->get()
                 ->result();
         }
@@ -461,6 +470,7 @@ class Menu extends MY_Controller
         if ($insert) {
             $menu_id = $this->db->insert_id();
             $this->_syncMenuAccess($menu_id, $access_levels);
+            $this->session->unset_userdata('app_session_cache');
             echo json_encode(['status' => 'success', 'pesan' => 'Menu berhasil ditambahkan']);
         } else {
             echo json_encode(['status' => 'error', 'pesan' => 'Gagal menambahkan menu']);
@@ -506,11 +516,65 @@ class Menu extends MY_Controller
 
         if ($update) {
             $this->_syncMenuAccess($menu_id, $access_levels);
+            $this->session->unset_userdata('app_session_cache');
             echo json_encode(['status' => 'success', 'pesan' => 'Menu berhasil diperbarui']);
         } else {
             echo json_encode(['status' => 'error', 'pesan' => 'Gagal memperbarui menu']);
         }
     }
+
+    
+    /**
+     * Inline Toggle Role Access
+     */
+    public function actionToggleRole()
+    {
+        header('Content-Type: application/json');
+        
+        $type = $this->input->post('type', true);
+        $menu_id = $this->input->post('menu_id', true);
+        $role_id = $this->input->post('role_id', true);
+        
+        if (empty($type) || empty($menu_id) || empty($role_id)) {
+            echo json_encode(['status' => 'error', 'pesan' => 'Data tidak lengkap']);
+            return;
+        }
+
+        $table = ($type === 'menu') ? 'tbl_menu_access' : 'tbl_submenu_access';
+        $menu_col = ($type === 'menu') ? 'menu_id' : 'submenu_id';
+
+        // Custom handling because id_menu or menu_id naming in tbl_menu_access
+        if ($type === 'menu' && $this->db->field_exists('id_menu', 'tbl_menu_access')) {
+            $menu_col = 'id_menu';
+        }
+
+        $exists = $this->db->get_where($table, [
+            $menu_col => $menu_id,
+            'role_id' => $role_id
+        ])->row();
+
+        if ($exists) {
+            $this->db->where([$menu_col => $menu_id, 'role_id' => $role_id]);
+            $this->db->delete($table);
+            $action = 'removed';
+        } else {
+            $this->db->insert($table, [
+                $menu_col => $menu_id,
+                'role_id' => $role_id
+            ]);
+            $action = 'added';
+        }
+
+        $this->session->unset_userdata('app_session_cache');
+
+        echo json_encode([
+            'status' => 'success', 
+            'action' => $action,
+            'csrf_name' => $this->security->get_csrf_token_name(),
+            'csrf_hash' => $this->security->get_csrf_hash()
+        ]);
+    }
+
 
     /**
      * Delete menu
@@ -548,6 +612,7 @@ class Menu extends MY_Controller
         $this->db->trans_complete();
 
         if ($this->db->trans_status() === TRUE) {
+            $this->session->unset_userdata('app_session_cache');
             echo json_encode([
                 'status' => 'success',
                 'pesan' => 'Menu berhasil dihapus'
@@ -800,9 +865,20 @@ class Menu extends MY_Controller
 
         $this->db->where('id', $id);
         if ($this->db->update('submenu', ['status' => $status])) {
-            echo json_encode(['status' => 'success', 'pesan' => 'Status berhasil diubah']);
+            $this->session->unset_userdata('app_session_cache');
+            echo json_encode([
+                'status' => 'success', 
+                'pesan' => 'Status berhasil diubah',
+                'csrf_name' => $this->security->get_csrf_token_name(),
+                'csrf_hash' => $this->security->get_csrf_hash()
+            ]);
         } else {
-            echo json_encode(['status' => 'error', 'pesan' => 'Gagal mengubah status']);
+            echo json_encode([
+                'status' => 'error', 
+                'pesan' => 'Gagal mengubah status',
+                'csrf_name' => $this->security->get_csrf_token_name(),
+                'csrf_hash' => $this->security->get_csrf_hash()
+            ]);
         }
     }
 
@@ -823,9 +899,20 @@ class Menu extends MY_Controller
 
         $this->db->where('id', $id);
         if ($this->db->update('menu', ['status' => $status])) {
-            echo json_encode(['status' => 'success', 'pesan' => 'Status Menu berhasil diubah']);
+            $this->session->unset_userdata('app_session_cache');
+            echo json_encode([
+                'status' => 'success', 
+                'pesan' => 'Status Menu berhasil diubah',
+                'csrf_name' => $this->security->get_csrf_token_name(),
+                'csrf_hash' => $this->security->get_csrf_hash()
+            ]);
         } else {
-            echo json_encode(['status' => 'error', 'pesan' => 'Gagal mengubah status menu']);
+            echo json_encode([
+                'status' => 'error', 
+                'pesan' => 'Gagal mengubah status menu',
+                'csrf_name' => $this->security->get_csrf_token_name(),
+                'csrf_hash' => $this->security->get_csrf_hash()
+            ]);
         }
     }
 
@@ -846,6 +933,7 @@ class Menu extends MY_Controller
 
         $this->db->where_in('id', $ids);
         if ($this->db->update('menu', ['status' => $status])) {
+            $this->session->unset_userdata('app_session_cache');
             echo json_encode(['status' => 'success', 'pesan' => count($ids) . ' Menu berhasil diperbarui']);
         } else {
             echo json_encode(['status' => 'error', 'pesan' => 'Gagal memperbarui status secara massal']);
@@ -1222,6 +1310,29 @@ class Menu extends MY_Controller
             }
         }
 
+        // [NEW] Process User Specific Access Levels
+        $user_access_levels = $this->input->post('user_access_levels', true);
+        if (!empty($user_access_levels) && is_array($user_access_levels)) {
+            foreach ($user_access_levels as $user_id) {
+                $this->db->insert('tbl_user_submenu_access', [
+                    'submenu_id' => $submenu_id,
+                    'user_id' => $user_id
+                ]);
+                
+                // [AUTO-FIX] Ensure user has access to the parent menu as well
+                $has_menu_access = $this->db->where('menu_id', $menu_id)
+                    ->where('user_id', $user_id)
+                    ->count_all_results('tbl_user_menu_access');
+                    
+                if ($has_menu_access == 0) {
+                    $this->db->insert('tbl_user_menu_access', [
+                        'menu_id' => $menu_id,
+                        'user_id' => $user_id
+                    ]);
+                }
+            }
+        }
+
         if ($insert) {
             $this->session->set_flashdata('success', 'Submenu berhasil ditambahkan');
         } else {
@@ -1327,6 +1438,34 @@ class Menu extends MY_Controller
                     $this->db->insert('tbl_menu_access', [
                         'menu_id' => $menu_id,
                         'role_id' => $role_id
+                    ]);
+                }
+            }
+        }
+
+        // [NEW] Process User Specific Access Levels
+        $user_access_levels = $this->input->post('user_access_levels', true);
+        
+        // 1. Clear existing user access
+        $this->db->delete('tbl_user_submenu_access', ['submenu_id' => $submenu_id]);
+        
+        // 2. Insert new user access
+        if (!empty($user_access_levels) && is_array($user_access_levels)) {
+            foreach ($user_access_levels as $user_id) {
+                $this->db->insert('tbl_user_submenu_access', [
+                    'submenu_id' => $submenu_id,
+                    'user_id' => $user_id
+                ]);
+                
+                // [AUTO-FIX] Ensure user has access to the parent menu as well
+                $has_menu_access = $this->db->where('menu_id', $menu_id)
+                    ->where('user_id', $user_id)
+                    ->count_all_results('tbl_user_menu_access');
+                    
+                if ($has_menu_access == 0) {
+                    $this->db->insert('tbl_user_menu_access', [
+                        'menu_id' => $menu_id,
+                        'user_id' => $user_id
                     ]);
                 }
             }

@@ -49,12 +49,6 @@ class Content extends MY_Controller
      */
     public function pengumuman()
     {
-        // Check access permission
-        $level = (int) $this->session->userdata('level');
-        if (!in_array($level, [1, 17])) {
-            $this->session->set_flashdata('error', 'Akses ditolak. Anda tidak memiliki izin untuk mengelola pengumuman.');
-            redirect('dashboard');
-        }
 
         $data = $this->_get_common_data('Manajemen Pengumuman');
         $data['pengumuman'] = $this->db->select('p.*, u.username as pembuat')
@@ -71,12 +65,6 @@ class Content extends MY_Controller
      */
     public function simpan_pengumuman()
     {
-        // Check access permission
-        $level = (int) $this->session->userdata('level');
-        if (!in_array($level, [1, 17])) {
-            $this->session->set_flashdata('error', 'Akses ditolak.');
-            redirect('dashboard');
-        }
 
         // Gunakan post(key, true) untuk filter XSS pada teks biasa
         $judul = $this->input->post('judul', true);
@@ -112,6 +100,26 @@ class Content extends MY_Controller
             $this->session->set_flashdata('success', 'Pengumuman berhasil diperbarui.');
         } else {
             $this->db->insert('tbl_pengumuman', $data);
+            
+            // Blast Notification
+            if ($status == 'Aktif') {
+                $this->load->library('firebase_cloud_messaging');
+                
+                $this->db->select('fcm_token');
+                $this->db->from('tbl_karyawan');
+                $this->db->where('status_karyawan !=', 'Berhenti');
+                $this->db->where("fcm_token IS NOT NULL AND fcm_token != ''", null, false);
+                $tokens = $this->db->get()->result();
+                
+                foreach ($tokens as $t) {
+                    $this->firebase_cloud_messaging->send_notification(
+                        $t->fcm_token, 
+                        "Pengumuman Baru", 
+                        $judul
+                    );
+                }
+            }
+            
             $this->session->set_flashdata('success', 'Pengumuman baru berhasil dipublikasikan.');
         }
 
@@ -125,12 +133,6 @@ class Content extends MY_Controller
      */
     public function hapus_pengumuman($id)
     {
-        // Check access permission
-        $level = (int) $this->session->userdata('level');
-        if (!in_array($level, [1, 17])) {
-            $this->session->set_flashdata('error', 'Akses ditolak.');
-            redirect('dashboard');
-        }
 
         $this->db->where('id', $id);
         $this->db->delete('tbl_pengumuman');
@@ -147,13 +149,6 @@ class Content extends MY_Controller
     {
         // Set header JSON agar aman dan rapi
         header('Content-Type: application/json; charset=utf-8');
-
-        // Check access permission (agar tidak sembarang orang bisa inspect/fetch ID)
-        $level = (int) $this->session->userdata('level');
-        if (!in_array($level, [1, 17])) {
-            echo json_encode(['error' => 'Akses ditolak']);
-            return;
-        }
 
         $data = $this->db->get_where('tbl_pengumuman', ['id' => $id])->row();
         echo json_encode($data ?: ['error' => 'Not found']);

@@ -90,10 +90,13 @@ class M_gudang extends CI_model
 
     function getAllBahanbaku()
     {
-        $this->db->select('tbl_bahan.*, tbl_satuan.satuan_nama, (SELECT COUNT(material_id) FROM tbl_material WHERE tbl_material.bahan_id = tbl_bahan.bahan_id) as jml_varian');
+        $this->db->select('tbl_bahan.*, tbl_satuan.satuan_nama, 
+            (SELECT COUNT(material_id) FROM tbl_material WHERE tbl_material.bahan_id = tbl_bahan.bahan_id) as jml_varian,
+            (SELECT pd.harga_beli FROM tbl_pembelian_detail pd JOIN tbl_pembelian p ON pd.pembelian_id = p.pembelian_id JOIN tbl_material m ON pd.material_id = m.material_id WHERE m.bahan_id = tbl_bahan.bahan_id ORDER BY p.pembelian_tgl DESC LIMIT 1) as harga_beli,
+            (SELECT AVG(pd.harga_beli) FROM tbl_pembelian_detail pd JOIN tbl_material m ON pd.material_id = m.material_id WHERE m.bahan_id = tbl_bahan.bahan_id) as rata_rata_beli
+        ');
         $this->db->from('tbl_bahan');
         $this->db->join('tbl_satuan', 'tbl_bahan.satuan_id = tbl_satuan.satuan_id', 'left');
-        // $this->db->order_by('tbl_bahan.bahan_nama', 'ASC');
         return $this->db->get();
     }
 
@@ -188,10 +191,10 @@ class M_gudang extends CI_model
         return $this->db->get('tbl_pengambilan');
     }
 
-    function getPengambilanWithDetails()
+    function getPengambilanWithDetails($month = null, $year = null)
     {
         // Menggunakan query yang lebih eksplisit untuk memastikan perhitungan yang akurat
-        $this->db->select('tbl_pengambilan.*, tbl_karyawan.nama_lengkap, tbl_gudang.gudang_nama');
+        $this->db->select('tbl_pengambilan.*, tbl_karyawan.nama_lengkap, tbl_gudang.gudang_nama, tbl_gudang.gudang_lokasi');
 
         // Gunakan subquery untuk menghitung jumlah item
         $this->db->select('(
@@ -212,8 +215,15 @@ class M_gudang extends CI_model
         $this->db->select('0 as pending_count', FALSE);
 
         $this->db->from('tbl_pengambilan');
-        $this->db->join('tbl_karyawan', 'tbl_karyawan.karyawan_id = tbl_pengambilan.karyawan_id');
-        $this->db->join('tbl_gudang', 'tbl_gudang.gudang_id = tbl_pengambilan.gudang_id');
+        $this->db->join('tbl_karyawan', 'tbl_karyawan.karyawan_id = tbl_pengambilan.karyawan_id', 'left');
+        $this->db->join('tbl_gudang', 'tbl_gudang.gudang_id = tbl_pengambilan.gudang_id', 'left');
+
+        if ($month !== null) {
+            $this->db->where('MONTH(tbl_pengambilan.pengambilan_tgl)', $month);
+        }
+        if ($year !== null) {
+            $this->db->where('YEAR(tbl_pengambilan.pengambilan_tgl)', $year);
+        }
         $this->db->order_by('pengambilan_tgl', 'desc');
         return $this->db->get();
     }
@@ -255,11 +265,13 @@ class M_gudang extends CI_model
 
     function getdetailPengambilan($id)
     {
-        $this->db->join('tbl_pengambilan', 'tbl_pengambilan_detail.pengambilan_id = tbl_pengambilan.pengambilan_id');
-        $this->db->join('tbl_karyawan', 'tbl_pengambilan.karyawan_id = tbl_karyawan.karyawan_id');
+        $this->db->join('tbl_pengambilan', 'tbl_pengambilan_detail.pengambilan_id = tbl_pengambilan.pengambilan_id', 'left');
+        $this->db->join('tbl_karyawan', 'tbl_pengambilan.karyawan_id = tbl_karyawan.karyawan_id', 'left');
         $this->db->join('tbl_material', 'tbl_pengambilan_detail.material_id = tbl_material.material_id', 'left');
         $this->db->join('tbl_bahan', 'tbl_material.bahan_id = tbl_bahan.bahan_id', 'left');
         $this->db->join('tbl_satuan', 'tbl_bahan.satuan_id = tbl_satuan.satuan_id', 'left');
+        $this->db->join('tbl_satuan as satuan_gudang', 'tbl_material.satuan_gudang_id = satuan_gudang.satuan_id', 'left');
+        $this->db->select('tbl_pengambilan_detail.*, tbl_pengambilan.*, tbl_karyawan.nama_lengkap, tbl_karyawan.telepon, tbl_karyawan.email, tbl_material.*, tbl_bahan.*, tbl_satuan.satuan_nama as satuan_nama_dasar, satuan_gudang.satuan_nama as nama_satuan_gudang');
         $this->db->where('tbl_pengambilan_detail.pengambilan_id', $id);
         return $this->db->get('tbl_pengambilan_detail');
     }
@@ -650,8 +662,106 @@ class M_gudang extends CI_model
      * Best Practice Stock Engine
      * Updates tbl_stok_gudang and logs the transaction in tbl_stok_log
      */
-    public function update_stock_with_log($material_id, $gudang_id, $qty, $type, $trx_id, $catatan = '', $rak_id = NULL)
+    private $stock_storage_checked = false;
+
+    private function assert_stock_storage()
     {
+        if ($this->stock_storage_checked) return;
+        $rows = $this->db->query("SHOW TABLE STATUS WHERE Name IN ('tbl_material','tbl_stok_gudang','tbl_stok_log')")->result();
+        $found = [];
+        foreach ($rows as $row) {
+            if (strtolower((string) $row->Engine) !== 'innodb') throw new DomainException('Tabel stok belum mendukung transaksi aman.');
+            $found[] = $row->Name;
+        }
+        if (array_diff(['tbl_material', 'tbl_stok_gudang', 'tbl_stok_log'], $found)) throw new DomainException('Tabel stok belum lengkap.');
+        $this->stock_storage_checked = true;
+    }
+
+    /** Checked posting for production only; existing non-production behavior is retained. */
+    private function post_production_stock($material_id, $gudang_id, $qty, $trx_id, $catatan, $rak_id, $karyawan_id)
+    {
+        $started = false;
+        try {
+            if (!is_numeric($qty) || !is_finite((float) $qty) || (float) $qty >= 0 || (int) $material_id < 1 || (int) $gudang_id < 1) {
+                throw new DomainException('Material, lokasi, atau jumlah konsumsi tidak valid.');
+            }
+            $rak_id = empty($rak_id) ? null : (int) $rak_id;
+            $this->assert_stock_storage();
+            if (!$this->db->trans_begin()) throw new RuntimeException('Transaksi stok tidak tersedia.');
+            $started = true;
+            // Lock the material first, including when a balance row has not yet been created.
+            $material = $this->db->query('SELECT konversi FROM tbl_material WHERE material_id = ? FOR UPDATE', [(int) $material_id])->row();
+            if (!$material) throw new DomainException('Material tidak ditemukan.');
+            // Keep the legacy factor 1 for unset/zero conversion without modifying its master data.
+            $factor = empty($material->konversi) ? 1 : $material->konversi;
+            if (!is_numeric($factor) || !is_finite((float) $factor) || (float) $factor <= 0) throw new DomainException('Konversi satuan material tidak valid.');
+            $delta = (float) $qty * (float) $factor;
+            if (!is_finite($delta)) throw new DomainException('Konversi konsumsi bahan tidak valid.');
+            if ($rak_id === null) {
+                $rows = $this->db->query('SELECT * FROM tbl_stok_gudang WHERE material_id = ? AND gudang_id = ? ORDER BY stok_id FOR UPDATE', [(int) $material_id, (int) $gudang_id])->result();
+            } else {
+                $rows = $this->db->query('SELECT * FROM tbl_stok_gudang WHERE material_id = ? AND gudang_id = ? AND rak_id = ? ORDER BY stok_id FOR UPDATE', [(int) $material_id, (int) $gudang_id, $rak_id])->result();
+            }
+            if (!$rows) throw new DomainException('Saldo material pada gudang/rak tidak tersedia.');
+            $seen = []; $available = 0;
+            foreach ($rows as $row) {
+                $rack_key = (int) ($row->rak_id ?? 0);
+                if (isset($seen[$rack_key])) throw new DomainException('Saldo material pada gudang/rak duplikat. Tinjau stok sebelum produksi.');
+                if ((float) $row->qty < 0) throw new DomainException('Saldo historis negatif. Tinjau stok gudang sebelum produksi.');
+                $seen[$rack_key] = true;
+                $available += (float) $row->qty;
+            }
+            if ($available < abs($delta)) throw new DomainException('Stok bahan tidak mencukupi pada lokasi produksi. Ajukan bahan ke gudang.');
+            // Without an explicit rack, allocate across existing balances in stable stock-row order.
+            // Each rack gets its own ledger entry; total consumption remains the operator's actual input.
+            $remaining = abs($delta);
+            foreach ($rows as $current) {
+                if ($remaining <= 0) break;
+                $base_use = min((float) $current->qty, $remaining);
+                if ($base_use <= 0) continue;
+                $balance = (float) $current->qty - $base_use;
+                $updated = $this->db->query('UPDATE tbl_stok_gudang SET qty = qty + ?, last_update = ? WHERE stok_id = ? AND qty + ? >= 0',
+                    [-$base_use, date('Y-m-d H:i:s'), $current->stok_id, -$base_use]);
+                if (!$updated || $this->db->affected_rows() !== 1) throw new DomainException('Saldo stok berubah; muat ulang dan periksa bahan.');
+                if (!$this->db->insert('tbl_stok_log', ['material_id' => $material_id, 'gudang_id' => $gudang_id,
+                    'rak_id' => $current->rak_id, 'trx_type' => 'Produksi', 'trx_id' => $trx_id,
+                    'qty_in' => 0, 'qty_out' => $base_use / (float) $factor, 'qty_base' => $base_use, 'qty_balance' => $balance,
+                    'user_id' => $this->session->userdata('id_user') ?: $this->session->userdata('id'),
+                    'karyawan_id' => $karyawan_id, 'catatan' => $catatan, 'created_at' => date('Y-m-d H:i:s')])) throw new RuntimeException('Gagal mencatat mutasi bahan.');
+                $remaining -= $base_use;
+            }
+            if (!$this->db->trans_status() || !$this->db->trans_commit()) throw new RuntimeException('Posting stok gagal.');
+            $started = false;
+            return true;
+        } catch (Exception $e) {
+            if ($started) $this->db->trans_rollback();
+            throw $e; // Production transaction must also roll back results/header/logs.
+        }
+    }
+
+    public function update_stock_with_log($material_id, $gudang_id, $qty, $type, $trx_id, $catatan = '', $rak_id = NULL, $karyawan_id = NULL)
+    {
+        if ($type === 'Produksi') {
+            return $this->post_production_stock($material_id, $gudang_id, $qty, $trx_id, $catatan, $rak_id, $karyawan_id);
+        }
+        // Other callers of this shared engine take the same material lock. Otherwise an
+        // inventory receipt/adjustment could overwrite a concurrent production deduction.
+        if (!$material_id || !$this->db->trans_begin()) return false;
+        try {
+            $this->db->query('SELECT material_id FROM tbl_material WHERE material_id = ? FOR UPDATE', [(int) $material_id]);
+            $posted = $this->post_nonproduction_stock($material_id, $gudang_id, $qty, $type, $trx_id, $catatan, $rak_id, $karyawan_id);
+            if (!$posted || !$this->db->trans_status()) { $this->db->trans_rollback(); return false; }
+            return $this->db->trans_commit();
+        } catch (Exception $e) {
+            $this->db->trans_rollback();
+            log_message('error', 'Stock posting failed: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    private function post_nonproduction_stock($material_id, $gudang_id, $qty, $type, $trx_id, $catatan = '', $rak_id = NULL, $karyawan_id = NULL)
+    {
+
         if (empty($material_id)) {
             return false;
         }
@@ -707,8 +817,10 @@ class M_gudang extends CI_model
             'trx_id' => $trx_id,
             'qty_in' => ($qty > 0) ? $qty : 0,  // Stored in Trans Unit for report
             'qty_out' => ($qty < 0) ? abs($qty) : 0, // Stored in Trans Unit
+            'qty_base' => abs($true_qty_change), // Stored precisely in Base Unit
             'qty_balance' => $new_qty, // Stored in Base Unit
             'user_id' => $this->session->userdata('id'),
+            'karyawan_id' => $karyawan_id,
             'catatan' => $catatan . " (Total Base: " . ($qty * $konversi) . ")",
             'created_at' => date('Y-m-d H:i:s')
         ];
@@ -733,7 +845,7 @@ class M_gudang extends CI_model
             sp.satuan_nama as satuan_produksi,
             m.konversi,
             SUM(sl.qty_out) as total_usage_gudang,
-            SUM(sl.qty_out * m.konversi) as total_usage_produksi,
+            SUM(sl.qty_base) as total_usage_produksi,
             COUNT(sl.log_id) as freq
         ');
         $this->db->from('tbl_stok_log sl');
@@ -757,13 +869,26 @@ class M_gudang extends CI_model
 
     public function get_warehouse_stock($gudang_id)
     {
-        return $this->db->select('b.bahan_nama, m.varian, s.qty as qty_base, (s.qty / IFNULL(m.konversi, 1)) as qty_stock, sat.satuan_nama as satuan_gudang, m.konversi, sp.satuan_nama as satuan_produksi')
+        return $this->db->select('m.material_id, m.barcode, b.bahan_nama, m.varian, SUM(s.qty) as qty_base, (SUM(s.qty) / IFNULL(m.konversi, 1)) as qty_stock, sat.satuan_nama as satuan_gudang, m.konversi, sp.satuan_nama as satuan_produksi')
             ->from('tbl_stok_gudang s')
             ->join('tbl_material m', 'm.material_id = s.material_id')
             ->join('tbl_bahan b', 'b.bahan_id = m.bahan_id')
             ->join('tbl_satuan sat', 'm.satuan_gudang_id = sat.satuan_id', 'left')
             ->join('tbl_satuan sp', 'b.satuan_id = sp.satuan_id', 'left')
             ->where('s.gudang_id', $gudang_id)
+            ->group_by('m.material_id')
+            ->get()->result();
+    }
+
+    public function get_all_warehouse_stock()
+    {
+        return $this->db->select('s.gudang_id, m.material_id, m.barcode, b.bahan_nama, m.varian, SUM(s.qty) as qty_base, sat.satuan_nama as satuan_gudang, m.konversi, sp.satuan_nama as satuan_produksi')
+            ->from('tbl_stok_gudang s')
+            ->join('tbl_material m', 'm.material_id = s.material_id')
+            ->join('tbl_bahan b', 'b.bahan_id = m.bahan_id')
+            ->join('tbl_satuan sat', 'm.satuan_gudang_id = sat.satuan_id', 'left')
+            ->join('tbl_satuan sp', 'b.satuan_id = sp.satuan_id', 'left')
+            ->group_by(['s.gudang_id', 'm.material_id'])
             ->get()->result();
     }
 
@@ -773,5 +898,42 @@ class M_gudang extends CI_model
         $this->db->where('material_id', $material_id);
         $result = $this->db->get('tbl_stok_gudang')->row();
         return $result ? (float) $result->qty : 0;
+    }
+
+    // ==============================================
+    // PENGAMBILAN / DISPATCH CALENDAR REPORT METHODS
+    // ==============================================
+
+    function getPengambilanCalendarData($year, $month)
+    {
+        $this->db->select('DATE(p.pengambilan_tgl) as tanggal, COUNT(DISTINCT p.pengambilan_id) as jumlah_transaksi, SUM(pd.qty) as total_qty');
+        $this->db->from('tbl_pengambilan p');
+        $this->db->join('tbl_pengambilan_detail pd', 'p.pengambilan_id = pd.pengambilan_id', 'left');
+        $this->db->where('YEAR(p.pengambilan_tgl)', $year);
+        $this->db->where('MONTH(p.pengambilan_tgl)', $month);
+        $this->db->group_by('DATE(p.pengambilan_tgl)');
+        return $this->db->get();
+    }
+
+    function getPengambilanByDate($date)
+    {
+        $this->db->select('p.*, k.nama_lengkap as karyawan_nama, g.gudang_nama');
+        $this->db->from('tbl_pengambilan p');
+        $this->db->join('tbl_karyawan k', 'p.karyawan_id = k.karyawan_id', 'left');
+        $this->db->join('tbl_gudang g', 'p.gudang_id = g.gudang_id', 'left');
+        $this->db->where('DATE(p.pengambilan_tgl)', $date);
+        return $this->db->get()->result();
+    }
+
+    function getPengambilanDetailByDate($date)
+    {
+        $this->db->select('pd.*, m.varian, b.bahan_nama, p.pengambilan_tgl, p.karyawan_id, s.satuan_nama');
+        $this->db->from('tbl_pengambilan_detail pd');
+        $this->db->join('tbl_pengambilan p', 'pd.pengambilan_id = p.pengambilan_id');
+        $this->db->join('tbl_material m', 'pd.material_id = m.material_id');
+        $this->db->join('tbl_bahan b', 'm.bahan_id = b.bahan_id');
+        $this->db->join('tbl_satuan s', 'b.satuan_id = s.satuan_id', 'left');
+        $this->db->where('DATE(p.pengambilan_tgl)', $date);
+        return $this->db->get();
     }
 }

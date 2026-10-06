@@ -177,6 +177,49 @@
             </div>
         </div>
 
+        <div class="row g-4 mb-4">
+            <!-- KEDISIPLINAN SECTION -->
+            <div class="col-lg-12">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-header bg-white border-bottom-0 pt-4 pb-0">
+                        <h5 class="fw-bold text-dark mb-0"><i class="bi bi-shield-check text-success me-2"></i> Pengaturan Skor Kedisiplinan</h5>
+                        <p class="text-muted small">Atur poin pemotongan (deduksi) skor performa/kedisiplinan karyawan per hari.</p>
+                    </div>
+                    <div class="card-body">
+                        <form id="formKedisiplinan">
+                            <div class="row">
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label fw-bold small text-dark">Potongan Telat</label>
+                                    <input type="number" step="0.01" class="form-control" name="potongan_telat" value="<?= $kedisiplinan ? $kedisiplinan->potongan_telat : 1 ?>">
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label fw-bold small text-dark">Potongan Alpha</label>
+                                    <input type="number" step="0.01" class="form-control" name="potongan_alpha" value="<?= $kedisiplinan ? $kedisiplinan->potongan_alpha : 5 ?>">
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label fw-bold small text-dark">Potongan Izin</label>
+                                    <input type="number" step="0.01" class="form-control" name="potongan_izin" value="<?= $kedisiplinan ? $kedisiplinan->potongan_izin : 1 ?>">
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label fw-bold small text-dark">Potongan Sakit</label>
+                                    <input type="number" step="0.01" class="form-control" name="potongan_sakit" value="<?= $kedisiplinan ? $kedisiplinan->potongan_sakit : 1 ?>">
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label fw-bold small text-dark">Potongan Pulang Cepat</label>
+                                    <input type="number" step="0.01" class="form-control" name="potongan_pulang_cepat" value="<?= $kedisiplinan ? $kedisiplinan->potongan_pulang_cepat : 3 ?>">
+                                </div>
+                            </div>
+                            <div class="text-end mt-2">
+                                <button type="button" id="btnSaveKedisiplinan" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm">
+                                    <i class="bi bi-save me-2"></i> SIMPAN PENGATURAN KEDISIPLINAN
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <ul class="nav nav-pills custom-pills mt-4 mb-3" id="pills-tab" role="tablist">
             <li class="nav-item" role="presentation">
                 <button class="nav-link active px-4 fw-bold rounded-pill shadow-sm" id="pills-weekday-tab"
@@ -478,6 +521,39 @@
                         });
                     } else {
                         Swal.fire('Gagal', res.message || 'Terjadi kesalahan sistem', 'error');
+                    }
+                },
+                error: function () {
+                    Swal.fire('Error', 'Gagal menghubungi server', 'error');
+                },
+                complete: function () {
+                    btn.html(originalText).prop('disabled', false);
+                }
+            });
+        });
+
+        // Handler Simpan Kedisiplinan
+        $('#btnSaveKedisiplinan').on('click', function () {
+            var btn = $(this);
+            var originalText = btn.html();
+            btn.html('<i class="spinner-border spinner-border-sm me-2"></i> Menyimpan...').prop('disabled', true);
+            
+            $.ajax({
+                url: '<?= base_url("karyawan/update_pengaturan_kedisiplinan_ajax") ?>',
+                type: 'POST',
+                data: $('#formKedisiplinan').serialize(),
+                dataType: 'json',
+                success: function (res) {
+                    if (res.success) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Tersimpan!',
+                            text: 'Pengaturan kedisiplinan berhasil diperbarui.',
+                            timer: 2000,
+                            showConfirmButton: false
+                        });
+                    } else {
+                        Swal.fire('Gagal', res.message || 'Gagal memperbarui pengaturan', 'error');
                     }
                 },
                 error: function () {

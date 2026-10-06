@@ -110,7 +110,22 @@
                                         </span>
                                     </td>
                                     <td class="text-right text-success"><strong><?= (float)$row->total_masuk ?></strong></td>
-                                    <td class="text-right text-danger"><strong><?= (float)$row->total_keluar ?></strong></td>
+                                    <td class="text-right">
+                                        <?php if ((float)$row->total_keluar > 0): ?>
+                                            <?php if ($row->satuan_produksi && $row->satuan_nama != $row->satuan_produksi && $row->trx_type == 'Produksi'): ?>
+                                                <div class="text-danger" style="font-weight: 700;">
+                                                    <?= (float)$row->total_produksi_keluar ?> <small><?= $row->satuan_produksi ?></small>
+                                                </div>
+                                                <div class="text-muted" style="font-size: 0.75rem;">
+                                                    <i class="fa fa-exchange-alt" style="color: #0dcaf0;"></i> <?= (float)$row->total_keluar ?> <?= $row->satuan_nama ?>
+                                                </div>
+                                            <?php else: ?>
+                                                <strong class="text-danger"><?= (float)$row->total_keluar ?></strong>
+                                            <?php endif; ?>
+                                        <?php else: ?>
+                                            <strong class="text-danger">0</strong>
+                                        <?php endif; ?>
+                                    </td>
                                     <td><?= $row->satuan_nama ?></td>
                                 </tr>
                             <?php endforeach; ?>

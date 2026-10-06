@@ -80,6 +80,7 @@
           <option value="izin">Izin Pribadi</option>
           <option value="sakit">Sakit</option>
           <option value="pulang_cepat">Pulang Cepat</option>
+          <option value="izin_telat">Izin Telat</option>
         </select>
       </div>
 
@@ -111,15 +112,22 @@
         <input type="time" name="jam_pulang_cepat" id="jam_pulang_cepat" class="premium-input w-100">
       </div>
 
+      <!-- Khusus Izin Telat -->
+      <div id="izin_telat_section" class="mb-3" style="display: none;">
+        <label class="premium-label">Jam Rencana Hadir</label>
+        <small class="text-muted d-block mb-2">Estimasi jam tiba di TGM</small>
+        <input type="time" name="jam_rencana_hadir" id="jam_rencana_hadir" class="premium-input w-100">
+      </div>
+
       <div class="mb-4">
         <label class="premium-label">Keterangan / Alasan</label>
         <textarea name="kegiatan" class="premium-input w-100" rows="3" placeholder="Jelaskan detail alasan Anda..."
           required></textarea>
       </div>
 
-      <!-- Fitur Upload Dokumen (Surat Sakit) -->
+      <!-- Fitur Upload Dokumen (Surat Sakit/Foto Bukti Telat) -->
       <div class="mb-4" id="upload_dokumen_section" style="display: none;">
-        <label class="premium-label">Upload Surat Sakit (PDF/JPG/PNG)</label>
+        <label class="premium-label" id="upload_label">Upload Surat Keterangan / Bukti Foto (PDF/JPG/PNG)</label>
         <small class="text-muted d-block mb-2">Opsional: Lampirkan surat keterangan jika ada</small>
         <input type="file" name="dokumen" id="dokumen" class="premium-input w-100" accept=".pdf,.jpg,.jpeg,.png">
       </div>
@@ -172,7 +180,7 @@
             <p class="text-muted small mb-0 fst-italic">"<?= htmlspecialchars($absensi->keterangan ?? '-') ?>"</p>
             <?php if (!empty($absensi->dokumen)): ?>
               <a href="<?= base_url($absensi->dokumen) ?>" target="_blank" class="btn btn-link btn-sm p-0 text-info">
-                <i class="bi bi-file-earmark-medical-fill me-1"></i> Lihat Surat
+                <i class="bi bi-file-earmark-medical-fill me-1"></i> Lihat Dokumen
               </a>
             <?php endif; ?>
           </div>
@@ -191,24 +199,33 @@
   // Logic Toggle Field Dinamis
   document.getElementById('status').addEventListener('change', function () {
     const uploadSection = document.getElementById('upload_dokumen_section');
+    const uploadLabel = document.getElementById('upload_label');
+    const dokumenInput = document.getElementById('dokumen');
     const durationSection = document.getElementById('duration_section');
     const pulangCepatSection = document.getElementById('pulang_cepat_section');
+    const izinTelatSection = document.getElementById('izin_telat_section');
+    
     const durasiTipe = document.getElementById('durasi_tipe');
     const durasiJumlah = document.getElementById('durasi_jumlah');
     const jamPulangCepat = document.getElementById('jam_pulang_cepat');
+    const jamRencanaHadir = document.getElementById('jam_rencana_hadir');
 
     // Reset defaults
     uploadSection.style.display = 'none';
     durationSection.style.display = 'flex';
     pulangCepatSection.style.display = 'none';
+    izinTelatSection.style.display = 'none';
     
     // Manage required attributes to prevent "not focusable" errors
     jamPulangCepat.removeAttribute('required');
+    jamRencanaHadir.removeAttribute('required');
+    dokumenInput.removeAttribute('required');
     durasiTipe.setAttribute('required', 'required');
     durasiJumlah.setAttribute('required', 'required');
 
     if (this.value === 'sakit') {
       uploadSection.style.display = 'block';
+      uploadLabel.innerHTML = 'Upload Surat Sakit (PDF/JPG/PNG)';
     } else if (this.value === 'izin') {
       durationSection.style.display = 'none';
       durasiTipe.removeAttribute('required');
@@ -223,6 +240,18 @@
       pulangCepatSection.style.display = 'block';
       jamPulangCepat.setAttribute('required', 'required');
       durasiTipe.value = 'jam';
+    } else if (this.value === 'izin_telat') {
+      durationSection.style.display = 'none';
+      durasiTipe.removeAttribute('required');
+      durasiJumlah.removeAttribute('required');
+      
+      izinTelatSection.style.display = 'block';
+      jamRencanaHadir.setAttribute('required', 'required');
+      durasiTipe.value = 'jam';
+      
+      uploadSection.style.display = 'block';
+      uploadLabel.innerHTML = 'Upload Bukti Foto Keterlambatan (Wajib)';
+      dokumenInput.setAttribute('required', 'required');
     }
   });
 
@@ -231,6 +260,7 @@
 
     const status = document.getElementById('status').value;
     const jamPulangCepat = document.getElementById('jam_pulang_cepat').value;
+    const jamRencanaHadir = document.getElementById('jam_rencana_hadir').value;
 
     if (status === 'pulang_cepat') {
       if (!jamPulangCepat) {
@@ -245,6 +275,11 @@
           text: 'Pulang cepat hanya bisa dilakukan mulai dari jam 14.00!',
           confirmButtonColor: '#1e293b'
         });
+        return;
+      }
+    } else if (status === 'izin_telat') {
+      if (!jamRencanaHadir) {
+        Swal.fire({ icon: 'error', title: 'Oops...', text: 'Jam rencana hadir harus diisi!' });
         return;
       }
     }

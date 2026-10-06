@@ -1,6 +1,5 @@
 <?php
 // application/views/admin/warehouse/dispatch.php
-// DEBUG: <?php print_r($this->session->flashdata()); 
 ?>
 
 <!-- PREMIUM DESIGN SYSTEM (LEGGER THEME v2) - WAREHOUSE DISPATCH/DISTRIBUTION -->
@@ -503,60 +502,29 @@
     }
 </style>
 
-<div class="warehouse-header-section">
-    <div class="container-fluid px-5">
-        <div class="row align-items-start">
-            <div class="col-md-7">
-                <div class="header-content">
-                    <div class="header-icon">
-                        <i class="fa fa-truck-loading"></i>
-                    </div>
-                    <div class="header-text">
-                        <p class="header-subtitle">Phase 4: Distribution</p>
-                        <h1 class="header-title">Distribusi & Pengiriman Material</h1>
-                        <div class="d-flex align-items-center gap-2 mt-2">
-                            <span
-                                class="badge bg-success rounded-pill px-3 py-2 fw-900 border border-white border-2 shadow-sm"
-                                style="font-size: 0.7rem; letter-spacing: 1px;">
-                                <i class="fa fa-bolt me-1 text-warning"></i> MODE CEPAT AKTIF
-                            </span>
-                            <span class="text-white-50 small fw-bold"><i class="fa fa-mouse-pointer me-1"></i> Scan
-                                barcode untuk memilih material & input Qty</span>
-                        </div>
-
-                        <!-- BARCODE SCANNER BAR -->
-                        <div class="scanner-mode-bar">
-                            <div class="form-check form-switch m-0">
-                                <input class="form-check-input" type="checkbox" id="scanModeToggle" checked>
-                                <label class="form-check-label text-white fw-bold small" style="cursor:pointer;"
-                                    for="scanModeToggle">SCANNER MODE</label>
-                            </div>
-                            <div class="scanner-input-wrapper">
-                                <i class="fa fa-barcode"></i>
-                                <input type="text" id="barcodeInput" class="form-control scanner-input"
-                                    placeholder="Scan barcode di sini...">
-                            </div>
-                            <div id="scannerStatusIndicator" class="small fw-800 text-success d-none">
-                                <span class="scanner-pulse"></span> READY
-                            </div>
-                        </div>
-                    </div>
-                </div>
+<div style="height: 35px;"></div>
+<div class="container-fluid px-5 mb-4">
+    <div class="d-flex align-items-center justify-content-between bg-white p-3 rounded-4 shadow-sm border">
+        <div class="d-flex align-items-center gap-3">
+            <div style="width:40px; height:40px; background:#eff6ff; color:#3b82f6; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:1.2rem;">
+                <i class="fa fa-barcode"></i>
             </div>
-            <div class="col-md-5 text-end header-actions d-flex justify-content-end align-items-center gap-2">
-                <button id="btnToggleWorkflow" class="btn btn-outline-light btn-premium rounded-pill px-3">
-                    <i class="fa fa-eye-slash me-1"></i>HIDE
-                </button>
-                <button class="btn btn-outline-light btn-premium rounded-pill px-3" data-bs-toggle="modal"
-                    data-bs-target="#modalDispatchGuide">
-                    <i class="fa fa-info-circle me-1"></i>BANTUAN/SOP
-                </button>
-                <button onclick="window.history.back()" class="btn btn-outline-light btn-premium rounded-pill px-3">
-                    <i class="fa fa-chevron-left me-1"></i>KEMBALI
-                </button>
-                <a href="<?= base_url('warehouse') ?>" class="btn btn-outline-light btn-premium rounded-pill px-3">
-                    <i class="fa fa-th-large me-1"></i>DASHBOARD
-                </a>
+            <div>
+                <h6 class="mb-0 fw-bold text-dark">Mode Cepat (Scanner)</h6>
+                <p class="mb-0 small text-muted">Scan barcode untuk memilih material & input Qty</p>
+            </div>
+        </div>
+        <div class="d-flex align-items-center gap-3">
+            <div class="form-check form-switch m-0">
+                <input class="form-check-input" type="checkbox" id="scanModeToggle" checked>
+                <label class="form-check-label fw-bold small text-dark" style="cursor:pointer;" for="scanModeToggle">AKTIF</label>
+            </div>
+            <div class="position-relative" style="width: 250px;">
+                <i class="fa fa-barcode position-absolute" style="left:12px; top:50%; transform:translateY(-50%); color:#94a3b8;"></i>
+                <input type="text" id="barcodeInput" class="form-control form-control-sm bg-light border-0 ps-4" style="border-radius:8px; height:36px;" placeholder="Scan barcode di sini...">
+            </div>
+            <div id="scannerStatusIndicator" class="small fw-800 text-success d-none">
+                <span class="scanner-pulse"></span> READY
             </div>
         </div>
     </div>
@@ -565,7 +533,7 @@
 <div class="container-fluid px-5">
     <!-- 6-STEP CORE WORKFLOW (SOP) -->
     <div id="workflowContainer">
-        <?php $this->load->view('admin/warehouse/components/v_material_workflow', ['current_step' => 5]); ?>
+        <?php $this->load->view('admin/warehouse/components/sop_stepper', ['active_step' => 4]); ?>
     </div>
 
     <!-- Visual Bridge & Control Center -->

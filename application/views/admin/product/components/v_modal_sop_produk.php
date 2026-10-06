@@ -21,37 +21,42 @@
                 <div class="row g-0">
                     <!-- Sidebar Tabs -->
                     <div class="col-md-3 border-end bg-light bg-opacity-50">
-                        <div class="nav flex-column nav-pills p-3 gap-2" id="sop-tabs-produk" role="tablist">
+                                                <div class="nav flex-column nav-pills p-3 gap-2" id="sop-tabs-produk" role="tablist">
                             <button
                                 class="nav-link active text-start py-3 px-4 border-0 d-flex align-items-center gap-3 fw-700 shadow-sm"
-                                data-bs-toggle="pill" data-bs-target="#sop-builder" type="button"
+                                data-bs-toggle="pill" data-bs-target="#sop-pricing" type="button"
                                 style="border-radius: 12px; font-size: 0.85rem;">
-                                <i class="fas fa-drafting-compass text-pink" style="width: 20px; color: #db2777;"></i>
-                                0. Config Form Builder
-                            </button>
-                            <button
-                                class="nav-link text-start py-3 px-4 border-0 d-flex align-items-center gap-3 fw-700 shadow-sm"
-                                data-bs-toggle="pill" data-bs-target="#sop-identitas" type="button"
-                                style="border-radius: 12px; font-size: 0.85rem;">
-                                <i class="fas fa-fingerprint text-primary" style="width: 20px;"></i> 1. Identitas Produk
+                                <i class="fas fa-tags text-warning" style="width: 20px;"></i> 1. Skala Harga
                             </button>
                             <button
                                 class="nav-link text-start py-3 px-4 border-0 d-flex align-items-center gap-3 fw-700 shadow-sm"
                                 data-bs-toggle="pill" data-bs-target="#sop-bom" type="button"
                                 style="border-radius: 12px; font-size: 0.85rem;">
-                                <i class="fas fa-flask text-danger" style="width: 20px;"></i> 2. BOM (Resep Bahan)
+                                <i class="fas fa-flask text-danger" style="width: 20px;"></i> 2. Managemen BOM
                             </button>
                             <button
                                 class="nav-link text-start py-3 px-4 border-0 d-flex align-items-center gap-3 fw-700 shadow-sm"
                                 data-bs-toggle="pill" data-bs-target="#sop-routing" type="button"
                                 style="border-radius: 12px; font-size: 0.85rem;">
-                                <i class="fas fa-cogs text-success" style="width: 20px;"></i> 3. Routing (Alur Mesin)
+                                <i class="fas fa-cogs text-success" style="width: 20px;"></i> 3. Alur Kerja
                             </button>
                             <button
                                 class="nav-link text-start py-3 px-4 border-0 d-flex align-items-center gap-3 fw-700 shadow-sm"
-                                data-bs-toggle="pill" data-bs-target="#sop-pricing" type="button"
+                                data-bs-toggle="pill" data-bs-target="#sop-profit" type="button"
                                 style="border-radius: 12px; font-size: 0.85rem;">
-                                <i class="fas fa-tags text-warning" style="width: 20px;"></i> 4. Matriks Harga
+                                <i class="fas fa-chart-line text-info" style="width: 20px;"></i> 4. Analisa Profit
+                            </button>
+                            <button
+                                class="nav-link text-start py-3 px-4 border-0 d-flex align-items-center gap-3 fw-700 shadow-sm"
+                                data-bs-toggle="pill" data-bs-target="#sop-builder" type="button"
+                                style="border-radius: 12px; font-size: 0.85rem;">
+                                <i class="fas fa-drafting-compass text-pink" style="width: 20px; color: #db2777;"></i> 5. Form Builder
+                            </button>
+                            <button
+                                class="nav-link text-start py-3 px-4 border-0 d-flex align-items-center gap-3 fw-700 shadow-sm"
+                                data-bs-toggle="pill" data-bs-target="#sop-identitas" type="button"
+                                style="border-radius: 12px; font-size: 0.85rem;">
+                                <i class="fas fa-fingerprint text-primary" style="width: 20px;"></i> Identitas Produk
                             </button>
                             <button
                                 class="nav-link text-start py-3 px-4 border-0 d-flex align-items-center gap-3 fw-700 shadow-sm"
@@ -66,9 +71,25 @@
                     <div class="col-md-9 px-0 bg-white">
                         <div class="tab-content h-100">
 
+                                                        <!-- ====== TAB 4: PROFIT ====== -->
+                            <div class="tab-pane fade p-5" id="sop-profit">
+                                <h4 class="fw-900 text-dark mb-4">4. Analisa Profit (HPP)</h4>
+                                <div class="p-4 rounded-4 mb-4" style="background: #e0f2fe; border: 2px solid #38bdf8;">
+                                    <h6 class="fw-900 text-info mb-2"><i class="fas fa-chart-pie me-2"></i>FUNGSI UTAMA</h6>
+                                    <p class="small text-muted mb-0">Tab ini berfungsi untuk mengkalkulasi dan memastikan bahwa struktur biaya (Bahan Baku + Tenaga Kerja) dengan harga jual yang Anda tentukan di Skala Harga sudah profit / menguntungkan.</p>
+                                </div>
+                                <div class="bg-light p-4 rounded-4">
+                                    <h6 class="fw-900 d-flex align-items-center gap-2 mb-3"><i class="fas fa-list-ol text-info"></i> Cara Membaca Analisa Profit:</h6>
+                                    <ul class="small text-muted mb-0 ps-3" style="line-height: 1.8;">
+                                        <li>Cek <strong>HPP (Harga Pokok Penjualan)</strong>: Akumulasi dari Biaya Bahan Baku + Tenaga Kerja + Overhead 5%.</li>
+                                        <li>Cek <strong>Margin Laba</strong>: Pastikan setiap baris dari skala harga memiliki margin laba yang positif (warna hijau). Jika ada yang merah (minus), Anda harus segera mengevaluasi BOM / Routing / Harga Jual-nya!</li>
+                                    </ul>
+                                </div>
+                            </div>
+
                             <!-- ====== TAB 0: FORM BUILDER ====== -->
-                            <div class="tab-pane fade show active p-5" id="sop-builder">
-                                <h4 class="fw-900 text-dark mb-4">0. Konfigurasi Form Builder (Dinamis)</h4>
+                            <div class="tab-pane fade p-5" id="sop-builder">
+                                <h4 class="fw-900 text-dark mb-4">5. Konfigurasi Form Builder (Dinamis)</h4>
 
                                 <div class="p-4 rounded-4 mb-4 d-flex align-items-center gap-3"
                                     style="background: #fdf2f8; border: 2px solid #db2777;">
@@ -123,25 +144,13 @@
                                             3
                                         </div>
                                         <div>
-                                            <p class="fw-800 mb-1 text-pink" style="color: #db2777;">Standar Variable ID
-                                                (Penting!)</p>
-                                            <p class="small text-muted mb-2">Agar harga terhitung akurat dan label
-                                                muncul otomatis di SPK, ikuti aturan ID berikut:</p>
+                                            <p class="fw-800 mb-1 text-pink" style="color: #db2777;">Variable ID Otomatis (Auto-Generate)</p>
+                                            <p class="small text-muted mb-2">Kini Anda <strong>tidak perlu lagi memikirkan atau mengetik Variable ID secara manual</strong>. Sistem otomatis membuatnya!</p>
                                             <ul class="small text-muted ps-3 mb-2">
-                                                <li><strong><code>ket_1</code></strong>: Wajib digunakan untuk variasi
-                                                    utama penentu harga (Sisi, Jenis Bahan, Lebar, dll).</li>
-                                                <li><strong><code>jenisprint_id</code></strong>: Gunakan khusus untuk
-                                                    pilihan <strong>Mesin Produksi</strong>.</li>
-                                                <li><strong><code>Keterangan</code></strong>: Gunakan ID bebas (misal:
-                                                    <code>catatan</code>) untuk info tambahan yang tidak merubah harga.
-                                                </li>
+                                                <li>Saat Anda mengetik "Label Input" (misal: "Jenis Print" atau "Sisi"), sistem akan langsung mem-parsing teks tersebut menjadi <code>jenisprint_id</code> atau <code>sisi_id</code> secara otomatis.</li>
+                                                <li>Fitur auto-generate ini berguna mencegah kesalahan ketik (typo) yang bisa menyebabkan kalkulator harga error saat di kasir.</li>
+                                                <li><strong>Sangat Praktis:</strong> Cukup fokus pada pengisian opsi dropdown harga/spesifikasinya saja tanpa pusing memikirkan teknis penamaan ID (Kecuali Anda mengedit via JSON schema lanjutan).</li>
                                             </ul>
-                                            <div
-                                                class="p-2 border-start border-3 border-pink bg-light small fst-italic">
-                                                Contoh: Produk "Kartu Nama" -> Buat field ID <strong>ket_1</strong>
-                                                label "Pilihan Sisi". Maka di SPK otomatis muncul "PILIHAN SISI: 2
-                                                SISI".
-                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -149,7 +158,7 @@
 
                             <!-- ====== TAB 1: IDENTITAS ====== -->
                             <div class="tab-pane fade p-5" id="sop-identitas">
-                                <h4 class="fw-900 text-dark mb-4">1. Registrasi Identitas Produk</h4>
+                                <h4 class="fw-900 text-dark mb-4">Identitas Produk</h4>
 
                                 <div class="p-4 rounded-4 mb-4 d-flex align-items-center gap-3"
                                     style="background: #eff6ff; border: 2px solid #3b82f6;">
@@ -187,12 +196,27 @@
                                                 pada matriks harga jual.</p>
                                         </div>
                                     </div>
+                                    <div class="d-flex gap-3 align-items-start border-top pt-3">
+                                        <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+                                            style="width: 28px; height: 28px; font-size: 0.8rem; font-weight: 900;">C
+                                        </div>
+                                        <div>
+                                            <p class="fw-800 mb-1">Klasifikasi Jenis Produk</p>
+                                            <p class="small text-muted mb-2">Sangat penting menentukan jenis produk agar alur sistem berjalan akurat:</p>
+                                            <ul class="small text-muted ps-3 mb-0">
+                                                <li class="mb-1"><strong class="text-dark">Barang Produksi:</strong> Produk yang harus diproduksi (Ada SPK, butuh Resep/BOM & Alur Mesin). Contoh: Spanduk, Brosur, Stempel.</li>
+                                                <li class="mb-1"><strong class="text-dark">Barang Jadi:</strong> Produk jadi siap jual langsung dari etalase/gudang tanpa perlu SPK produksi. Contoh: Tinta Botolan, Flashdisk, Pulpen, Frame Jadi.</li>
+                                                <li class="mb-1"><strong class="text-dark">Jasa Produksi:</strong> Jasa pengerjaan yang menggunakan mesin produksi (Ada SPK & Mesin) namun material dibawa oleh customer. Contoh: Jasa Print UV, Jasa Potong Laser.</li>
+                                                <li class="mb-1"><strong class="text-dark">Jasa Layanan:</strong> Layanan murni yang tidak masuk mesin dan tidak pakai bahan baku gudang. Contoh: Jasa Desain, Jasa Setting, Jasa Pemasangan.</li>
+                                            </ul>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
                             <!-- ====== TAB 2: BOM ====== -->
                             <div class="tab-pane fade p-5" id="sop-bom">
-                                <h4 class="fw-900 text-dark mb-2">2. Bill of Materials (BOM)</h4>
+                                <h4 class="fw-900 text-dark mb-2">2. Managemen BOM (Bill of Materials)</h4>
                                 <p class="text-muted small mb-4">BOM adalah resep rahasia produk. Akurasi HPP ditentukan
                                     di sini.</p>
 
@@ -233,11 +257,22 @@
                                         <li>Simpan. Indikator akan berubah menjadi Hijau jika data sudah lengkap.</li>
                                     </ol>
                                 </div>
+
+                                <div class="p-4 rounded-4 mt-4" style="background: #f0fdf4; border: 2px solid #22c55e;">
+                                    <h6 class="fw-900 text-success mb-2"><i class="fas fa-copy me-2"></i>FITUR: COPY BOM & ROUTING (KLONING CEPAT)</h6>
+                                    <p class="small text-muted mb-2">Jika Anda memiliki puluhan variasi produk (misal perbedaan ukuran atau finishing) dan resep BOM / Routing-nya hampir sama, Anda <strong>tidak perlu menginput ulang dari nol</strong>. Gunakan fitur Kloning ini untuk efisiensi:</p>
+                                    <ul class="small text-muted mb-0 ps-3">
+                                        <li class="mb-1">Klik tombol <strong><i class="bi bi-files"></i> Copy BOM & Routing</strong>.</li>
+                                        <li class="mb-1">Pilih <strong>Variasi Sumber</strong> (variasi yang BOM dan Routing-nya sudah Anda input lengkap).</li>
+                                        <li class="mb-1">Centang satu atau lebih <strong>Variasi Tujuan</strong> yang akan ditimpa dengan data sumber tersebut.</li>
+                                        <li class="mb-0">Klik <strong>Terapkan Sekarang</strong>. Seluruh Resep & Langkah Kerja akan otomatis tersalin. Anda bisa mengedit kecil-kecilan di tujuan setelah disalin jika diperlukan.</li>
+                                    </ul>
+                                </div>
                             </div>
 
                             <!-- ====== TAB 3: ROUTING ====== -->
                             <div class="tab-pane fade p-5" id="sop-routing">
-                                <h4 class="fw-900 text-dark mb-2">3. Routing (Alur Produksi)</h4>
+                                <h4 class="fw-900 text-dark mb-2">3. Alur Kerja (Routing)</h4>
                                 <p class="text-muted small mb-4">Mendefinisikan langkah kerja, mesin yang digunakan, dan
                                     biaya tenaga kerja.</p>
 
@@ -270,11 +305,22 @@
                                             dan target penyelesaian SPK.</p>
                                     </div>
                                 </div>
+
+                                <div class="p-4 rounded-4 mt-4" style="background: #f0fdf4; border: 2px solid #22c55e;">
+                                    <h6 class="fw-900 text-success mb-2"><i class="fas fa-copy me-2"></i>FITUR: COPY BOM & ROUTING (KLONING CEPAT)</h6>
+                                    <p class="small text-muted mb-2">Sama halnya dengan Manajemen BOM, Anda juga bisa menyalin Alur Kerja (Routing) dari satu variasi ke variasi lain secara instan:</p>
+                                    <ul class="small text-muted mb-0 ps-3">
+                                        <li class="mb-1">Klik tombol <strong><i class="bi bi-files"></i> Copy BOM & Routing</strong>.</li>
+                                        <li class="mb-1">Pilih <strong>Variasi Sumber</strong> yang langkah kerjanya sudah lengkap.</li>
+                                        <li class="mb-1">Centang <strong>Variasi Tujuan</strong>.</li>
+                                        <li class="mb-0">Klik <strong>Terapkan Sekarang</strong>. Perhatikan bahwa fitur ini akan menyalin KEDUA data sekaligus (Resep Material dan Langkah Kerja).</li>
+                                    </ul>
+                                </div>
                             </div>
 
                             <!-- ====== TAB 4: PRICING ====== -->
-                            <div class="tab-pane fade p-5" id="sop-pricing">
-                                <h4 class="fw-900 text-dark mb-2">4. Matriks Harga (Pricing Strategy)</h4>
+                            <div class="tab-pane fade show active p-5" id="sop-pricing">
+                                <h4 class="fw-900 text-dark mb-2">1. Skala Harga (Matriks Harga)</h4>
                                 <p class="text-muted small mb-4">Menentukan harga jual bertingkat (Grosir) berdasarkan
                                     kuantitas.</p>
 
@@ -314,6 +360,16 @@
                                         </tr>
                                     </tbody>
                                 </table>
+
+                                <div class="bg-light p-4 rounded-4 mt-4">
+                                    <h6 class="fw-900 d-flex align-items-center gap-2 mb-3"><i class="fas fa-list-ol text-primary"></i> Cara Membuat Skala Harga:</h6>
+                                    <ul class="small text-muted mb-0 ps-3" style="line-height: 1.8;">
+                                        <li><strong>Tambah Range:</strong> Klik tombol <strong>+ Tambah Range</strong> di pojok kanan atas tabel untuk membuat baris variasi/kuantitas baru.</li>
+                                        <li><strong>Simpan (Save):</strong> Klik <strong>Icon Disket Hijau</strong> di baris terkait untuk menyimpan satu per satu, ATAU klik <strong>Simpan Perubahan Matriks</strong> di bawah untuk menyimpan massal.</li>
+                                        <li><strong>Duplikat:</strong> Klik <strong>Icon Copy (Kertas) Biru</strong> untuk menyalin rentang jumlah & harga dari baris tersebut ke baris baru. Berguna jika harga beda tipis atau untuk rentang kuantitas berikutnya.</li>
+                                        <li><strong>Hapus:</strong> Klik <strong>Icon Tempat Sampah Merah</strong> untuk menghapus baris skala harga yang salah atau tidak digunakan.</li>
+                                    </ul>
+                                </div>
                             </div>
 
                             <!-- ====== TAB 5: DO & DON'T ====== -->
@@ -322,34 +378,34 @@
 
                                 <div class="row g-4">
                                     <div class="col-md-6">
-                                        <div class="p-4 rounded-4 h-100 bg-danger bg-opacity-10 border border-danger">
+                                        <div class="p-4 rounded-4 h-100" style="background-color: #fef2f2; border: 1px solid #fecaca;">
                                             <h6 class="fw-900 text-danger mb-3 font-monospace">❌ DILARANG KERAS (DON'T)
                                             </h6>
-                                            <ul class="list-unstyled d-flex flex-column gap-3 mb-0 small text-muted">
-                                                <li><i class="fas fa-times me-2"></i> <strong>Jangan menjual
+                                            <ul class="list-unstyled d-flex flex-column gap-3 mb-0 small text-dark">
+                                                <li><i class="fas fa-times me-2 text-danger"></i> <strong>Jangan menjual
                                                         rugi:</strong> Hindari input harga jual di bawah angka HPP
                                                     (Tulisan HPP di matriks harga adalah panduan Anda).</li>
-                                                <li><i class="fas fa-times me-2"></i> <strong>Jangan duplikat
+                                                <li><i class="fas fa-times me-2 text-danger"></i> <strong>Jangan duplikat
                                                         produk:</strong> Gunakan fitur "Copy Produk" jika ingin membuat
                                                     varian serupa.</li>
-                                                <li><i class="fas fa-times me-2"></i> <strong>Jangan hapus produk yang
+                                                <li><i class="fas fa-times me-2 text-danger"></i> <strong>Jangan hapus produk yang
                                                         ada stok:</strong> Ini merusak database transaksi masa lalu.
                                                     Gunakan fitur "Draft/Non-Aktif".</li>
                                             </ul>
                                         </div>
                                     </div>
                                     <div class="col-md-6">
-                                        <div class="p-4 rounded-4 h-100 bg-success bg-opacity-10 border border-success">
+                                        <div class="p-4 rounded-4 h-100" style="background-color: #f0fdf4; border: 1px solid #bbf7d0;">
                                             <h6 class="fw-900 text-success mb-3 font-monospace">✅ WAJIB DILAKUKAN (DO)
                                             </h6>
-                                            <ul class="list-unstyled d-flex flex-column gap-3 mb-0 small text-muted">
-                                                <li><i class="fas fa-check me-2"></i> <strong>Update Berkala:</strong>
+                                            <ul class="list-unstyled d-flex flex-column gap-3 mb-0 small text-dark">
+                                                <li><i class="fas fa-check me-2 text-success"></i> <strong>Update Berkala:</strong>
                                                     Update BOM jika ada kenaikan harga bahan baku signifikan dari
                                                     supplier.</li>
-                                                <li><i class="fas fa-check me-2"></i> <strong>Analisis Margin:</strong>
+                                                <li><i class="fas fa-check me-2 text-success"></i> <strong>Analisis Margin:</strong>
                                                     Gunakan modal "Profit Analysis" (Icon Grafik) untuk memastikan tiap
                                                     produk menghasilkan untung.</li>
-                                                <li><i class="fas fa-check me-2"></i> <strong>Cek Indikator:</strong>
+                                                <li><i class="fas fa-check me-2 text-success"></i> <strong>Cek Indikator:</strong>
                                                     Pastikan semua icon (BOM, Routing, Price) berwarna
                                                     <strong>Hijau</strong> sebelum produk dipasarkan ke Kasir.
                                                 </li>

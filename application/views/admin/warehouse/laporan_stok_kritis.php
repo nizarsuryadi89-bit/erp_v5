@@ -1,7 +1,7 @@
 <style>
 :root{--primary-gradient:linear-gradient(135deg,#1a1c23 0%,#2c3e50 100%);--premium-shadow:0 10px 30px rgba(0,0,0,.05);--slate-dark:#1e293b;--slate-muted:#64748b;}
 .report-hero{background:var(--primary-gradient);color:white;padding:2rem 0 4.5rem;border-radius:0 0 30px 30px;box-shadow:0 15px 35px rgba(0,0,0,.15);}
-.report-content-area{margin-top:-3rem;position:relative;z-index:10;padding-bottom:2rem;}
+.report-content-area{position:relative;z-index:10;padding-bottom:2rem;}
 .report-content-card{background:white;border-radius:24px;padding:2rem;box-shadow:var(--premium-shadow);border:1px solid #f1f5f9;}
 .alert-banner{background:#fff1f2;border:1px solid #fecdd3;border-radius:16px;padding:1.25rem 1.5rem;margin-bottom:1.5rem;display:flex;align-items:center;gap:12px;}
 .btn-back{background:rgba(255,255,255,.1);color:#94a3b8;border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:0 16px;height:38px;font-weight:700;font-size:.82rem;text-decoration:none;display:inline-flex;align-items:center;gap:6px;}
@@ -18,26 +18,10 @@
 </style>
 
 <div class="container-fluid px-4">
-    <div class="report-hero">
-        <div class="container-fluid px-5">
-            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
-                <div style="display:flex;align-items:center;gap:1.25rem;">
-                    <div style="width:60px;height:60px;background:rgba(247,37,133,.2);border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;border:1px solid rgba(247,37,133,.3);">
-                        <i class="fa fa-exclamation-triangle" style="color:#f72585;"></i>
-                    </div>
-                    <div>
-                        <h1 style="font-size:1.8rem;font-weight:900;margin:0 0 .2rem 0;">Laporan Stok Kritis</h1>
-                        <p style="margin:0;color:#94a3b8;font-size:.85rem;">Material yang stoknya di bawah batas minimum — perlu segera dibeli</p>
-                    </div>
-                </div>
-                <a href="<?= base_url('warehouse/analytics') ?>" class="btn-back"><i class="fa fa-arrow-left"></i> Kembali</a>
-                <button onclick="window.print()" class="btn-print"><i class="fa fa-print"></i> Cetak</button>
-            </div>
-        </div>
-    </div>
-
+    <div style="height: 35px;"></div>
     <div class="report-content-area">
         <div class="container-fluid px-5">
+            <?php $this->load->view('admin/warehouse/components/sop_stepper', ['active_step' => 2]); ?>
             <div class="report-content-card">
 
                 <?php if (count($stok_kritis) > 0): ?>
@@ -55,7 +39,10 @@
                 </div>
                 <?php endif; ?>
 
-                <div class="section-title">Daftar Stok Kritis</div>
+                <div class="section-title mb-2">Daftar Stok Kritis</div>
+                <div class="alert alert-info py-2 small mb-3" style="background:#e0f2fe; border-color:#bae6fd; color:#0369a1; border-radius:10px;">
+                    <i class="fa fa-info-circle me-1"></i> <strong>Informasi:</strong> Nilai <i>Stok Aktif</i> dan <i>Kekurangan</i> yang ditampilkan pada tabel ini adalah rekapitulasi (gabungan) dari seluruh gudang.
+                </div>
                 <div class="table-responsive">
                     <table class="table table-bordered table-striped" id="dt-kritis">
                         <thead style="background:#1e293b;color:white;">
@@ -68,18 +55,44 @@
                             </tr>
                         </thead>
                         <tbody>
-                            <?php $no=1; foreach ($stok_kritis as $row): ?>
+                            <?php 
+                                $format_compound = function($qty_base, $konversi, $satuan_gudang, $satuan_produksi) {
+                                    $divisor = max(1, (int) $konversi);
+                                    $is_negative = $qty_base < 0;
+                                    $abs_pieces = abs(round((float)$qty_base));
+                                    $whole = floor($abs_pieces / $divisor);
+                                    $pieces = (int) $abs_pieces % (int) $divisor;
+
+                                    $f = "";
+                                    if ($whole > 0 || ($whole == 0 && $pieces == 0)) {
+                                        $f .= $whole . " " . $satuan_gudang;
+                                    }
+                                    if ($pieces > 0 && $konversi > 1) {
+                                        $f .= ($f ? " " : "") . $pieces . " " . $satuan_produksi;
+                                    }
+                                    if ($is_negative && $f !== "0 " . $satuan_gudang) {
+                                        $f = "-" . $f;
+                                    }
+                                    return $f;
+                                };
+                            
+                            $no=1; foreach ($stok_kritis as $row): 
+                                $konversi = (float) ($row->konversi > 0 ? $row->konversi : 1);
+                                $stok_aktif_str = $format_compound($row->stok_aktif_base, $konversi, $row->satuan_gudang, $row->satuan_produksi);
+                                $stok_min_str = $format_compound($row->stok_min_base, $konversi, $row->satuan_gudang, $row->satuan_produksi);
+                                $kekurangan_str = $format_compound($row->kekurangan_base, $konversi, $row->satuan_gudang, $row->satuan_produksi);
+                            ?>
                                 <tr>
                                     <td><?= $no++ ?></td>
                                     <td><?= $row->bahan_nama ?></td>
                                     <td><?= $row->varian ?: '-' ?></td>
                                     <td><?= $row->gudang_nama ?: '-' ?></td>
-                                    <td class="text-right <?= $row->stok_aktif <= 0 ? 'text-danger' : 'text-warning' ?>">
-                                        <strong><?= (float)$row->stok_aktif ?></strong>
+                                    <td class="text-right <?= $row->stok_aktif_base <= 0 ? 'text-danger' : 'text-warning' ?>">
+                                        <strong><?= $stok_aktif_str ?></strong>
                                     </td>
-                                    <td class="text-right"><?= (float)$row->stok_min ?></td>
-                                    <td class="text-right text-danger"><strong><?= (float)$row->kekurangan ?></strong></td>
-                                    <td><?= $row->satuan_nama ?></td>
+                                    <td class="text-right fw-bold text-dark"><?= $stok_min_str ?></td>
+                                    <td class="text-right text-danger"><strong><?= $kekurangan_str ?></strong></td>
+                                    <td><?= $row->satuan_gudang ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>

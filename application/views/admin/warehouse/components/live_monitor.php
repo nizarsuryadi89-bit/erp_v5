@@ -33,17 +33,17 @@
     </li>
 </ul>
 
-<div class="tab-content" id="monitorTabContent">
+<div class="tab-content flex-grow-1 d-flex flex-column" id="monitorTabContent">
 
     <!-- 1. LIVE OPERATOR FEED -->
-    <div class="tab-pane fade show active" id="tab-activity" role="tabpanel">
+    <div class="tab-pane fade show active flex-grow-1 d-flex flex-column" id="tab-activity" role="tabpanel" style="min-height: 0;">
         <?php if (empty($operator_logs)): ?>
             <div class="text-center py-5 opacity-50">
                 <i class="fas fa-running fa-3x mb-3"></i>
                 <p class="small fw-bold">Belum ada aktivitas operator tercatat.</p>
             </div>
         <?php else: ?>
-            <div class="activity-feed">
+            <div class="activity-feed flex-grow-1" style="overflow-y: auto;">
                 <?php foreach ($operator_logs as $log): ?>
                     <div class="activity-log-item d-flex gap-3 mb-4">
                         <div class="activity-avatar bg-soft-blue text-primary rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"

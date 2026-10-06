@@ -146,12 +146,21 @@ $display_bulan = $bulan_nama[$split_bulan[1]] . ' ' . $split_bulan[0];
           <strong class="text-success">Rp <?= number_format(($slip_gaji['reward'] ?? 0) + ($slip_gaji['tunjangan_extra'] ?? 0) + ($slip_gaji['tunjangan_kinerja_manual'] ?? 0), 0, ',', '.') ?></strong>
         </div>
 
+        <?php for($i=1; $i<=3; $i++): ?>
+        <?php if(isset($slip_gaji["custom_in{$i}_nom"]) && $slip_gaji["custom_in{$i}_nom"] > 0): ?>
+        <div class="salary-row">
+          <span class="text-success"><i class="bi bi-plus-circle me-2"></i> <?= htmlspecialchars($slip_gaji["custom_in{$i}_nama"] ?: "Tambahan Pendapatan $i") ?></span>
+          <strong class="text-success">Rp <?= number_format($slip_gaji["custom_in{$i}_nom"], 0, ',', '.') ?></strong>
+        </div>
+        <?php endif; ?>
+        <?php endfor; ?>
+
         <!-- 7. Deduksi / Potongan -->
         <div class="bg-light px-4 py-2"><small class="premium-label m-0"
               style="color:#ef4444; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">Potongan</small></div>
 
         <?php 
-          $total_potongan = ($slip_gaji['potongan_alpha'] ?? 0) + ($slip_gaji['potongan_terlambat'] ?? 0) + ($slip_gaji['kasbon'] ?? 0) + ($slip_gaji['pinjaman'] ?? 0);
+          $total_potongan = ($slip_gaji['potongan_alpha'] ?? 0) + ($slip_gaji['potongan_terlambat'] ?? 0) + ($slip_gaji['kasbon'] ?? 0) + ($slip_gaji['pinjaman'] ?? 0) + ($slip_gaji['custom_out1_nom'] ?? 0) + ($slip_gaji['custom_out2_nom'] ?? 0) + ($slip_gaji['custom_out3_nom'] ?? 0);
         ?>
         <div class="salary-row sub-row">
           <span>Alpha / Izin</span>
@@ -165,6 +174,14 @@ $display_bulan = $bulan_nama[$split_bulan[1]] . ' ' . $split_bulan[0];
           <span>Kasbon / Pinjaman</span>
           <strong class="text-danger">- Rp <?= number_format(($slip_gaji['kasbon'] ?? 0) + ($slip_gaji['pinjaman'] ?? 0), 0, ',', '.') ?></strong>
         </div>
+        <?php for($i=1; $i<=3; $i++): ?>
+        <?php if(isset($slip_gaji["custom_out{$i}_nom"]) && $slip_gaji["custom_out{$i}_nom"] > 0): ?>
+        <div class="salary-row sub-row">
+          <span><?= htmlspecialchars($slip_gaji["custom_out{$i}_nama"] ?: "Tambahan Potongan $i") ?></span>
+          <strong class="text-danger">- Rp <?= number_format($slip_gaji["custom_out{$i}_nom"], 0, ',', '.') ?></strong>
+        </div>
+        <?php endif; ?>
+        <?php endfor; ?>
         <div class="salary-row border-top-0 pt-0">
           <span class="fw-bold text-danger">Total Potongan</span>
           <strong class="text-danger">Rp <?= number_format($total_potongan, 0, ',', '.') ?></strong>

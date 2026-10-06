@@ -11,16 +11,27 @@ if (!empty($getdetail)) {
             $harga = 0;
         }
 
-        if (isset($dt->satuan_id) && $dt->satuan_id == 11) {
-            $jumlah = $dt->panjang * $harga * $dt->qty;
-        } else if (isset($dt->kategori_id) && isset($dt->ket_1) && $dt->kategori_id == 9 && $dt->ket_1 == '5') {
-            $jumlah = $dt->panjang * $harga * $dt->qty;
-        } else if ($dt->panjang != '0' && $dt->lebar != '0') {
-            $jumlah = $dt->panjang * $dt->lebar * $harga * $dt->qty;
-        } else if ($dt->panjang != '0' && empty($dt->lebar)) {
-            $jumlah = $dt->panjang * $harga * $dt->qty;
+        $meta = !empty($dt->metadata) ? json_decode($dt->metadata, true) : [];
+        if (isset($meta['subtotal']) && is_numeric($meta['subtotal'])) {
+            $jumlah = (float) $meta['subtotal'];
+        } else if (isset($dt->subtotal) && $dt->subtotal !== null && $dt->subtotal !== '' && is_numeric($dt->subtotal) && floatval($dt->subtotal) > 0) {
+            $jumlah = (float) $dt->subtotal;
         } else {
-            $jumlah = $harga * $dt->qty;
+            if (isset($dt->satuan_id) && $dt->satuan_id == 11) {
+                $jumlah = $dt->panjang * $harga * $dt->qty;
+            } else if (isset($dt->kategori_id) && isset($dt->ket_1) && $dt->kategori_id == 9 && $dt->ket_1 == '5') {
+                $jumlah = $dt->panjang * $harga * $dt->qty;
+            } else if ($dt->panjang != '0' && $dt->lebar != '0') {
+                $jumlah = $dt->panjang * $dt->lebar * $harga * $dt->qty;
+            } else if ($dt->panjang != '0' && empty($dt->lebar)) {
+                $jumlah = $dt->panjang * $harga * $dt->qty;
+            } else {
+                $jumlah = $harga * $dt->qty;
+            }
+
+            if (isset($dt->harga_minimal) && $dt->harga_minimal > 0 && $jumlah < $dt->harga_minimal) {
+                $jumlah = $dt->harga_minimal;
+            }
         }
 
         $subTotal += $jumlah;
@@ -32,6 +43,9 @@ if (!empty($getdetail)) {
 if (isset($manual_total_tagihan) && floatval($manual_total_tagihan) > 0) {
     $subTotal = floatval($manual_total_tagihan);
 }
+
+// Bulatkan subTotal untuk mencegah bug JS formatRupiah yang menghapus titik desimal
+$subTotal = round($subTotal);
 ?>
 <!-- Debug: Calculated SubTotal = <?= $subTotal ?> -->
 
@@ -148,16 +162,27 @@ if (isset($manual_total_tagihan) && floatval($manual_total_tagihan) > 0) {
                                             if ($harga <= 0)
                                                 $harga = 0;
 
-                                            if (isset($dt->satuan_id) && $dt->satuan_id == 11) {
-                                                $jumlah = $dt->panjang * $harga * $dt->qty;
-                                            } else if (isset($dt->kategori_id) && isset($dt->ket_1) && $dt->kategori_id == 9 && $dt->ket_1 == '5') {
-                                                $jumlah = $dt->panjang * $harga * $dt->qty;
-                                            } else if ($dt->panjang != '0' && $dt->lebar != '0') {
-                                                $jumlah = $dt->panjang * $dt->lebar * $harga * $dt->qty;
-                                            } else if ($dt->panjang != '0' && empty($dt->lebar)) {
-                                                $jumlah = $dt->panjang * $harga * $dt->qty;
+                                            $meta = !empty($dt->metadata) ? json_decode($dt->metadata, true) : [];
+                                            if (isset($meta['subtotal']) && is_numeric($meta['subtotal'])) {
+                                                $jumlah = (float) $meta['subtotal'];
+                                            } else if (isset($dt->subtotal) && $dt->subtotal !== null && $dt->subtotal !== '' && is_numeric($dt->subtotal) && floatval($dt->subtotal) > 0) {
+                                                $jumlah = (float) $dt->subtotal;
                                             } else {
-                                                $jumlah = $harga * $dt->qty;
+                                                if (isset($dt->satuan_id) && $dt->satuan_id == 11) {
+                                                    $jumlah = $dt->panjang * $harga * $dt->qty;
+                                                } else if (isset($dt->kategori_id) && isset($dt->ket_1) && $dt->kategori_id == 9 && $dt->ket_1 == '5') {
+                                                    $jumlah = $dt->panjang * $harga * $dt->qty;
+                                                } else if ($dt->panjang != '0' && $dt->lebar != '0') {
+                                                    $jumlah = $dt->panjang * $dt->lebar * $harga * $dt->qty;
+                                                } else if ($dt->panjang != '0' && empty($dt->lebar)) {
+                                                    $jumlah = $dt->panjang * $harga * $dt->qty;
+                                                } else {
+                                                    $jumlah = $harga * $dt->qty;
+                                                }
+
+                                                if (isset($dt->harga_minimal) && $dt->harga_minimal > 0 && $jumlah < $dt->harga_minimal) {
+                                                    $jumlah = $dt->harga_minimal;
+                                                }
                                             }
 
                                             // [NEW] Override item level display for manual invoice
@@ -208,111 +233,208 @@ if (isset($manual_total_tagihan) && floatval($manual_total_tagihan) > 0) {
                                                             <?= htmlspecialchars($store_name) ?>
                                                         </span>
                                                         <?php
-                                                        // [NEW] Render Metadata Dinamis / Fallback ke ket_1
-                                                        $meta_rendered = false;
-                                                        
-                                                        $schema_map = [];
-                                                        $raw_schema = $dt->product_form_schema ?? $dt->subcategory_form_schema ?? $dt->category_form_schema ?? '';
-                                                        if (!empty($raw_schema)) {
-                                                            $schema_arr = json_decode($raw_schema, true);
-                                                            if (is_array($schema_arr)) {
-                                                                foreach ($schema_arr as $field) {
-                                                                    if (isset($field['name'])) {
-                                                                        $schema_map[$field['name']] = $field;
+                                                        // [NEW] 1. Try to resolve from Dynamic Metadata first
+                                                        $meta = !empty($dt->metadata) ? json_decode($dt->metadata, true) : [];
+                                                        $exclude_keys = ['product_id', 'nospk', 'qty', 'panjang', 'lebar', 'kategori_id', 'keterangan', 'approve', 'lokasi_cetak', 'subkategori_id', 'user_id', 'kodeproduk', 'jenis_transaksi', 'id_jenis_transaksi', 'konsumen_id', 'deskprint_id', 'user', 'subkategori', 'konsumen', 'deskprint', 'unit_price', 'subtotal', 'price_snapshot_at'];
+                                                        $is_lf_or_dtf = in_array((int)$dt->kategori_id, [2, 9]);
+
+                                                        $schema_json = !empty($dt->product_form_schema) && $dt->product_form_schema !== '[]'
+                                                            ? $dt->product_form_schema
+                                                            : (!empty($dt->subcategory_form_schema) && $dt->subcategory_form_schema !== '[]'
+                                                                ? $dt->subcategory_form_schema
+                                                                : ($dt->category_form_schema ?? ''));
+                                                                
+                                                        $schema_fields = [];
+                                                        if (!empty($schema_json)) {
+                                                            $schema = json_decode($schema_json, true);
+                                                            if (is_array($schema)) {
+                                                                foreach ($schema as $field) {
+                                                                    $name = $field['name'] ?? ($field['variabel_id'] ?? '');
+                                                                    if (!empty($name)) {
+                                                                        $schema_fields[$name] = $field;
                                                                     }
                                                                 }
                                                             }
                                                         }
 
-                                                        if (!empty($dt->metadata)) {
-                                                            $meta_json = json_decode($dt->metadata, true);
-                                                            if (is_array($meta_json)) {
-                                                                foreach ($meta_json as $key => $val) {
-                                                                    $label = ucwords(str_replace('_', ' ', $key));
-                                                                    $is_in_schema = isset($schema_map[$key]);
-
-                                                                    // Resolusi label dan value dari schema
-                                                                    if ($is_in_schema) {
-                                                                        $field = $schema_map[$key];
-                                                                        if (!empty($field['label'])) {
-                                                                            $label = $field['label'];
-                                                                        }
-                                                                        if (isset($field['options']) && is_array($field['options']) && isset($field['options'][$val])) {
-                                                                            $val = $field['options'][$val];
-                                                                        }
-                                                                    }
-
-                                                                    // Skip some fields 
-                                                                    if (!$is_in_schema) {
-                                                                        if (in_array($key, ['unit_price', 'subtotal', 'price_snapshot_at', 'hpp', 'range_id', 'jenisprint', 'user', 'kodeproduk', 'nospk', 'subkategori']) || substr($key, -3) === '_id') {
-                                                                            continue;
-                                                                        }
-                                                                    }
-
-                                                                    if ($key == 'sisi') {
-                                                                        if (in_array($dt->kategori_id, [2, 9]) || strtolower($dt->kategori_nama ?? '') == 'large format') {
-                                                                            continue;
-                                                                        }
-                                                                        if ($val == '1' || $val == '2') {
-                                                                            $val = $val . ' Sisi';
-                                                                        }
-                                                                    }
-
-                                                                    $icon = ($key == 'sisi' || $key == 'side_id') ? 'fa-layer-group' : 'fa-info-circle';
-                                                                    $color = ($key == 'sisi' || $key == 'side_id') ? 'info' : 'secondary';
-
-                                                                    if ($key == 'jenisprint_id') {
-                                                                        $icon = 'fa-print';
-                                                                        $color = 'primary';
-                                                                        if ($val == '2')
-                                                                            $val = 'Outdoor Solvent';
-                                                                        elseif ($val == '3')
-                                                                            $val = 'Indoor - Eco Solvent';
-                                                                        elseif ($val == '4')
-                                                                            $val = 'Indoor UV';
-                                                                    }
-                                                                    ?>
-                                                                    <span
-                                                                        class="badge bg-<?= $color ?> bg-opacity-10 text-<?= $color ?> border border-<?= $color ?> border-opacity-25 px-2">
-                                                                        <i class="fas <?= $icon ?> me-1"></i> <?= $label ?>: <?= $val ?>
-                                                                    </span>
-                                                                    <?php
-                                                                    $meta_rendered = true;
+                                                        $printed_metadata = [];
+                                                        if (!empty($meta) && is_array($meta)) {
+                                                            foreach ($meta as $key => $val) {
+                                                                if (in_array($key, $exclude_keys)) continue;
+                                                                if (empty($val) || $val === '0') continue;
+                                                                
+                                                                $schema_key = $key;
+                                                                $in_schema = isset($schema_fields[$schema_key]);
+                                                                if (!$in_schema && isset($schema_fields[$key . '_id'])) {
+                                                                    $in_schema = true;
+                                                                    $schema_key = $key . '_id';
                                                                 }
+
+                                                                // Specific hiding for DTF 'Meteran' (which was value '5')
+                                                                if (!$in_schema && $is_lf_or_dtf && $key === 'ket_1' && $val === '5') continue;
+
+                                                                // Skip technical ID versions in favor of clean key versions
+                                                                if (substr($key, -3) === '_id') {
+                                                                    $clean_k = substr($key, 0, -3);
+                                                                    if (isset($meta[$clean_k]) && !empty($meta[$clean_k])) {
+                                                                        continue;
+                                                                    }
+                                                                }
+                                                                
+                                                                // Skip legacy label keys that were saved dynamically
+                                                                if (substr($key, -6) === '_label') {
+                                                                    continue;
+                                                                }
+                                                                
+                                                                // Skip legacy 'side' or 'ket' if the schema already defines equivalent fields
+                                                                if (strtolower($key) === 'side' && (isset($schema_fields['sisi']) || isset($meta['sisi']))) {
+                                                                    continue;
+                                                                }
+                                                                if (strtolower($key) === 'jenisprint' && (isset($schema_fields['mesin']) || isset($meta['mesin']))) {
+                                                                    continue;
+                                                                }
+
+                                                                // Enforce category-based Sisi exclusion
+                                                                if (!$in_schema && $is_lf_or_dtf && in_array(strtolower($key), ['sisi', 'side', 'side_id', 'ket_1'])) {
+                                                                    continue;
+                                                                }
+
+                                                                $label = '';
+                                                                $resolved_val = $val;
+                                                                
+                                                                if ($in_schema) {
+                                                                    $field = $schema_fields[$schema_key];
+                                                                    $label = strtoupper($field['label'] ?? $schema_key);
+                                                                    if (isset($field['options']) && is_array($field['options'])) {
+                                                                        if (isset($field['options'][$val])) {
+                                                                            $resolved_val = $field['options'][$val];
+                                                                        }
+                                                                    }
+                                                                } else {
+                                                                    if (strpos(strtolower($key), 'ket_') === 0) {
+                                                                        $label = 'HIDDEN_LABEL_' . $key;
+                                                                    } else {
+                                                                        $label = strtoupper(str_replace('_', ' ', $key));
+                                                                        if ($key === 'jenisprint') $label = 'MESIN';
+                                                                    }
+                                                                }
+                                                                
+                                                                $printed_metadata[$label] = $resolved_val;
                                                             }
                                                         }
 
-                                                        // Fallback jika belum menggunakan metadata (Transaksi Lama)
-                                                        if (!$meta_rendered) {
-                                                            $ket_label = '';
-                                                            $icon = 'fa-layer-group';
-                                                            $color = 'info';
-
-                                                            if (isset($dt->kategori_id) && $dt->kategori_id == 2) {
-                                                                $icon = 'fa-print';
-                                                                $color = 'primary';
-                                                                $mesin_id = !empty($dt->jenisprint_id) ? $dt->jenisprint_id : $dt->ket_1;
-                                                                if ($mesin_id == '2')
-                                                                    $ket_label = 'Outdoor Solvent';
-                                                                elseif ($mesin_id == '3')
-                                                                    $ket_label = 'Indoor - Eco Solvent';
-                                                                elseif ($mesin_id == '4')
-                                                                    $ket_label = 'Indoor UV';
-                                                                elseif ($mesin_id)
-                                                                    $ket_label = 'Lainnya';
-                                                            } elseif ((!isset($dt->kategori_id) || $dt->kategori_id != 9) && in_array($dt->ket_1, ['1', '2'])) {
-                                                                if ($dt->ket_1 == '1')
-                                                                    $ket_label = '1 Sisi';
-                                                                elseif ($dt->ket_1 == '2')
-                                                                    $ket_label = '2 Sisi (Bolak-Balik)';
+                                                        if (!empty($printed_metadata)) {
+                                                            foreach ($printed_metadata as $lbl => $val) {
+                                                                $icon = 'fa-info-circle';
+                                                                $color_class = 'secondary';
+                                                                if (strpos($lbl, 'MESIN') !== false) {
+                                                                    $icon = 'fa-print';
+                                                                    $color_class = 'primary';
+                                                                } elseif (strpos($lbl, 'LEBAR') !== false) {
+                                                                    $icon = 'fa-arrows-alt-h';
+                                                                    $color_class = 'success';
+                                                                }
+                                                                
+                                                                if (strpos($lbl, 'HIDDEN_LABEL_') === 0) {
+                                                                    $dval = ucwords(strtolower($val)); echo "<span class='badge bg-{$color_class} bg-opacity-10 text-{$color_class} border border-{$color_class} border-opacity-25 px-3 py-1 mb-1 fw-normal rounded-pill' style='font-size: 0.75rem; letter-spacing: 0.3px;'><i class='fas {$icon} me-1 opacity-75'></i><span class='fw-bold'>{$dval}</span></span> ";
+                                                                } else {
+                                                                    $dlbl = ucwords(strtolower(str_replace('_', ' ', $lbl))); $dval = ucwords(strtolower($val)); echo "<span class='badge bg-{$color_class} bg-opacity-10 text-{$color_class} border border-{$color_class} border-opacity-25 px-3 py-1 mb-1 fw-normal rounded-pill' style='font-size: 0.75rem; letter-spacing: 0.3px;'><i class='fas {$icon} me-1 opacity-75'></i><span class='opacity-75 me-1'>{$dlbl}:</span><span class='fw-bold'>{$dval}</span></span> ";
+                                                                }
+                                                            }
+                                                        } else {
+                                                            // 2. Intelligent Variation Resolver using Schema
+                                                            $variations_to_check = [
+                                                                'ket_1' => $dt->ket_1 ?? '',
+                                                                'jenisprint_id' => $dt->jenisprint_id ?? '',
+                                                                'side_id' => $dt->side_id ?? ''
+                                                            ];
+                                                            
+                                                            $db_meta = !empty($dt->metadata) ? json_decode($dt->metadata, true) : [];
+                                                            if (empty($db_meta) && !empty($dt->product_metadata)) {
+                                                                $db_meta = json_decode($dt->product_metadata, true);
+                                                            }
+                                                            if (is_array($db_meta)) {
+                                                                foreach($db_meta as $mk => $mv) {
+                                                                    if (strpos($mk, 'dim_') === 0 && !isset($variations_to_check[$mk])) {
+                                                                        $variations_to_check[$mk] = $mv;
+                                                                    }
+                                                                }
                                                             }
 
-                                                            if (!empty($ket_label)): ?>
-                                                                <span
-                                                                    class="badge bg-<?= $color ?> bg-opacity-10 text-<?= $color ?> border border-<?= $color ?> border-opacity-25 px-2">
-                                                                    <i class="fas <?= $icon ?> me-1"></i> <?= $ket_label ?>
-                                                                </span>
-                                                            <?php endif;
+                                                            $printed_variations = false;
+                                                            if (!empty($schema_json)) {
+                                                                $schema = json_decode($schema_json, true);
+                                                                if (is_array($schema)) {
+                                                                    foreach ($variations_to_check as $var_key => $raw_val) {
+                                                                        if (empty($raw_val) || $raw_val === '0') continue;
+                                                                        
+                                                                        $found = false;
+                                                                        $lbl = '';
+                                                                        $val = '';
+                                                                        
+                                                                        foreach ($schema as $field) {
+                                                                            if (($field['name'] ?? '') === $var_key || ($field['variabel_id'] ?? '') === $var_key) {
+                                                                                $lbl = strtoupper($field['label'] ?? $var_key);
+                                                                                $val = $field['options'][$raw_val] ?? $raw_val;
+                                                                                $found = true;
+                                                                                break;
+                                                                            }
+                                                                        }
+                                                                        
+                                                                        if ($found && !empty($lbl) && !empty($val) && !in_array($val, ['-', '0'])) {
+                                                                            $icon = 'fa-info-circle';
+                                                                            $color_class = 'info';
+                                                                            if ($var_key === 'jenisprint_id' || strpos($lbl, 'MESIN') !== false) {
+                                                                                $icon = 'fa-print';
+                                                                                $color_class = 'primary';
+                                                                            } elseif ($var_key === 'side_id') {
+                                                                                $icon = 'fa-clone';
+                                                                                $color_class = 'secondary';
+                                                                            }
+                                                                            $dlbl = ucwords(strtolower(str_replace('_', ' ', $lbl))); $dval = ucwords(strtolower($val)); echo "<span class='badge bg-{$color_class} bg-opacity-10 text-{$color_class} border border-{$color_class} border-opacity-25 px-3 py-1 mb-1 fw-normal rounded-pill' style='font-size: 0.75rem; letter-spacing: 0.3px;'><i class='fas {$icon} me-1 opacity-75'></i><span class='opacity-75 me-1'>{$dlbl}:</span><span class='fw-bold'>{$dval}</span></span> ";
+                                                                            $printed_variations = true;
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            if (!$printed_variations && empty($schema_json)) {
+                                                                // Fallback to absolute legacy
+                                                                $variation_label = '';
+                                                                $variation_value = '';
+                                                                $variation_color = 'info';
+                                                                $icon = 'fa-layer-group';
+                                                                
+                                                                if (($dt->kategori_id ?? 0) == 2 && !empty($dt->jenisprint_id)) {
+                                                                    $variation_label = 'MESIN';
+                                                                    $mesin_label = '';
+                                                                    if ($dt->jenisprint_id == 2) $mesin_label = 'Outdoor';
+                                                                    elseif ($dt->jenisprint_id == 3) $mesin_label = 'Indoor Solvent';
+                                                                    elseif ($dt->jenisprint_id == 4) $mesin_label = 'Indoor UV';
+                                                                    $variation_value = $mesin_label ?: '-';
+                                                                    $variation_color = 'primary';
+                                                                    $icon = 'fa-print';
+                                                                } elseif (($dt->kategori_id ?? 0) == 9) {
+                                                                    $variation_label = '';
+                                                                } else {
+                                                                    if (isset($dt->ket_1) && $dt->ket_1 == '1') {
+                                                                        $variation_label = 'Cetak';
+                                                                        $variation_value = '1 Sisi';
+                                                                    } else if (isset($dt->ket_1) && $dt->ket_1 == '2') {
+                                                                        $variation_label = 'Cetak';
+                                                                        $variation_value = '2 Sisi (Bolak-Balik)';
+                                                                    }
+                                                                }
+
+                                                                if (($dt->kategori_id ?? 0) == 9) {
+                                                                    $variation_label = '';
+                                                                    $variation_value = '';
+                                                                }
+
+                                                                if (!empty($variation_label) && !empty($variation_value) && !in_array($variation_value, ['-', '0'])) {
+                                                                    $dlbl = ucwords(strtolower(str_replace('_', ' ', $variation_label))); $dval = ucwords(strtolower($variation_value)); echo "<span class='badge bg-{$variation_color} bg-opacity-10 text-{$variation_color} border border-{$variation_color} border-opacity-25 px-3 py-1 mb-1 fw-normal rounded-pill' style='font-size: 0.75rem; letter-spacing: 0.3px;'><i class='fas {$icon} me-1 opacity-75'></i><span class='opacity-75 me-1'>{$dlbl}:</span><span class='fw-bold'>{$dval}</span></span> ";
+                                                                }
+                                                            }
                                                         }
                                                         ?>
 
@@ -493,7 +615,8 @@ if (isset($manual_total_tagihan) && floatval($manual_total_tagihan) > 0) {
                                 <label class="info-label text-danger">DISKON TRANSAKSI</label>
                                 <div class="premium-input-group" style="border-left: 4px solid #e74c3c;">
                                     <i class="fas fa-minus-circle text-danger"></i>
-                                    <input type="text" id="diskon" name="diskon" class="text-danger" value="0"
+                                    <input type="text" id="diskon" name="diskon" class="text-danger" 
+                                        value="<?= isset($pending_payment->diskon_total) && $pending_payment->diskon_total > 0 ? number_format($pending_payment->diskon_total, 0, ',', '.') : '0' ?>"
                                         placeholder="0">
                                 </div>
                             </div>
@@ -502,7 +625,8 @@ if (isset($manual_total_tagihan) && floatval($manual_total_tagihan) > 0) {
                                 <label class="info-label text-info">BIAYA ONGKIR</label>
                                 <div class="premium-input-group" style="border-left: 4px solid #3498db;">
                                     <i class="fas fa-truck text-info"></i>
-                                    <input type="text" id="ongkir" name="ongkir" class="text-info" value="0"
+                                    <input type="text" id="ongkir" name="ongkir" class="text-info" 
+                                        value="<?= isset($pending_payment->ongkir) && $pending_payment->ongkir > 0 ? number_format($pending_payment->ongkir, 0, ',', '.') : '0' ?>"
                                         placeholder="0">
                                 </div>
                             </div>
@@ -552,7 +676,8 @@ if (isset($manual_total_tagihan) && floatval($manual_total_tagihan) > 0) {
                                             <option value="">-- Pilih Metode --</option>
                                             <option value="cash">💰 TUNAI / CASH</option>
                                             <option value="transfer">🏦 TRANSFER BANK</option>
-                                            <option value="edc">💳 EDC / QRIS</option>
+                                            <option value="edc">💳 EDC</option>
+                                            <option value="qris">📱 QRIS</option>
                                             <option value="ewallet">📱 E-WALLET</option>
                                             <option value="piutang">🤝 PIUTANG (DP)</option>
                                         </select>
@@ -688,6 +813,42 @@ if (isset($manual_total_tagihan) && floatval($manual_total_tagihan) > 0) {
                                                     <option value="0">-- Pilih Aplikasi --</option>
                                                     <?php foreach ($ewallet as $rek): ?>
                                                         <option value="<?= $rek->id ?>"><?= $rek->ewallet_nama ?></option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="metode-input d-none" id="qrisForm">
+                                    <div class="row g-3">
+                                        <div class="col-md-5">
+                                            <label class="info-label">JUMLAH SCAN QRIS</label>
+                                            <div class="premium-input-group mb-1">
+                                                <input type="text" name="bayar_qris" id="bayar_qris"
+                                                    class="text-primary fs-5" placeholder="Rp 0">
+                                            </div>
+                                            <div class="small text-muted d-flex align-items-center"
+                                                style="font-size: 0.7rem;">
+                                                <i class="fas fa-info-circle me-1"></i>Max: <span id="maxQris"
+                                                    class="fw-bold ms-1 text-dark">Rp 0</span>
+                                            </div>
+                                            
+                                            <!-- QR Code Display -->
+                                            <div class="mt-3 text-center border rounded p-2 bg-white">
+                                                <div class="fw-bold text-dark small mb-2">Scan untuk Membayar</div>
+                                                <img id="qris_image_display" src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=PILIH_REKENING_DAHULU" alt="QRIS Demo" class="img-fluid border" style="width: 150px; height: 150px; object-fit: contain;">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-7">
+                                            <label class="info-label">REKENING TUJUAN</label>
+                                            <div class="premium-input-group">
+                                                <i class="fas fa-university me-2 text-muted"></i>
+                                                <select name="rekening_qris_id" id="rekening_qris_id" class="border-0 bg-transparent fw-bold w-100">
+                                                    <option value="0" data-qris="">-- Pilih Rekening --</option>
+                                                    <?php foreach ($rekening as $rek): ?>
+                                                        <option value="<?= $rek->id ?>" data-qris="<?= !empty($rek->qris_image) ? base_url('assets/img/qris/' . $rek->qris_image) : '' ?>"><?= $rek->no_rekening ?>
+                                                            (<?= $rek->atas_nama ?>)</option>
                                                     <?php endforeach; ?>
                                                 </select>
                                             </div>
@@ -866,6 +1027,9 @@ if (isset($manual_total_tagihan) && floatval($manual_total_tagihan) > 0) {
             } else if (metode === 'ewallet') {
                 const bayarEwallet = activeForm.querySelector('input[name="bayar_ewallet"]');
                 totalBayar = bayarEwallet ? toAngka(bayarEwallet.value) : 0;
+            } else if (metode === 'qris') {
+                const bayarQris = activeForm.querySelector('input[name="bayar_qris"]');
+                totalBayar = bayarQris ? toAngka(bayarQris.value) : 0;
             }
         }
 
@@ -909,14 +1073,16 @@ if (isset($manual_total_tagihan) && floatval($manual_total_tagihan) > 0) {
         const maxTransfer = document.getElementById('maxTransfer');
         const maxDebit = document.getElementById('maxDebit');
         const maxEwallet = document.getElementById('maxEwallet');
+        const maxQris = document.getElementById('maxQris');
 
         if (maxTransfer) maxTransfer.textContent = maxAmountDisplay;
         if (maxDebit) maxDebit.textContent = maxAmountDisplay;
         if (maxEwallet) maxEwallet.textContent = maxAmountDisplay;
+        if (maxQris) maxQris.textContent = maxAmountDisplay;
     }
 
     function setupInputHandlers() {
-        const inputs = ['diskon', 'ongkir', 'bayar_tunai', 'bayar_transfer', 'bayar_debit', 'bayar_ewallet', 'bayar_dp'];
+        const inputs = ['diskon', 'ongkir', 'bayar_tunai', 'bayar_transfer', 'bayar_debit', 'bayar_ewallet', 'bayar_qris', 'bayar_dp'];
         inputs.forEach(id => {
             const input = document.querySelector(`[name="${id}"]`);
             if (input) {
@@ -932,7 +1098,7 @@ if (isset($manual_total_tagihan) && floatval($manual_total_tagihan) > 0) {
 
                         // Validate payment amount against grand total
                         const grandTotal = toAngka(document.getElementById("grandtotal").value);
-                        if (id === 'bayar_transfer' || id === 'bayar_debit' || id === 'bayar_ewallet') {
+                        if (id === 'bayar_transfer' || id === 'bayar_debit' || id === 'bayar_ewallet' || id === 'bayar_qris') {
                             validatePaymentAmount(id, this, grandTotal);
                         }
                     }
@@ -947,7 +1113,7 @@ if (isset($manual_total_tagihan) && floatval($manual_total_tagihan) > 0) {
                 // Validate on blur
                 input.addEventListener('blur', function () {
                     const grandTotal = toAngka(document.getElementById("grandtotal").value);
-                    if (id === 'bayar_transfer' || id === 'bayar_debit' || id === 'bayar_ewallet') {
+                    if (id === 'bayar_transfer' || id === 'bayar_debit' || id === 'bayar_ewallet' || id === 'bayar_qris') {
                         validatePaymentAmount(id, this, grandTotal);
                     }
                 });
@@ -971,7 +1137,7 @@ if (isset($manual_total_tagihan) && floatval($manual_total_tagihan) > 0) {
         // --- RESET DATA (Clean residual values when switching methods) ---
         const paymentDataToReset = [
             'bayar_tunai', 'bayar_transfer', 'bayar_debit', 'bayar_ewallet',
-            'bayar_dp', 'piutang', 'kembalian'
+            'bayar_qris', 'bayar_dp', 'piutang', 'kembalian'
         ];
         paymentDataToReset.forEach(name => {
             const el = document.querySelector(`[name="${name}"]`);
@@ -982,7 +1148,7 @@ if (isset($manual_total_tagihan) && floatval($manual_total_tagihan) > 0) {
         });
 
         const selectsToReset = [
-            'rekening_id', 'id_edc', 'ewallet_id',
+            'rekening_id', 'id_edc', 'ewallet_id', 'rekening_qris_id',
             'metode_dp', 'rekening_id_dp', 'id_edc_dp'
         ];
         selectsToReset.forEach(name => {
@@ -1045,8 +1211,13 @@ if (isset($manual_total_tagihan) && floatval($manual_total_tagihan) > 0) {
                 },
                 edc: {
                     icon: '💳',
-                    title: 'EDC / QRIS',
-                    description: 'Pembayaran dengan kartu debit atau QRIS'
+                    title: 'EDC',
+                    description: 'Pembayaran dengan kartu debit/kredit'
+                },
+                qris: {
+                    icon: '📱',
+                    title: 'QRIS',
+                    description: 'Scan kode QR untuk membayar'
                 },
                 ewallet: {
                     icon: '📱',
@@ -1077,7 +1248,8 @@ if (isset($manual_total_tagihan) && floatval($manual_total_tagihan) > 0) {
                     'cash': 'input[name="bayar_tunai"]',
                     'transfer': 'input[name="bayar_transfer"]',
                     'edc': 'input[name="bayar_debit"]',
-                    'ewallet': 'input[name="bayar_ewallet"]'
+                    'ewallet': 'input[name="bayar_ewallet"]',
+                    'qris': 'input[name="bayar_qris"]'
                 };
 
                 if (inputSelectors[this.value]) {
@@ -1098,6 +1270,21 @@ if (isset($manual_total_tagihan) && floatval($manual_total_tagihan) > 0) {
 
         updateMaxAmountDisplay();
         hitungKembalian();
+    });
+
+    // Event listener for Rekening QRIS selection
+    document.getElementById('rekening_qris_id').addEventListener('change', function () {
+        const selectedOption = this.options[this.selectedIndex];
+        const qrisUrl = selectedOption.getAttribute('data-qris');
+        const qrisImageDisplay = document.getElementById('qris_image_display');
+        
+        if (qrisImageDisplay) {
+            if (qrisUrl) {
+                qrisImageDisplay.src = qrisUrl;
+            } else {
+                qrisImageDisplay.src = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=BELUM_ADA_QRIS";
+            }
+        }
     });
 
 
@@ -1122,8 +1309,16 @@ if (isset($manual_total_tagihan) && floatval($manual_total_tagihan) > 0) {
         // Format initial values
         const subTotal = document.getElementById("sub_total");
         const grandTotal = document.getElementById("grandtotal");
+        const diskonEl = document.getElementById("diskon");
+        const ongkirEl = document.getElementById("ongkir");
         if (subTotal && subTotal.value) {
             subTotal.value = formatRupiah(subTotal.value);
+        }
+        if (diskonEl && diskonEl.value) {
+            diskonEl.value = formatRupiah(diskonEl.value);
+        }
+        if (ongkirEl && ongkirEl.value) {
+            ongkirEl.value = formatRupiah(ongkirEl.value);
         }
         if (grandTotal && grandTotal.value) {
             grandTotal.value = formatRupiah(grandTotal.value);
@@ -1419,6 +1614,7 @@ if (isset($manual_total_tagihan) && floatval($manual_total_tagihan) > 0) {
         }
         const name = "<?= $getdata['konsumen_nama'] ?>";
         const nospk = "<?= $nospk ?>";
+        const trackingLink = "<?= base_url('cekpesanan/spk/' . urlencode(encrypt_spk($nospk))) ?>";
 
         let items = "";
         if (tableContainer) {
@@ -1429,20 +1625,28 @@ if (isset($manual_total_tagihan) && floatval($manual_total_tagihan) > 0) {
                     const nameEl = cols[1].querySelector('div.fw-bold');
                     let pName = nameEl ? nameEl.innerText.trim() : cols[1].innerText.split('\n')[0].trim();
 
-                    // Ambil info sisi jika ada
-                    let sisiSub = "";
-                    const sisiBadge = cols[1].querySelector('.badge.bg-info');
-                    if (sisiBadge) {
-                        sisiSub = " - " + sisiBadge.innerText.trim();
-                    }
-
+                    // Ambil info variasi dari badge
+                    let varText = [];
+                    const badges = cols[1].querySelectorAll('.badge:not([title="Lokasi Produksi"])');
+                    badges.forEach(b => {
+                        let txt = b.innerText.trim();
+                        if (txt && !txt.toUpperCase().includes('SAMPEL') && !txt.toUpperCase().includes('CETAK SEMUA')) {
+                            let parts = txt.split(':');
+                            if (parts.length > 1) {
+                                txt = parts.slice(1).join(':').trim();
+                            }
+                            varText.push(txt);
+                        }
+                    });
+                    let sisiSub = varText.length > 0 ? " [" + varText.join(", ") + "]" : "";
                     let pQty = cols[3].innerText.replace(/\s+/g, ' ').trim();
-                    items += `• ${pName}${sisiSub} (${pQty})\n`;
+                    let pHarga = cols[2] ? cols[2].innerText.replace(/\s+/g, ' ').trim() : '';
+                    items += `• ${pName}${sisiSub} (${pQty} @ ${pHarga})\n`;
                 }
             });
         }
 
-        const waMsg = `Halo Kak *${name}*,\nBerikut rincian pesanan SPK *#${nospk}*:\n\n${items}\nSubtotal: ${subTotal}\nDiskon: -${diskon}\nOngkir: +${ongkir}\n------------------\n*Total Bayar: ${grandTotal}*\n\n❗ Mohon pastikan seluruh detail pesanan sudah sesuai.\nProses produksi akan dilakukan setelah pembayaran diterima.\nTerima kasih 🙏`;
+        const waMsg = `Halo Kak *${name}*,\nBerikut rincian pesanan SPK *#${nospk}*:\n\n${items}\nSubtotal: ${subTotal}\nDiskon: -${diskon}\nOngkir: +${ongkir}\n------------------\n*Total Tagihan: ${grandTotal}*\n\nPantau status pesanan dan invoice digital Anda di sini:\n${trackingLink}\n\n❗ Mohon pastikan seluruh detail pesanan sudah sesuai.\nProses produksi akan dilakukan setelah pembayaran diterima.\nTerima kasih 🙏`;
 
         const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(waMsg)}`;
         const btnWA = document.getElementById('btnKirimWA');

@@ -391,7 +391,7 @@ if (!function_exists('invoice_detail_metadata')) {
                         }
 
                         // [NEW] Kategori 1: Jika jenisprint_id ada, pakai sebagai ket_1 (1 Sisi / 2 Sisi)
-                        if (isset($dt->kategori_id) && !in_array((int)$dt->kategori_id, [2, 5, 9])) {
+                        if (isset($dt->kategori_id) && $dt->kategori_id == 1) {
                             if (empty($combined_meta['ket_1'])) {
                                 if (!empty($dt->jenisprint_id)) {
                                     $combined_meta['ket_1'] = $dt->jenisprint_id;
@@ -403,14 +403,26 @@ if (!function_exists('invoice_detail_metadata')) {
 
                         // [NEW] Resolve schema untuk label dinamis
                         $schema_map = [];
-                        $raw_schema = $dt->product_form_schema ?? $dt->subcategory_form_schema ?? $dt->category_form_schema ?? '';
-                        if (!empty($raw_schema)) {
-                            $schema_arr = json_decode($raw_schema, true);
-                            if (is_array($schema_arr)) {
-                                foreach ($schema_arr as $field) {
-                                    if (isset($field['name'])) {
-                                        $schema_map[$field['name']] = $field;
-                                    }
+                        $schema_arr = [];
+                        
+                        // Merge schemas sequentially (Category -> Subcategory -> Product) so specific overrides general
+                        if (!empty($dt->category_form_schema)) {
+                            $sc = json_decode($dt->category_form_schema, true);
+                            if (is_array($sc)) $schema_arr = array_merge($schema_arr, $sc);
+                        }
+                        if (!empty($dt->subcategory_form_schema)) {
+                            $sc = json_decode($dt->subcategory_form_schema, true);
+                            if (is_array($sc)) $schema_arr = array_merge($schema_arr, $sc);
+                        }
+                        if (!empty($dt->product_form_schema)) {
+                            $sc = json_decode($dt->product_form_schema, true);
+                            if (is_array($sc)) $schema_arr = array_merge($schema_arr, $sc);
+                        }
+
+                        if (!empty($schema_arr)) {
+                            foreach ($schema_arr as $field) {
+                                if (isset($field['name'])) {
+                                    $schema_map[$field['name']] = $field;
                                 }
                             }
                         }
@@ -434,18 +446,22 @@ if (!function_exists('invoice_detail_metadata')) {
                             
                             // Skip technical fields
                             if (!$is_in_schema) {
-                                if (in_array($key_lower, ['unit_price', 'subtotal', 'price_snapshot_at', 'hpp', 'range_id', 'jenisprint', 'user', 'kodeproduk', 'nospk']) || substr($key_lower, -3) === '_id' || strpos($key_lower, 'subkategori') !== false) {
+                                if (in_array($key_lower, ['unit_price', 'subtotal', 'price_snapshot_at', 'hpp', 'range_id', 'jenisprint', 'user', 'kodeproduk', 'nospk']) || substr($key_lower, -3) === '_id' || substr($key_lower, -6) === '_label' || strpos($key_lower, 'subkategori') !== false) {
                                     continue;
                                 }
                             }
+                            
+                            if ($key_lower === 'side' && (isset($schema_map['sisi']) || isset($combined_meta['sisi']))) {
+                                continue;
+                            }
 
-                            // Skip ket_1 and lebar for Tekstil/DTF because we already display it in P x L
-                            if (in_array($dt->kategori_id, [5, 9]) && in_array($key_lower, ['ket_1', 'lebar'])) {
+                            // Skip ket_1 and lebar for DTF because we already display it in P x L
+                            if ($dt->kategori_id == 9 && in_array($key_lower, ['ket_1', 'lebar'])) {
                                 continue;
                             }
 
                             if ($key_lower == 'sisi') {
-                                if (in_array($dt->kategori_id, [2, 5, 9]) || strtolower($dt->kategori_nama ?? '') == 'large format') {
+                                if ($dt->kategori_id != 1) {
                                     continue;
                                 }
                                 if ($val == '1' || $val == '2') {
@@ -480,10 +496,12 @@ if (!function_exists('invoice_detail_metadata')) {
                             if (strpos($key_lower, 'ket_') === 0 && !$is_in_schema) {
                                 $val = trim($val, '[]');
                                 if (!empty($val)) {
-                                    if (isset($dt->kategori_id) && !in_array((int)$dt->kategori_id, [2, 5, 9])) {
+                                    if (isset($dt->kategori_id) && $dt->kategori_id == 1) {
                                         if ($val == '1' || strtolower(trim($val)) == '1 side') $val = '1 Sisi';
                                         elseif ($val == '2' || strtolower(trim($val)) == '2 side') $val = '2 Sisi';
                                         elseif ($val == '3' || stripos($val, 'Tidak Ada') !== false) continue;
+                                    } else {
+                                        if ($val == '1' || $val == '2') continue;
                                     }
                                     
                                     $val_clean = strtolower(trim($val));
@@ -497,7 +515,11 @@ if (!function_exists('invoice_detail_metadata')) {
 
                             $val_clean = strtolower(trim($val));
                             if (!in_array($val_clean, $printed_values)) {
-                                $meta_str .= "$label: $val &bull; ";
+                                if ($is_in_schema && !empty($label)) {
+                                    $meta_str .= "{$label}: {$val} &bull; ";
+                                } else {
+                                    $meta_str .= "{$val} &bull; ";
+                                }
                                 $printed_values[] = $val_clean;
                             }
                         }
@@ -526,8 +548,8 @@ if (!function_exists('invoice_detail_metadata')) {
         }
 
         // Hitung diskon dan ongkir (jika ada)
-        $diskon = 0; // Bisa diambil dari form pembayaran jika disimpan
-        $ongkir = 0; // Bisa diambil dari form pembayaran jika disimpan
+        $diskon = isset($pembayaran->diskon_total) ? floatval($pembayaran->diskon_total) : (isset($pembayaran->diskon) ? floatval($pembayaran->diskon) : 0);
+        $ongkir = isset($pembayaran->ongkir) ? floatval($pembayaran->ongkir) : 0;
         ?>
         <tr>
             <td rowspan="8" width="40%" align="center"></td>
@@ -546,10 +568,12 @@ if (!function_exists('invoice_detail_metadata')) {
                 <td align="right"><?= number_format($ongkir, 0, ".", ".") ?></td>
             </tr>
         <?php endif; ?>
-        <!-- <tr>
-            <td colspan="4">Total Tagihan</td>
-            <td align="right"><?= number_format($pembayaran->total_tagihan, 0, ".", ".") ?></td>
-        </tr> -->
+        <?php if ($diskon > 0 || $ongkir > 0 || (isset($pembayaran->total_tagihan) && $pembayaran->total_tagihan != $subtotal)): ?>
+            <tr>
+                <td colspan="4">Total Tagihan</td>
+                <td align="right"><?= number_format($pembayaran->total_tagihan, 0, ".", ".") ?></td>
+            </tr>
+        <?php endif; ?>
         <tr>
             <td colspan="4">Total Bayar</td>
             <td align="right"><?= number_format($pembayaran->total_bayar, 0, ".", ".") ?></td>

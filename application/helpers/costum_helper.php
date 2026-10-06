@@ -219,3 +219,72 @@ function perusahaan()
 {
 
 }
+/**
+ * Mendapatkan nama aplikasi secara dinamis
+ * Jika belum di set di tbl_portal_settings, default ke 'ERP CORE'
+ */
+if (!function_exists('get_app_name')) {
+    function get_app_name()
+    {
+        $CI =& get_instance();
+        
+        // Ensure database is loaded
+        if (!isset($CI->db)) {
+            $CI->load->database();
+        }
+        
+        // Cache mechanism to avoid querying on every call
+        static $app_name = null;
+        
+        if ($app_name === null) {
+            if ($CI->db->table_exists('tbl_portal_settings')) {
+                $query = $CI->db->get_where('tbl_portal_settings', ['key' => 'app_name']);
+                if ($query->num_rows() > 0) {
+                    $app_name = $query->row()->value;
+                }
+            }
+            
+            // Set default if not found
+            if (empty($app_name)) {
+                $app_name = 'ERP CORE';
+            }
+        }
+        
+        return $app_name;
+    }
+}
+
+/**
+ * Mendapatkan gambar login aplikasi secara dinamis
+ * Jika belum di set di tbl_portal_settings, default ke gambar statis login_hero.jpg
+ */
+if (!function_exists('get_login_image')) {
+    function get_login_image()
+    {
+        $CI =& get_instance();
+        
+        // Ensure database is loaded
+        if (!isset($CI->db)) {
+            $CI->load->database();
+        }
+        
+        // Cache mechanism to avoid querying on every call
+        static $login_image = null;
+        
+        if ($login_image === null) {
+            if ($CI->db->table_exists('tbl_portal_settings')) {
+                $query = $CI->db->get_where('tbl_portal_settings', ['key' => 'login_image']);
+                if ($query->num_rows() > 0) {
+                    $login_image = $query->row()->value;
+                }
+            }
+            
+            // Set default if not found
+            if (empty($login_image)) {
+                $login_image = 'login_hero.jpg';
+            }
+        }
+        
+        return $login_image;
+    }
+}

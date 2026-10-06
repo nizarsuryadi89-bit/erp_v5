@@ -12,7 +12,14 @@ const ProductionApp = {
     // Initialize state object
     state: {
         activeCategory: 'all',
-        csrfHash: WIP_CONFIG.csrfHash
+        csrfHash: WIP_CONFIG.csrfHash,
+        operationSnapshots: {}
+    },
+
+    machineOptionsUrl(stepName, catId, ids) {
+        const params = new URLSearchParams({ stepName, catId });
+        ids.forEach(id => params.append('ids[]', id));
+        return this.config.baseUrl + 'get_machines_ajax?' + params.toString();
     },
 
     init() {
@@ -67,7 +74,7 @@ const ProductionApp = {
     },
 
     initDataTable() {
-        if ($.fn.DataTable) {
+        if ($.fn.DataTable && $('#tableSemuaProduksi').length && !$.fn.DataTable.isDataTable('#tableSemuaProduksi')) {
             $('#tableSemuaProduksi').DataTable({
                 language: { sSearch: "Cari:", oPaginate: { sNext: "→", sPrevious: "←" } },
                 pageLength: 50, responsive: true, ordering: false, dom: "<'row'<'col-sm-12 col-md-6'l><'col-sm-12 col-md-6 text-end'f>>t<'row'<'col-sm-12 col-md-6'i><'col-sm-12 col-md-6 text-end'p>>"
@@ -124,6 +131,60 @@ const ProductionApp = {
         });
     },
 
+    escapeText(value) {
+        return $('<div>').text(value == null ? '' : String(value)).html();
+    },
+
+    captureOperations(ids) {
+        const snapshots = {};
+        ids.forEach(id => {
+            const row = $(`.check-item-nesting[data-id="${id}"]`).first();
+            const configured = (WIP_CONFIG.operationSnapshots || {})[id];
+            snapshots[id] = row.length ? { id: row.data('step-id'), version: row.data('step-version'), target: row.data('qty'), completed: row.data('step-output') } : configured;
+            if (snapshots[id] && snapshots[id].id) this.state.operationSnapshots[id] = snapshots[id];
+        });
+        return snapshots;
+    },
+
+    resultInputs(id, prefix, target, completed = null) {
+        const snapshot = this.state.operationSnapshots[id] || {};
+        if (!Number.isFinite(Number(target))) target = snapshot.target ?? target;
+        if (completed == null) completed = $(`.check-item-nesting[data-id="${id}"]`).first().data('step-output') ?? snapshot.completed ?? 0;
+        const goal = Number(target), recorded = Number(completed);
+        const suggested = target !== '' && Number.isFinite(goal) && goal >= 0 && Number.isFinite(recorded)
+            ? Math.max(0, Number((goal - Math.max(0, recorded)).toFixed(2))) : '';
+        return `<div class="row g-2 mt-2">
+            <div class="col-6"><label class="small fw-bold">Hasil baik aktual (target ${this.escapeText(target)})</label>
+                <input type="number" min="0" step="0.01" class="form-control form-control-sm" id="${prefix}_good_${id}" value="${suggested}" placeholder="Jumlah tambahan hasil" required><div class="form-text">Saran sisa target; sesuaikan dengan hasil aktual.</div></div>
+            <div class="col-6"><label class="small fw-bold">Hasil rusak aktual</label>
+                <input type="number" min="0" step="0.01" class="form-control form-control-sm" id="${prefix}_reject_${id}" value="0"></div>
+        </div>`;
+    },
+
+    resultValues(ids, prefix) {
+        const result = {};
+        for (const id of ids) {
+            const raw = $(`#${prefix}_good_${id}`).val();
+            const qty = Number(raw);
+            const reject = Number($(`#${prefix}_reject_${id}`).val());
+            if (raw === '' || raw == null || !Number.isFinite(qty) || qty < 0 || !Number.isFinite(reject) || reject < 0) {
+                Swal.fire('Hasil belum lengkap', 'Isi hasil baik dan rusak aktual pada setiap item.', 'warning');
+                return null;
+            }
+            result[id] = { qty_output: qty, qty_missing: reject };
+        }
+        return result;
+    },
+
+    async sendSPKToPB(nospk) {
+        const confirmation = await Swal.fire({ title: 'Serahkan SPK ke PB?', text: 'Kesiapan setiap item diperiksa oleh server.', icon: 'question', showCancelButton: true });
+        if (!confirmation.isConfirmed) return;
+        $.post(this.config.baseUrl + 'kirim_pb_spk', this.getAuthData({ nospk }), res => {
+            if (res.success) location.reload();
+            else Swal.fire('Gagal', res.message, 'error');
+        }, 'json').fail(() => Swal.fire('Gagal', 'Koneksi server gagal.', 'error'));
+    },
+
     // Helper to get fresh CSRF token if needed
     getAuthData(extraData = {}) {
         let payload = {};
@@ -131,7 +192,16 @@ const ProductionApp = {
         // For simplicity, we use the initial one or rely on standard jQuery Ajax setup if present.
         // But here we explicitly add it.
         payload[WIP_CONFIG.csrfTokenName] = this.state.csrfHash; // Use state hash which we can update
-        return { ...payload, ...extraData };
+        const ids = extraData.ids || (extraData.produksi_id ? [extraData.produksi_id] : []);
+        const expected = {}, versions = {};
+        ids.forEach(id => {
+            const snapshot = this.state.operationSnapshots[id];
+            if (snapshot && snapshot.id) {
+                expected[id] = snapshot.id;
+                if (snapshot.version) versions[id] = snapshot.version;
+            }
+        });
+        return { ...payload, expected_step_ids: expected, expected_versions: versions, ...extraData };
     },
 
     // Helper to estimate linear meter efficiently on rolls
@@ -186,13 +256,16 @@ const ProductionApp = {
             $('#loadingProses').addClass('d-none');
             $('#contentProses').removeClass('d-none');
             $('#listProdukRouting').html(''); // Clear first
+            (res.items || []).forEach(it => {
+                if (it.workflow_step_id) this.state.operationSnapshots[it.produksi_id] = { id: it.workflow_step_id, version: it.workflow_version, target: it.qty, completed: it.workflow_qty_output ?? 0 };
+            });
             let html = (res.items || []).map(it => {
                 let btnAction = '';
                 // Determine Action Button based on Workflow
-                if (it.status_produksi === 'pending' || it.status_produksi === '' || it.status_produksi === '0' || !it.status_produksi) {
+                if (it.status_produksi === 'approved' || it.status_produksi === 'approve' || it.status_produksi === 'pending' || it.status_produksi === '' || it.status_produksi === '0' || !it.status_produksi) {
                     // Start Button
                     btnAction = `<button onclick="ProductionApp.advanceStep(${it.produksi_id}, 'start')" class="btn btn-primary btn-sm rounded-pill fw-bold"><i class="fas fa-play me-1"></i> Mulai</button>`;
-                } else if (it.status_produksi === 'proses') {
+                } else if (['proses', 'finishing'].includes(it.status_produksi)) {
                     if (it.total_steps > 1 && it.current_step_urutan < it.total_steps) {
                         // Intermediate: Advance Button
                         let nextName = it.next_step_name || 'Next Step';
@@ -201,7 +274,7 @@ const ProductionApp = {
                             actStep = it.routing.find(r => r.status_produksi == '1');
                         }
 
-                        let bomQty = (actStep && actStep.quantity) ? parseFloat(actStep.quantity) : (it.bom ? parseFloat(it.bom.bom_qty) : 0);
+                        let bomQty = (actStep && actStep.quantity) ? parseFloat(actStep.quantity) : (it.bom ? parseFloat(it.bom.quantity || it.bom.bom_qty) : 0);
                         let estQty = (bomQty > 0) ? (bomQty * parseFloat(it.qty)) : parseFloat(it.qty);
                         let bomMatId = (actStep && actStep.routing_material_id) ? actStep.routing_material_id : 0;
                         let satuanStep = (actStep && actStep.routing_material_satuan) ? actStep.routing_material_satuan : (it.satuan_nama || 'Unit');
@@ -261,6 +334,10 @@ const ProductionApp = {
             $('#loadingSelesai').addClass('d-none');
             $('#contentSelesai').removeClass('d-none');
 
+            $('#modalSelesaiSPK').data('ids', (res.items || []).filter(it => ['proses', 'finishing'].includes(it.status_produksi)).map(it => it.produksi_id));
+            (res.items || []).forEach(it => {
+                if (it.workflow_step_id) this.state.operationSnapshots[it.produksi_id] = { id: it.workflow_step_id, version: it.workflow_version, target: it.qty, completed: it.workflow_qty_output ?? 0 };
+            });
             let totalM2 = 0;
             let html = (res.items || []).map(it => {
                 let p = parseFloat(it.panjang || 0);
@@ -284,7 +361,7 @@ const ProductionApp = {
                 let statusBadge = '';
                 if (it.status_produksi === 'done') {
                     statusBadge = '<span class="badge bg-success rounded-pill px-2"><i class="fas fa-check-double me-1"></i> DONE</span>';
-                } else if (it.status_produksi === 'proses') {
+                } else if (['proses', 'finishing'].includes(it.status_produksi)) {
                     statusBadge = '<span class="badge bg-warning text-dark rounded-pill px-2"><i class="fas fa-cog fa-spin me-1"></i> PROSES</span>';
                 } else {
                     statusBadge = '<span class="badge bg-secondary rounded-pill px-2">ANTRIAN</span>';
@@ -304,7 +381,7 @@ const ProductionApp = {
                             </span>
                         </td>
                         <td class="pe-3 text-center">
-                            ${statusBadge}
+                            ${statusBadge}${['proses', 'finishing'].includes(it.status_produksi) ? this.resultInputs(it.produksi_id, 'spk', it.qty, it.workflow_qty_output ?? 0) : ''}
                         </td>
                     </tr>
                 `;
@@ -333,10 +410,17 @@ const ProductionApp = {
         const nospk = modal.data('nospk');
         const cat = modal.data('cat');
         const pin = $('#selesaiSpkPin').val();
+        const ids = modal.data('ids') || [];
+        const outcomes = this.resultValues(ids, 'spk');
+        if (!ids.length || !outcomes) return;
+        const btnSubmit = $('#btnSubmitSelesaiSpk'); // The submit button id from v_modals_produksi.php
 
         if (!pin || pin.length < 4) {
             return Swal.fire('Error', 'Masukkan PIN Operator untuk verifikasi!', 'error');
         }
+
+        // Disable button to prevent double-click race condition
+        btnSubmit.prop('disabled', true);
 
         Swal.fire({
             title: 'Memproses...',
@@ -347,14 +431,19 @@ const ProductionApp = {
         $.post(this.config.baseUrl + 'selesai_spk_ajax', this.getAuthData({
             nospk: nospk,
             cat: cat,
-            pin_operator: pin
+            pin_operator: pin,
+            ids, outcomes
         }), (res) => {
             if (res.success) {
                 Swal.fire('Berhasil', res.message, 'success').then(() => location.reload());
             } else {
                 Swal.fire('Gagal', res.message, 'error');
+                btnSubmit.prop('disabled', false); // Re-enable if failed
             }
-        }, 'json').fail(() => Swal.fire('Error', 'Koneksi Server Gagal', 'error'));
+        }, 'json').fail(() => {
+            Swal.fire('Error', 'Koneksi Server Gagal', 'error');
+            btnSubmit.prop('disabled', false); // Re-enable if failed
+        });
     },
 
     /** Batch Operation */
@@ -547,7 +636,7 @@ const ProductionApp = {
 
             // If maxShorter is 0, it means we used 1D BOM quantity directly, so totalArea is already the linear meter!
             if (maxShorter === 0) {
-                $('#nestLinear').text(totalArea.toFixed(2));
+                $('#nestLinear').text(parseFloat(totalArea.toFixed(2)));
             } else {
                 let totalLinear = 0;
                 checked.each((i, el) => {
@@ -565,20 +654,20 @@ const ProductionApp = {
                         totalLinear += ProductionApp.estimateLinearMeter(ep, el_l, eqty, roll);
                     }
                 });
-                $('#nestLinear').text(totalLinear.toFixed(2));
+                $('#nestLinear').text(parseFloat(totalLinear.toFixed(2)));
             }
 
             $('#visualizeNestingBtn').removeClass('d-none');
         }
 
-        let allProses = checked.toArray().every(el => $(el).data('status') === 'proses');
+        let allProses = checked.toArray().every(el => String($(el).data('step-status')) === '1');
         let allFinishing = checked.toArray().every(el => $(el).data('step-urutan') > 1);
         let allDone = checked.toArray().every(el => $(el).data('status') === 'done');
 
         if (activeCat === '1') {
-            // Digital A3+: No Ripping step. Allow Selesai directly from queue.
+            // Queue items must start their current operation before result posting.
             $('#btnRipping').addClass('d-none');
-            $('#btnSelesaiStok').toggleClass('d-none', allDone || allFinishing);
+            $('#btnSelesaiStok').toggleClass('d-none', !allProses || allDone || allFinishing);
             $('#btnSelesaiFinishing').toggleClass('d-none', !(allProses && allFinishing));
         } else {
             // Standard (LF, etc)
@@ -636,9 +725,13 @@ batchProcess() {
     let catId = $('.check-item-nesting:checked').first().data('kategori-id') || 2;
     let stepName = 'Cetak / Produksi'; // Assume ripping is for printing
 
-    $.get(this.config.baseUrl + 'get_machines_ajax?stepName=' + encodeURIComponent(stepName) + '&catId=' + catId, (res) => {
+    $.get(this.machineOptionsUrl(stepName, catId, ids), (res) => {
         let data = typeof res === 'string' ? JSON.parse(res) : res;
         let m = data.machines || [];
+        if (data.message || (!m.length && data.is_mandatory)) {
+            Swal.fire('Pilihan mesin', data.message || 'Tidak ada mesin aktif yang sesuai lokasi item terpilih. Periksa lokasi produksi dan master mesin; pisahkan batch jika lokasinya berbeda.', 'warning');
+            return;
+        }
         let isMandatory = data.is_mandatory || false;
         let userMesinIds = data.user_mesin_ids || [];
 
@@ -754,6 +847,8 @@ selectAllByMaterial(mat) {
 /** Completion & Logic */
 openCompletionModal() {
     let checked = $('.check-item-nesting:checked');
+    this.state.completionIds = checked.map((i, el) => $(el).data('id')).get();
+    this.captureOperations(this.state.completionIds);
     let activeCat = String(checked.first().data('kategori-id') || '0');
 
     let pid = checked.first().data('id');
@@ -782,14 +877,14 @@ openCompletionModal() {
                 let bl = parseFloat($(this).data('bom-l') || 0);
                 if (bp > 0 && bl > 0) { ep = bp; el_l = bl; }
             }
-            let eqty = parseFloat($(this).data('qty') || 0);
+            let eqty = Math.max(0, (parseFloat($(this).data('qty')) || 0) - (parseFloat($(this).data('step-output')) || 0));
             if (ep > 0 && el_l > 0) {
                 totalLinearUsage += ProductionApp.estimateLinearMeter(ep + ProductionApp.config.tolerance, el_l + ProductionApp.config.tolerance, eqty, finalRollWidth);
                 useCalculated = true;
             }
         });
         if (useCalculated) {
-            est = totalLinearUsage.toFixed(2);
+            est = parseFloat(totalLinearUsage.toFixed(2));
         }
     }
 
@@ -805,8 +900,9 @@ openCompletionModal() {
     // Calculate total quantity directly from data-qty attribute, multiplying by BOM qty if present
     let totalQty = 0;
     checked.each(function () {
-        let itemQty = parseFloat($(this).data('qty')) || 0;
-        let bomQty = parseFloat($(this).data('bom-qty')) || 1;
+        let itemQty = Math.max(0, (parseFloat($(this).data('qty')) || 0) - (parseFloat($(this).data('step-output')) || 0));
+        let bomQty = Number($(this).data('bom-qty') ?? 1);
+        if (!Number.isFinite(bomQty) || bomQty < 0) bomQty = 1;
         totalQty += (itemQty * bomQty);
     });
 
@@ -827,22 +923,30 @@ openCompletionModal() {
             $('.lf-only-stat').addClass('d-none');
             $('#labelActualUsage').text('Total Lembar Cetak (Termasuk Rusak / Test Print)');
             $('#textActualUsage').text(satuanBahan !== 'UNIT' ? satuanBahan : 'LEMBAR');
-            $('#compActualUsage').prop('required', true).val(totalQty > 0 ? totalQty : checked.length);
+            let sLower = satuanBahan.toLowerCase();
+            let roundedTotal = (sLower === 'lbr' || sLower === 'lembar' || sLower === 'pcs' || sLower === 'set') ? Math.ceil(totalQty) : totalQty;
+            $('#compActualUsage').prop('required', true).val(parseFloat(roundedTotal.toFixed(2)));
         } else {
             $('.lf-only-stat').addClass('d-none');
-            $('#labelActualUsage').text('Jumlah Unit Produksi (Aktual)');
+            $('#labelActualUsage').text('Pemakaian Bahan Terpilih (Total)');
             $('#textActualUsage').text(satuanBahan);
-            $('#compActualUsage').prop('required', true).val(totalQty > 0 ? totalQty : checked.length);
+            let sLower = satuanBahan.toLowerCase();
+            let roundedTotal = (sLower === 'lbr' || sLower === 'lembar' || sLower === 'pcs' || sLower === 'set') ? Math.ceil(totalQty) : totalQty;
+            $('#compActualUsage').prop('required', true).val(parseFloat(roundedTotal.toFixed(2)));
         }
     }
 
-    $.get(this.config.baseUrl + 'get_machines_ajax?stepName=' + encodeURIComponent(stepName) + '&catId=' + activeCat, (res) => {
+    $('#compMesinId').empty().prop('disabled', true);
+    $.get(this.machineOptionsUrl(stepName, activeCat, this.state.completionIds), (res) => {
         let data = typeof res === 'string' ? JSON.parse(res) : res;
         let m = data.machines || [];
+        if (data.message || (!m.length && data.is_mandatory)) {
+            Swal.fire('Pilihan mesin', data.message || 'Tidak ada mesin aktif yang sesuai lokasi item terpilih. Periksa lokasi produksi dan master mesin; pisahkan batch jika lokasinya berbeda.', 'warning');
+        }
         let isMandatory = data.is_mandatory || false;
         let userMesinIds = data.user_mesin_ids || [];
 
-        let sel = $('#compMesinId').empty();
+        let sel = $('#compMesinId').empty().prop('disabled', false);
         if (isMandatory) {
             sel.append('<option value="">-- Pilih Mesin Wajib --</option>');
             sel.append('<option value="0">-- Tanpa Mesin (Manual) --</option>');
@@ -875,7 +979,7 @@ openCompletionModal() {
         let l = parseFloat($(el).data('lebar')) || 0;
         let qty = parseFloat($(el).data('qty')) || 0;
         let bomQty = parseFloat($(el).data('bom-qty')) || 1;
-        let totalItemQty = qty * bomQty;
+        let totalItemQty = parseFloat((qty * bomQty).toFixed(2));
         let satuan = $(el).data('satuan') || 'UNIT';
         let stepNameStr = $(el).data('step-name') || 'PRODUKSI';
         let konsumsiHtml = '';
@@ -893,10 +997,15 @@ openCompletionModal() {
         }
 
         let bomLines = $(el).data('bom-lines') || [];
+        let currentBomLineId = $(el).data('current-bom-line-id');
+        if (currentBomLineId) {
+            let filtered = bomLines.filter(b => b.bom_line_id == currentBomLineId);
+            if(filtered.length > 0) bomLines = filtered;
+        }
         let bomHtml = '';
         if (bomLines.length > 0) {
             let bomInputs = bomLines.map(bom => {
-                let bq = parseFloat(bom.bom_qty) || 1;
+                let bq = parseFloat(bom.quantity || bom.bom_qty) || 1;
                 let bomReq = (bq * qty);
                 let sn = (bom.satuan_nama || '').toLowerCase();
 
@@ -912,6 +1021,10 @@ openCompletionModal() {
                     }
                 } else {
                     bomReq = bq * qty;
+                }
+
+                if (sn === 'lbr' || sn === 'lembar' || sn === 'pcs' || sn === 'set') {
+                    bomReq = Math.ceil(bomReq);
                 }
 
                 return `
@@ -934,7 +1047,7 @@ openCompletionModal() {
                 <div class="p-3 border-bottom outcome-row bg-white" data-id="${pid}">
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <div>
-                            <span class="fw-bold text-dark">${tr.find('.fw-800').text()}</span>
+                            <span class="fw-bold text-dark" style="font-size: 0.85rem;">${$(el).data('item-title') || tr.find('.fw-800').text()}</span>
                             <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 ms-2" style="font-size: 0.65rem;">${stepNameStr}</span>
                             ${konsumsiHtml}
                         </div>
@@ -946,23 +1059,26 @@ openCompletionModal() {
                         </div>
                     </div>
                     ${bomHtml}
+                    ${this.resultInputs(pid, 'comp', qty)}
                     <div id="reason_section_${pid}" style="display:none;" class="animate__animated animate__fadeIn">
                         <textarea class="form-control form-control-sm mt-2 border-danger border-opacity-25" id="reason_${pid}" placeholder="Jelaskan alasan rijek & langkah selanjutnya (misal: Reprint)..." rows="2"></textarea>
-                        <div class="form-text text-danger" style="font-size: 0.7rem;"><i class="fas fa-redo me-1"></i> Item ini akan kembali ke Antrian Cetak.</div>
+                        <div class="form-text text-danger" style="font-size: 0.7rem;"><i class="fas fa-redo me-1"></i> Hasil dan bahan tetap dicatat; tahap tetap terbuka untuk tindak lanjut.</div>
                     </div>
                 </div>`;
     }).join('');
     $('#compItemList').html(html);
+    $('#compActualUsage').attr('placeholder', 'Estimasi kebutuhan bahan; sesuaikan pemakaian aktual');
 
     let bahanId = checked.first().data('bahan-id');
     let bomMaterialId = checked.first().data('bom-material-id');
     let recRoll = finalRecRollText.replace('Roll', '').trim().toLowerCase();
     let isJasaProduksi = String(checked.first().data('tipe-id')) !== '1';
 
-    if (isJasaProduksi) {
+    if (isJasaProduksi || isFinishingOnly) {
+        $('#compActualUsage').val(0).prop('required', false);
         $('#bomWarningMessage').addClass('d-none');
         $('#sectionSearchBahan').hide();
-        $('#labelPilihStokGudang').text('Barang Jasa (Tanpa Stok Bahan)');
+        $('#labelPilihStokGudang').text(isFinishingOnly ? 'Proses Finishing (Tanpa Potong Stok Utama)' : 'Barang Jasa (Tanpa Stok Bahan)');
         $('#compMaterialId').empty().append('<option value="none">-- Tidak Memerlukan Stok --</option>');
         $('#compMaterialId').prop('required', false);
     } else if (bahanId && bahanId > 0) {
@@ -1018,7 +1134,7 @@ loadVariants(bahanId, recRoll = '', bomMaterialId = null) {
             } else if (bomMaterialId && m.material_id == bomMaterialId) {
                 isRec = ' [🎯 SESUAI BOM]';
             }
-            sel.append(`<option value="${m.material_id}">${m.varian}${isRec} (Sisa: ${sisaGudang} / ${sisaBase})</option>`);
+            sel.append(`<option value="${m.material_id}" data-stok-gudang="${sisaGudang}" data-stok-base="${sisaBase}" data-base-unit="${ProductionApp.escapeText(m.satuan_produksi || 'unit')}">${m.varian}${isRec} (Sisa: ${sisaGudang} / ${sisaBase})</option>`);
         });
 
         // Auto select first match based on recommendation
@@ -1036,6 +1152,23 @@ loadVariants(bahanId, recRoll = '', bomMaterialId = null) {
             // If there is only 1 variant in the whole list, just auto-select it
             sel.val(variants[0].material_id);
         }
+        
+        sel.off('change').on('change', function() {
+            let opt = $(this).find('option:selected');
+            if (opt.val()) {
+                let materialId = opt.val();
+                let sg = opt.data('stok-gudang') || '0';
+                let sb = opt.data('stok-base') || '0';
+                $('#helpPilihStokGudang').html(`<span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 py-1 px-2"><i class="fas fa-boxes me-1"></i> Stok Gudang: <b>${sg}</b></span> <span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25 py-1 px-2 ms-1"><i class="fas fa-layer-group me-1"></i> Base: <b>${sb}</b></span>`);
+                
+                $('#labelActualUsage').text('Pemakaian Aktual Bahan Terpilih (Total)');
+                $('#textActualUsage').text(opt.data('base-unit') || 'SATUAN DASAR');
+            } else {
+                $('#helpPilihStokGudang').text('Pilih fisik stok gudang.');
+            }
+        });
+        
+        sel.trigger('change');
     }, 'json');
 },
 
@@ -1047,14 +1180,16 @@ submitCompletion(sendToPb = false) {
     }
 
     let data = {
-        ids: $('.check-item-nesting:checked').map((i, el) => $(el).data('id')).get(),
+        ids: this.state.completionIds || [],
         outcomes: {},
         material_id: $('#compMaterialId').val(),
         pin_operator: $('#compOperatorPin').val(),
         total_usage: $('#compActualUsage').val(),
         mesin_id: mesinId,
-        send_to_pb: sendToPb === true ? 1 : 0
+        send_to_pb: 0
     };
+    const actual = this.resultValues(data.ids, 'comp');
+    if (!data.ids.length || !actual) return;
     data.ids.forEach(id => {
         let bom_usage = [];
         $(`.bom-input-${id}`).each(function () {
@@ -1066,13 +1201,17 @@ submitCompletion(sendToPb = false) {
         });
         data.outcomes[id] = {
             status: $(`input[name="o_${id}"]:checked`).val(),
-            reason: '',
+            reason: $(`#reason_${id}`).val() || '',
+            ...actual[id],
             bom_usage: bom_usage
         };
     });
     let firstChecked = $('.check-item-nesting:checked').first();
     let isJasaProduksi = String(firstChecked.data('tipe-id')) !== '1';
 
+    if (data.material_id && (data.total_usage === '' || !Number.isFinite(Number(data.total_usage)) || Number(data.total_usage) < 0)) {
+        return Swal.fire('Pemakaian belum lengkap', 'Isi jumlah bahan terpakai aktual dalam satuan dasar material.', 'warning');
+    }
     if (!data.pin_operator || data.pin_operator.length < 4) return Swal.fire('Error', 'Masukkan PIN Operator (min 4 digit)', 'error');
     if (!isJasaProduksi && !data.material_id) return Swal.fire('Error', 'Pilih Material', 'error');
 
@@ -1081,39 +1220,73 @@ submitCompletion(sendToPb = false) {
     let postData = Object.assign({}, data);
     postData.outcomes = JSON.stringify(data.outcomes);
 
-    Swal.fire({ title: 'Simpan?', icon: 'warning', showCancelButton: true }).then(r => {
-        if (r.isConfirmed) {
-            $.post(this.config.baseUrl + 'batch_selesai_dan_stok', this.getAuthData(postData), (res) => {
-                if (res.success) {
-                    // Clear roll preferences for completed ids
-                    data.ids.forEach(id => localStorage.removeItem('roll_pref_' + id));
-                    
-                    // [NEW] Auto Print TAG for Large Format (Cat 2)
-                    // Use string comparison to be safe with data-attributes
-                    if (String(activeCat) === '2' || String(activeCat) === '5') {
-                        let tagUrl = this.config.baseUrl + 'print_tag_ids?ids=' + data.ids.join(',');
-                        let iframe = document.getElementById('hiddenPrintFrame');
-                        if (!iframe) {
-                            iframe = document.createElement('iframe');
-                            iframe.id = 'hiddenPrintFrame';
-                            iframe.style.display = 'none';
-                            document.body.appendChild(iframe);
-                        }
-                        iframe.src = tagUrl;
-                        iframe.onload = function () {
-                            iframe.contentWindow.focus();
-                            iframe.contentWindow.print();
-                            location.reload();
-                        };
-                    } else {
-                        location.reload();
+    // Disable submit buttons to prevent double-submission
+    let submitBtn = $('#modalSelesaiBatch .btn-success, #modalStok .btn-success');
+    let originalText = submitBtn.html() || '<i class="fas fa-check-circle me-1"></i> Simpan';
+    submitBtn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i> Memproses...');
+
+    const performBatchSubmit = (submitData, supervisorPin = '') => {
+        let payload = this.getAuthData(submitData);
+        payload.supervisor_pin = supervisorPin;
+        $.post(this.config.baseUrl + 'batch_selesai_dan_stok', payload, (res) => {
+            if (res.success) {
+                // Clear roll preferences for completed ids
+                submitData.ids.forEach(id => localStorage.removeItem('roll_pref_' + id));
+                
+                // [NEW] Auto Print TAG for Large Format (Cat 2)
+                if (String(activeCat) === '2' || String(activeCat) === '5') {
+                    let tagUrl = this.config.baseUrl + 'print_tag_ids?ids=' + submitData.ids.join(',');
+                    let iframe = document.getElementById('hiddenPrintFrame');
+                    if (!iframe) {
+                        iframe = document.createElement('iframe');
+                        iframe.id = 'hiddenPrintFrame';
+                        iframe.style.display = 'none';
+                        document.body.appendChild(iframe);
                     }
+                    iframe.src = tagUrl;
+                    iframe.onload = function () {
+                        iframe.contentWindow.focus();
+                        iframe.contentWindow.print();
+                        location.reload();
+                    };
                 } else {
-                    Swal.fire('Error', res.message, 'error');
+                    location.reload();
                 }
-            }, 'json');
-        }
-    });
+            } else if (res.require_pin_override) {
+                submitBtn.prop('disabled', false).html(originalText);
+                Swal.fire({
+                    title: 'Otorisasi Dibutuhkan',
+                    text: res.message,
+                    icon: 'warning',
+                    input: 'password',
+                    inputPlaceholder: 'Masukkan PIN Supervisor/Otorisasi',
+                    showCancelButton: true,
+                    confirmButtonText: 'Bypass & Lanjut',
+                    cancelButtonText: 'Batal',
+                    preConfirm: (pin) => {
+                        if (!pin) {
+                            Swal.showValidationMessage('PIN wajib diisi!');
+                            return false;
+                        }
+                        return pin;
+                    }
+                }).then((result) => {
+                    if (result.isConfirmed && result.value) {
+                        submitBtn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i> Memproses...');
+                        performBatchSubmit(submitData, result.value);
+                    }
+                });
+            } else {
+                submitBtn.prop('disabled', false).html(originalText);
+                Swal.fire('Error', res.message, 'error');
+            }
+        }, 'json').fail(() => {
+            submitBtn.prop('disabled', false).html(originalText);
+            Swal.fire('Error', 'Gagal menghubungi server.', 'error');
+        });
+    };
+
+    performBatchSubmit(postData);
 },
 printGroupTag(groupKey) {
     let ids = [];
@@ -1157,16 +1330,22 @@ sendGroupToPB(matKey) {
 
 openFinishingModal() {
     let checked = $('.check-item-nesting:checked');
+    this.state.finishingIds = checked.map((i, el) => $(el).data('id')).get();
+    this.captureOperations(this.state.finishingIds);
     let activeCat = String(checked.first().data('kategori-id') || '0');
     let stepName = 'Finishing';
 
-    $.get(this.config.baseUrl + 'get_machines_ajax?stepName=' + encodeURIComponent(stepName) + '&catId=' + activeCat, (res) => {
+    $('#finMesinId').empty().prop('disabled', true);
+    $.get(this.machineOptionsUrl(stepName, activeCat, this.state.finishingIds), (res) => {
         let data = typeof res === 'string' ? JSON.parse(res) : res;
         let m = data.machines || [];
+        if (data.message || (!m.length && data.is_mandatory)) {
+            Swal.fire('Pilihan mesin', data.message || 'Tidak ada mesin aktif yang sesuai lokasi item terpilih. Periksa lokasi produksi dan master mesin; pisahkan batch jika lokasinya berbeda.', 'warning');
+        }
         let isMandatory = data.is_mandatory || false;
         let userMesinIds = data.user_mesin_ids || [];
 
-        let sel = $('#finMesinId').empty();
+        let sel = $('#finMesinId').empty().prop('disabled', false);
         if (isMandatory) {
             sel.append('<option value="">-- Pilih Mesin Wajib --</option>');
             sel.append('<option value="0">-- Tanpa Mesin (Manual) --</option>');
@@ -1216,10 +1395,15 @@ openFinishingModal() {
         }
 
         let bomLines = $(el).data('bom-lines') || [];
+        let currentBomLineId = $(el).data('current-bom-line-id');
+        if (currentBomLineId) {
+            let filtered = bomLines.filter(b => b.bom_line_id == currentBomLineId);
+            if(filtered.length > 0) bomLines = filtered;
+        }
         let bomHtml = '';
         if (bomLines.length > 0) {
             let bomInputs = bomLines.map(bom => {
-                let bq = parseFloat(bom.bom_qty) || 1;
+                let bq = parseFloat(bom.quantity || bom.bom_qty) || 1;
                 let bomReq = (bq * qty);
                 let sn = (bom.satuan_nama || '').toLowerCase();
 
@@ -1235,6 +1419,10 @@ openFinishingModal() {
                     }
                 } else {
                     bomReq = bq * qty;
+                }
+
+                if (sn === 'lbr' || sn === 'lembar' || sn === 'pcs' || sn === 'set') {
+                    bomReq = Math.ceil(bomReq);
                 }
 
                 return `
@@ -1269,27 +1457,22 @@ openFinishingModal() {
                         </div>
                     </div>
                     ${bomHtml}
+                    ${this.resultInputs(pid, 'fin', qty)}
                     <div id="f_reason_section_${pid}" style="display:none;" class="animate__animated animate__fadeIn">
                         <textarea class="form-control form-control-sm mt-2 border-danger border-opacity-25" id="f_reason_${pid}" placeholder="Alasan rijek Finishing..." rows="2"></textarea>
-                        <div class="form-text text-danger small"><i class="fas fa-undo me-1"></i> Item akan dikembalikan ke tahap Produksi Awal.</div>
+                        <div class="form-text text-danger small"><i class="fas fa-undo me-1"></i> Riwayat tetap tersimpan; tahap terbuka untuk tindak lanjut.</div>
                     </div>
                 </div>`;
     }).join('');
-    let qcWarningHtml = `
-        <div class="alert alert-info p-2 small fw-bold mb-3 border-info border-opacity-50 shadow-sm d-flex align-items-center" style="background:#f0f8ff; color: #004085;">
-            <i class="fas fa-info-circle fa-2x me-3"></i>
-            <div>
-                <div style="font-size: 0.8rem; text-transform: uppercase; margin-bottom: 2px;">INFORMASI: PROSES FINISHING MERANGKAP QC</div>
-                <div style="font-size: 0.7rem; font-weight: 500;">Khusus untuk proses Jasa Finishing, Anda bertindak juga sebagai QC. Karena itu, item yang diselesaikan <b>TIDAK AKAN MELEWATI TAHAP QC LAGI</b> dan akan otomatis terkirim langsung ke Pengambilan Barang (PB). Pastikan Anda sudah mengecek kualitasnya!</div>
-            </div>
-        </div>
-    `;
+    let qcWarningHtml = '<div class="alert alert-info p-2 small">Catat hasil finishing aktual. Hasil parsial/rusak tetap terbuka; serah terima PB dilakukan terpisah setelah seluruh tahap selesai.</div>';
     $('#finishingItemList').html(qcWarningHtml + html);
     $('#modalSelesaiFinishing').modal('show');
 },
 
 submitFinishing() {
-    let ids = $('.check-item-nesting:checked').map((i, el) => $(el).data('id')).get();
+    let ids = this.state.finishingIds || [];
+    const actual = this.resultValues(ids, 'fin');
+    if (!ids.length || !actual) return;
     let pin = $('#finOperatorPin').val();
     let mesinId = $('#finMesinId').val();
     let isMandatory = $('#finMesinBadge').hasClass('bg-danger');
@@ -1310,7 +1493,8 @@ submitFinishing() {
         outcomes[id] = {
             status: $(`input[name="fo_${id}"]:checked`).val(),
             reason: $(`#f_reason_${id}`).val(),
-            bom_usage: bom_usage
+            bom_usage: bom_usage,
+            ...actual[id]
         };
     });
     $.post(this.config.baseUrl + 'batch_selesai_dan_stok', this.getAuthData({
@@ -1320,12 +1504,12 @@ submitFinishing() {
         material_id: null,
         total_usage: 0,
         mesin_id: mesinId,
-        send_to_pb: 1
+        send_to_pb: 0
     }), (res) => {
         if (res.success) {
             Swal.fire({
-                title: 'Finishing & QC Selesai!',
-                html: 'Tugas Finishing (sekaligus QC) telah diselesaikan dan <b>langsung dikirim ke PB</b>.',
+                title: 'Hasil Finishing Disimpan',
+                text: res.message + ' Serah terima PB dilakukan melalui tombol PB setelah seluruh tahap tuntas.',
                 icon: 'success',
                 timer: 3000,
                 showConfirmButton: false
@@ -1480,7 +1664,7 @@ updateManualDim(el, type) {
     // Use debounce for AJAX Persistence so we don't spam the server on every keypress
     clearTimeout(tr.data('dim-timer'));
     tr.data('dim-timer', setTimeout(() => {
-        $.post(this.config.baseUrl + 'update_manual_dimension_ajax', this.getAuthData({ produksi_id: id, panjang: p, lebar: l }));
+        $.post(this.config.baseUrl + 'update_manual_dimension_ajax', this.getAuthData({ produksi_id: id, panjang: p, lebar: l }), res => { if (!res.success) Swal.fire('Gagal', res.message, 'error'); }, 'json');
     }, 800)); // 800ms delay after the operator stops typing
 
     if (cb.prop('checked')) this.updateNestingSummary();
@@ -1626,67 +1810,7 @@ finishItemIndividual(prodId) {
  * Fast Finish for Individual Items (No Material/Stock Update Modal)
  */
 finishItemSimple(id) {
-    Swal.fire({
-        title: 'Selesai Proses?',
-        html: `
-                <div class="text-center">
-                    <p class="text-muted mb-4 px-3" style="font-size: 0.85rem;">Tahap pengerjaan item ini telah selesai. Masukkan PIN untuk verifikasi penyelesaian pekerjaan.</p>
-                    <div class="mb-2 text-start px-4">
-                        <label class="form-label fw-bold small text-dark mb-1">
-                            <i class="fas fa-key me-1 text-primary"></i> Masukkan PIN Operator
-                        </label>
-                        <input type="password" id="swal-pin-simple" 
-                            class="form-control form-control-lg fw-900 text-center" 
-                            maxlength="6" 
-                            placeholder="P I N   D i g i t" 
-                            style="letter-spacing: 0.4rem; font-size: 1.6rem; border-radius: 15px; border: 2px solid #3b82f633; background: #f0f7ff;" 
-                            inputmode="numeric">
-                    </div>
-                </div>
-            `,
-        didOpen: () => {
-            const pinInput = Swal.getPopup().querySelector('#swal-pin-simple');
-            if (pinInput) {
-                pinInput.focus();
-                pinInput.addEventListener('keyup', (e) => {
-                    if (e.key === 'Enter') Swal.clickConfirm();
-                });
-            }
-        },
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonText: 'Ya, Selesai!',
-        cancelButtonText: 'Batal',
-        confirmButtonColor: '#2ecc71',
-        customClass: {
-            popup: 'rounded-4 shadow-lg border-0 p-3',
-            confirmButton: 'btn btn-success rounded-pill px-5 py-2 fw-bold mx-2',
-            cancelButton: 'btn btn-light rounded-pill px-5 py-2 fw-bold mx-2'
-        },
-        preConfirm: () => {
-            const pin = Swal.getPopup().querySelector('#swal-pin-simple').value;
-            if (!pin || pin.length < 4) {
-                Swal.showValidationMessage('Harap masukkan PIN (min 4 digit)!');
-                return false;
-            }
-            return { pin_operator: pin };
-        }
-    }).then((result) => {
-        if (result.isConfirmed) {
-            // Determine category directly from the DOM row
-            let target = $('.check-item-nesting[data-id="' + id + '"]');
-            let catId = target.data('kategori-id') || 1;
-
-            this._postAdvance(id, 'next', {
-                pin_operator: result.value.pin_operator,
-                qty_pakai: 0,
-                qty_rusak: 0,
-                bahan_id: 0,
-                lokasi_proses: '',
-                mesin_id: 0
-            }, catId);
-        }
-    });
+    this.finishItemIndividual(id);
 },
 
 setJobOutcome(pid, status, prefix = '') {
@@ -1711,10 +1835,11 @@ getStatusClass(st) {
 },
 
 advanceStep(id, type, stepName = 'Step Ini', estQty = 0, bomMaterialId = 0, prevPakai = 0, unit = 'Unit', catId = 1, isFinishing = 0) {
+    this.captureOperations([id]);
     if (type === 'start') {
         Swal.fire({
             title: 'Mulai Produksi?',
-            text: 'Apakah Anda yakin ingin memulai pengerjaan ini?',
+            text: 'Mulai tahap yang ditugaskan? Aktivitas dicatat atas akun yang sedang login.',
             icon: 'question',
             showCancelButton: true,
             confirmButtonText: 'Ya, Mulai!',
@@ -1759,9 +1884,13 @@ advanceStep(id, type, stepName = 'Step Ini', estQty = 0, bomMaterialId = 0, prev
         });
     } else {
         // Load Machines dynamically for the branch based on step and category for completion
-        $.get(this.config.baseUrl + 'get_machines_ajax?stepName=' + encodeURIComponent(stepName) + '&catId=' + catId, (res) => {
+        $.get(this.machineOptionsUrl(stepName, catId, [id]), (res) => {
             let data = typeof res === 'string' ? JSON.parse(res) : res;
             let m = data.machines || [];
+        if (data.message || (!m.length && data.is_mandatory)) {
+            Swal.fire('Pilihan mesin', data.message || 'Tidak ada mesin aktif yang sesuai lokasi item terpilih. Periksa lokasi produksi dan master mesin; pisahkan batch jika lokasinya berbeda.', 'warning');
+            return;
+        }
             let isMandatory = data.is_mandatory || false;
             let userMesinIds = data.user_mesin_ids || [];
 
@@ -1802,11 +1931,11 @@ advanceStep(id, type, stepName = 'Step Ini', estQty = 0, bomMaterialId = 0, prev
             // Dynamic label based on unit type
             let usageLabel, usagePlaceholder, usageHelpText;
             if (isPcsBased) {
-                usageLabel = isReprint ? 'Jumlah Tambahan / Reprint (' + unit + ')' : 'Jumlah Diproduksi (' + unit + ')';
+                usageLabel = 'Bahan terpakai aktual (' + unit + ')';
                 usagePlaceholder = 'Contoh: 5 (untuk 5 ' + unit + ')';
                 usageHelpText = isReprint
                     ? 'Isi dengan jumlah cetak ulang saja.'
-                    : `Estimasi: ${estQty} ${unit}. Sistem akan auto - hitung area berdasarkan ukuran produk.`;
+                    : `Estimasi: ${estQty} ${unit}. Masukkan pemakaian dalam satuan dasar material yang dipilih.`;
             } else {
                 usageLabel = isReprint ? 'Bahan Tambahan (' + unit + ')' : 'Bahan Terpakai (' + unit + ')';
                 usagePlaceholder = 'Contoh: 2.5 (untuk 2.5 ' + unit + ')';
@@ -1879,6 +2008,7 @@ advanceStep(id, type, stepName = 'Step Ini', estQty = 0, bomMaterialId = 0, prev
                                 <div class="form-text small">Pilih mesin yang Anda gunakan untuk pengerjaan tahap ini.</div>
                             </div>
 
+                            ${this.resultInputs(id, 'advance', $(`.check-item-nesting[data-id="${id}"]`).first().data('qty') || '-')}
                             <div class="mt-4 p-3 bg-light rounded-3 border-dashed border-primary">
                                 <label class="form-label fw-bold small text-primary text-uppercase"><i class="fas fa-fingerprint me-1"></i> Verifikasi PIN Operator</label>
                                 <input type="password" id="swal-pin-next" class="form-control form-control-lg fw-bold text-center" 
@@ -1898,9 +2028,11 @@ advanceStep(id, type, stepName = 'Step Ini', estQty = 0, bomMaterialId = 0, prev
                     cancelButton: 'btn btn-light rounded-pill px-4'
                 },
                 preConfirm: () => {
-                    const bahan = Swal.getPopup().querySelector('#swal-bahan-id').value;
-                    let pakai = Swal.getPopup().querySelector('#swal-qty-pakai').value;
-                    const rusak = Swal.getPopup().querySelector('#swal-qty-rusak').value;
+                    const actual = this.resultValues([id], 'advance');
+                    if (!actual) return false;
+                    const bahan = Swal.getPopup().querySelector('#swal-bahan-id')?.value || '';
+                    let pakai = Swal.getPopup().querySelector('#swal-qty-pakai')?.value ?? '0';
+                    const rusak = Swal.getPopup().querySelector('#swal-qty-rusak')?.value || '0';
                     const pin = Swal.getPopup().querySelector('#swal-pin-next').value;
                     const mesin_id = Swal.getPopup().querySelector('#swal-mesin-id').value;
 
@@ -1925,7 +2057,7 @@ advanceStep(id, type, stepName = 'Step Ini', estQty = 0, bomMaterialId = 0, prev
                     // Default empty to 0
                     if (pakai === '') pakai = 0;
 
-                    return { pin_operator: pin, qty_pakai: pakai, qty_rusak: rusak || 0, bahan_id: bahan, mesin_id: mesin_id };
+                    return { pin_operator: pin, qty_pakai: pakai, qty_rusak: rusak || 0, bahan_id: bahan, mesin_id: mesin_id, ...actual[id] };
                 },
                 didOpen: () => {
                     $('.select2-swal').select2({
@@ -1943,7 +2075,7 @@ advanceStep(id, type, stepName = 'Step Ini', estQty = 0, bomMaterialId = 0, prev
                     });
 
                     // Set Auto-Value safely
-                    if (estQty && estQty > 0 && !isReprint) {
+                    if (estQty && estQty > 0 && !isReprint && Swal.getPopup().querySelector('#swal-qty-pakai')) {
                         Swal.getPopup().querySelector('#swal-qty-pakai').value = estQty;
                     }
                 }
@@ -1956,7 +2088,7 @@ advanceStep(id, type, stepName = 'Step Ini', estQty = 0, bomMaterialId = 0, prev
     }
 },
 
-_postAdvance(id, type, data, catId = 1) {
+_postAdvance(id, type, data, catId = 1, supervisorPin = '') {
     // MODULAR ROUTING: If Category 2 (LF), use dedicated LF endpoint. 
     // Otherwise use standard/legacy A3+ endpoint.
     const endpoint = (parseInt(catId) === 2) ? 'advance_step_lf_ajax' : 'advance_step_ajax';
@@ -1967,12 +2099,37 @@ _postAdvance(id, type, data, catId = 1) {
         pin_operator: data.pin_operator,
         qty_pakai: data.qty_pakai,
         qty_rusak: data.qty_rusak,
+        qty_output: data.qty_output,
+        qty_missing: data.qty_missing,
         bahan_id: data.bahan_id,
         mesin_id: data.mesin_id,
-        lokasi_proses: data.lokasi_proses
+        lokasi_proses: data.lokasi_proses,
+        supervisor_pin: supervisorPin
     }), (res) => {
         if (res && res.success) {
             location.reload();
+        } else if (res && res.require_pin_override) {
+            Swal.fire({
+                title: 'Otorisasi Dibutuhkan',
+                text: res.message,
+                icon: 'warning',
+                input: 'password',
+                inputPlaceholder: 'Masukkan PIN Supervisor/Otorisasi',
+                showCancelButton: true,
+                confirmButtonText: 'Bypass & Lanjut',
+                cancelButtonText: 'Batal',
+                preConfirm: (pin) => {
+                    if (!pin) {
+                        Swal.showValidationMessage('PIN wajib diisi!');
+                        return false;
+                    }
+                    return pin;
+                }
+            }).then((result) => {
+                if (result.isConfirmed && result.value) {
+                    this._postAdvance(id, type, data, catId, result.value);
+                }
+            });
         } else {
             Swal.fire('Error', (res ? res.message : 'Gagal update status'), 'error');
         }
@@ -2007,3 +2164,11 @@ window.filterSedangProses = ProductionApp.filterSedangProses.bind(ProductionApp)
 window.selectSearchBahan = (id, name) => { $('#searchBahanInput').val(name); $('#searchBahanResults').hide(); ProductionApp.loadVariants(id); };
 
 $(document).ready(() => ProductionApp.init());
+
+// Token refresh is scoped to WIP requests; global CSRF configuration is not changed.
+$(document).ajaxSuccess((event, xhr, settings, response) => {
+    if (String(settings.url || '').startsWith(WIP_CONFIG.baseUrl) && response && response.csrf_hash) {
+        ProductionApp.state.csrfHash = response.csrf_hash;
+        WIP_CONFIG.csrfHash = response.csrf_hash;
+    }
+});

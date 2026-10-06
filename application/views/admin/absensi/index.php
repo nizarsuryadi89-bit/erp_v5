@@ -32,6 +32,10 @@
         font-size: 0.75rem;
     }
     .text-primary-tgm { color: var(--tgm-primary); }
+    .text-emerald { color: var(--emerald) !important; }
+    .text-rose { color: var(--rose) !important; }
+    .text-amber { color: var(--amber) !important; }
+    .text-info { color: var(--sky) !important; }
     .bg-primary-tgm { background: var(--tgm-primary); }
     .btn-primary-tgm { background: var(--tgm-primary); color: white; border: none; font-weight: 800; border-radius: 12px; padding: 10px 24px; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
     .btn-primary-tgm:hover { background: #1d4ed8; color: white; transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.3); }
@@ -95,6 +99,15 @@
             <button type="button" class="btn-white shadow-sm" data-bs-toggle="modal" data-bs-target="#modalGuideAbsensi">
                 <i class="bi bi-journal-text me-2"></i> PANDUAN FITUR
             </button>
+            <div class="dropdown">
+                <button class="btn-primary-tgm shadow-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-bell me-2"></i> BROADCAST REMINDER
+                </button>
+                <ul class="dropdown-menu shadow">
+                    <li><a class="dropdown-item" href="<?= base_url('cron_notif/absen_masuk') ?>" target="_blank"><i class="bi bi-box-arrow-in-right me-2 text-primary-tgm"></i> Reminder Absen Masuk</a></li>
+                    <li><a class="dropdown-item" href="<?= base_url('cron_notif/absen_pulang') ?>" target="_blank"><i class="bi bi-box-arrow-right me-2 text-rose"></i> Reminder Absen Pulang</a></li>
+                </ul>
+            </div>
             <a href="<?= base_url('absensi/input_manual') ?>" class="btn-primary-tgm shadow-sm">
                 <i class="bi bi-keyboard me-2"></i> INPUT MANUAL
             </a>
@@ -522,7 +535,7 @@
                         <option value="Cuti Duka">CUTI DUKA</option>
                         <option value="Cuti Keluarga Sakit">CUTI KELUARGA SAKIT</option>
                         <option value="Cuti Melahirkan Suami">CUTI ISTRI MELAHIRKAN</option>
-                        <option value="Cuti Melahirkan">CUTI MELAHIRKAN (PEGAWAI PEREMPUAN)</option>
+                        <option value="Cuti Melahirkan">CUTI MELAHIRKAN (90 HARI)</option>
                         <option value="Alpha">ALFA (TANPA KET)</option>
                     </select>
                 </div>

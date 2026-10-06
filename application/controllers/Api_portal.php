@@ -634,21 +634,30 @@ class Api_portal extends MY_Controller
         ];
 
         if ($produksi) {
-            if ($produksi['status_produksi'] == '1') {
+            $st_prod = $produksi['status_produksi'];
+            if (in_array($st_prod, ['proses', '1'])) {
                 $status_label = "Sedang Diproses";
                 $progress = 65;
                 $history[] = [
                     'time' => date('d M Y, H:i', strtotime($produksi['tgl_mulai'] ?? $order['created_at'])),
-                    'note' => 'Pesanan masuk ke meja produksi',
+                    'note' => 'Pesanan sedang diproses produksi',
                     'status' => 'Produksi'
                 ];
-            } elseif ($produksi['status_produksi'] == '2') {
-                $status_label = "Selesai Cetak";
+            } elseif (in_array($st_prod, ['done', 'on_pb', '2'])) {
+                $status_label = ($st_prod === 'on_pb') ? "Siap Diambil (Di PB)" : "Selesai Cetak";
                 $progress = 100;
                 $history[] = [
-                    'time' => date('d M Y, H:i', strtotime($produksi['tgl_selesai'] ?? $order['created_at'])),
-                    'note' => 'Produksi selesai dan siap diambil',
+                    'time' => date('d M Y, H:i', strtotime($produksi['tgl_selesai'] ?? $produksi['tgl_kirim_pb'] ?? $order['created_at'])),
+                    'note' => ($st_prod === 'on_pb') ? 'Pesanan sudah di meja PB dan siap diambil' : 'Produksi selesai dan siap diambil',
                     'status' => 'Selesai'
+                ];
+            } elseif ($st_prod === 'on_costumer') {
+                $status_label = "Sudah Diambil";
+                $progress = 100;
+                $history[] = [
+                    'time' => date('d M Y, H:i', strtotime($produksi['update_time'] ?? $order['created_at'])),
+                    'note' => 'Pesanan telah berhasil diserahkan kepada konsumen',
+                    'status' => 'Sudah Diambil'
                 ];
             }
         }
@@ -657,8 +666,12 @@ class Api_portal extends MY_Controller
         $total_bayar = (float) ($order['total_bayar'] ?? 0);
         $sisa = $total_tagihan - $total_bayar;
         $status_bayar = "Belum Bayar";
+        $is_piutang = $this->db->get_where('tbl_piutang', ['nospk' => $nospk])->num_rows() > 0;
+
         if ($total_bayar >= $total_tagihan && $total_tagihan > 0) {
             $status_bayar = "Lunas";
+        } elseif ($is_piutang) {
+            $status_bayar = ($total_bayar > 0) ? "DP (Tempo)" : "Tempo / Piutang";
         } elseif ($total_bayar > 0) {
             $status_bayar = "DP / Cicil";
         }

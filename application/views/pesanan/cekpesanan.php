@@ -133,18 +133,18 @@ if (!function_exists('invoice_detail_metadata')) {
 
 	function invoice_detail_total($item, $harga = null)
 	{
-        // Prefer snapshot subtotal if available (already normalized)
-        if (isset($item->snapshot_subtotal) && is_numeric($item->snapshot_subtotal)) {
-            return (float) $item->snapshot_subtotal;
-        }
-        $metadata = invoice_detail_metadata($item);
-        if (isset($metadata['subtotal']) && is_numeric($metadata['subtotal'])) {
-            return (float) $metadata['subtotal'];
-        }
-        if (isset($item->subtotal) && $item->subtotal !== null && $item->subtotal !== '' && is_numeric($item->subtotal)) {
-            return (float) $item->subtotal;
-        }
-        $harga = $harga === null ? invoice_detail_price($item) : (float) $harga;
+		// Prefer snapshot subtotal if available (already normalized)
+		if (isset($item->snapshot_subtotal) && is_numeric($item->snapshot_subtotal)) {
+			return (float) $item->snapshot_subtotal;
+		}
+		$metadata = invoice_detail_metadata($item);
+		if (isset($metadata['subtotal']) && is_numeric($metadata['subtotal'])) {
+			return (float) $metadata['subtotal'];
+		}
+		if (isset($item->subtotal) && $item->subtotal !== null && $item->subtotal !== '' && is_numeric($item->subtotal)) {
+			return (float) $item->subtotal;
+		}
+		$harga = $harga === null ? invoice_detail_price($item) : (float) $harga;
 		$qty = (float) ($item->qty ?? 0);
 		$panjang = (float) ($item->panjang ?? 0);
 		$lebar = (float) ($item->lebar ?? 0);
@@ -398,13 +398,13 @@ if (!function_exists('invoice_detail_metadata')) {
 										$p = floatval($dt->panjang);
 										$l = floatval($dt->lebar);
 										$l_text = '';
-										
+
 										if ($l == 0 && !empty($dt->metadata)) {
 											$meta = json_decode($dt->metadata, true);
 											if (is_array($meta)) {
 												if (!empty($meta['lebar'])) {
 													$l_text = $meta['lebar'];
-												} elseif (!empty($meta['ket_1']) && in_array($dt->kategori_id, [5, 9])) {
+												} elseif (!empty($meta['ket_1']) && $dt->kategori_id == 9) {
 													$l_text = $meta['ket_1'];
 												}
 											}
@@ -448,52 +448,67 @@ if (!function_exists('invoice_detail_metadata')) {
 												// Fallback jika tidak ada metadata di harga_product (Transaksi lama)
 												if ($dt->kategori_id == 2) {
 													$mesin_id = !empty($dt->jenisprint_id) ? $dt->jenisprint_id : (isset($dt->ket_1) ? $dt->ket_1 : null);
-													if ($mesin_id == 2 || $mesin_id == '2') $combined_meta['mesin_fallback'] = "OUTDOOR";
-													elseif ($mesin_id == 3 || $mesin_id == '3') $combined_meta['mesin_fallback'] = "INDOOR SOLVENT";
-													elseif ($mesin_id == 4 || $mesin_id == '4') $combined_meta['mesin_fallback'] = "INDOOR UV";
+													if ($mesin_id == 2 || $mesin_id == '2')
+														$combined_meta['mesin_fallback'] = "OUTDOOR";
+													elseif ($mesin_id == 3 || $mesin_id == '3')
+														$combined_meta['mesin_fallback'] = "INDOOR SOLVENT";
+													elseif ($mesin_id == 4 || $mesin_id == '4')
+														$combined_meta['mesin_fallback'] = "INDOOR UV";
 												}
 											}
 										}
 
-                        // 2. Ambil dari tbl_produksi (Metadata Transaksi)
-                        if (!empty($dt->metadata)) {
-                            $t_meta = json_decode($dt->metadata, true);
-                            if (is_array($t_meta)) {
-                                $combined_meta = array_merge($combined_meta, $t_meta);
-                            }
-                        }
+										// 2. Ambil dari tbl_produksi (Metadata Transaksi)
+										if (!empty($dt->metadata)) {
+											$t_meta = json_decode($dt->metadata, true);
+											if (is_array($t_meta)) {
+												$combined_meta = array_merge($combined_meta, $t_meta);
+											}
+										}
 
-                        // Pastikan ket_1 ikut diproses jika belum ada
-                        if (!empty($dt->ket_1) && !isset($combined_meta['ket_1'])) {
-                            $combined_meta['ket_1'] = $dt->ket_1;
-                        }
+										// Pastikan ket_1 ikut diproses jika belum ada
+										if (!empty($dt->ket_1) && !isset($combined_meta['ket_1'])) {
+											$combined_meta['ket_1'] = $dt->ket_1;
+										}
 
-                        // [NEW] Kategori 1: Jika jenisprint_id ada, pakai sebagai ket_1 (1 Sisi / 2 Sisi)
-                        if (isset($dt->kategori_id) && $dt->kategori_id == 1) {
-                            if (empty($combined_meta['ket_1'])) {
-                                if (!empty($dt->jenisprint_id)) {
-                                    $combined_meta['ket_1'] = $dt->jenisprint_id;
-                                } elseif (!empty($combined_meta['jenisprint_id'])) {
-                                    $combined_meta['ket_1'] = $combined_meta['jenisprint_id'];
-                                }
-                            }
-                        }
+										// [NEW] Kategori 1: Jika jenisprint_id ada, pakai sebagai ket_1 (1 Sisi / 2 Sisi)
+										if (isset($dt->kategori_id) && $dt->kategori_id == 1) {
+											if (empty($combined_meta['ket_1'])) {
+												if (!empty($dt->jenisprint_id)) {
+													$combined_meta['ket_1'] = $dt->jenisprint_id;
+												} elseif (!empty($combined_meta['jenisprint_id'])) {
+													$combined_meta['ket_1'] = $combined_meta['jenisprint_id'];
+												}
+											}
+										}
 
-                        // [NEW] Resolve schema untuk label dinamis
-                        $schema_map = [];
-                        $raw_schema = $dt->product_form_schema ?? $dt->subcategory_form_schema ?? $dt->category_form_schema ?? '';
-                        if (!empty($raw_schema)) {
-                            $schema_arr = json_decode($raw_schema, true);
-                            if (is_array($schema_arr)) {
-                                foreach ($schema_arr as $field) {
-                                    if (isset($field['name'])) {
-                                        $schema_map[$field['name']] = $field;
-                                    }
-                                }
-                            }
-                        }
+										// [NEW] Resolve schema untuk label dinamis
+										$schema_map = [];
+										$schema_arr = [];
+										
+										// Merge schemas sequentially (Category -> Subcategory -> Product) so specific overrides general
+										if (!empty($dt->category_form_schema)) {
+											$sc = json_decode($dt->category_form_schema, true);
+											if (is_array($sc)) $schema_arr = array_merge($schema_arr, $sc);
+										}
+										if (!empty($dt->subcategory_form_schema)) {
+											$sc = json_decode($dt->subcategory_form_schema, true);
+											if (is_array($sc)) $schema_arr = array_merge($schema_arr, $sc);
+										}
+										if (!empty($dt->product_form_schema)) {
+											$sc = json_decode($dt->product_form_schema, true);
+											if (is_array($sc)) $schema_arr = array_merge($schema_arr, $sc);
+										}
 
-                        // 3. Render Combined Metadata
+										if (!empty($schema_arr)) {
+											foreach ($schema_arr as $field) {
+												if (isset($field['name'])) {
+													$schema_map[$field['name']] = $field;
+												}
+											}
+										}
+
+										// 3. Render Combined Metadata
 										$printed_values = [];
 										foreach ($combined_meta as $key => $val) {
 											$key_lower = strtolower($key);
@@ -517,65 +532,72 @@ if (!function_exists('invoice_detail_metadata')) {
 												}
 											}
 
-											// Skip ket_1 and lebar for Tekstil/DTF because we already display it in P x L
-											if (in_array($dt->kategori_id, [5, 9]) && in_array($key_lower, ['ket_1', 'lebar'])) {
+											// Skip ket_1 and lebar for DTF because we already display it in P x L
+											if ($dt->kategori_id == 9 && in_array($key_lower, ['ket_1', 'lebar'])) {
 												continue;
 											}
 
-                            if ($key_lower == 'sisi') {
-                                if (in_array($dt->kategori_id, [2, 5, 9]) || strtolower($dt->kategori_nama ?? '') == 'large format') {
-                                    continue;
-                                }
-                                if ($val == '1' || $val == '2') {
-                                    $val = $val . ' Sisi';
-                                } elseif (strtolower(trim($val)) == '1 side') {
-                                    $val = '1 Sisi';
-                                } elseif (strtolower(trim($val)) == '2 side') {
-                                    $val = '2 Sisi';
-                                } elseif ($val == '3' || stripos($val, 'Tidak Ada') !== false) {
-                                    continue;
-                                }
-                                
-                                // Dedup
-                                $val_clean = strtolower(trim($val));
-                                if (!in_array($val_clean, $printed_values)) {
-                                    $meta_str .= "$val &bull; ";
-                                    $printed_values[] = $val_clean;
-                                }
-                                continue;
-                            }
+											if ($key_lower == 'sisi') {
+												if (in_array($dt->kategori_id, [2, 5, 9]) || strtolower($dt->kategori_nama ?? '') == 'large format') {
+													continue;
+												}
+												if ($val == '1' || $val == '2') {
+													$val = $val . ' Sisi';
+												} elseif (strtolower(trim($val)) == '1 side') {
+													$val = '1 Sisi';
+												} elseif (strtolower(trim($val)) == '2 side') {
+													$val = '2 Sisi';
+												} elseif ($val == '3' || stripos($val, 'Tidak Ada') !== false) {
+													continue;
+												}
 
-                            if ($key_lower == 'mesin_fallback') {
-                                $val_clean = strtolower(trim($val));
-                                if (!in_array($val_clean, $printed_values)) {
-                                    $meta_str .= "$val &bull; ";
-                                    $printed_values[] = $val_clean;
-                                }
-                                continue;
-                            }
+												// Dedup
+												$val_clean = strtolower(trim($val));
+												if (!in_array($val_clean, $printed_values)) {
+													$meta_str .= "$val &bull; ";
+													$printed_values[] = $val_clean;
+												}
+												continue;
+											}
 
-                            // Hilangkan label "Ket 1:", tampilkan isinya saja
-                            if (strpos($key_lower, 'ket_') === 0 && !$is_in_schema) {
-                                $val = trim($val, '[]');
-                                if (!empty($val)) {
-                                    if (isset($dt->kategori_id) && $dt->kategori_id == 1) {
-                                        if ($val == '1' || strtolower(trim($val)) == '1 side') $val = '1 Sisi';
-                                        elseif ($val == '2' || strtolower(trim($val)) == '2 side') $val = '2 Sisi';
-                                        elseif ($val == '3' || stripos($val, 'Tidak Ada') !== false) continue;
-                                    }
-                                    
-                                    $val_clean = strtolower(trim($val));
-                                    if (!in_array($val_clean, $printed_values)) {
-                                        $meta_str .= "$val &bull; ";
-                                        $printed_values[] = $val_clean;
-                                    }
-                                }
-                                continue;
-                            }
+											if ($key_lower == 'mesin_fallback') {
+												$val_clean = strtolower(trim($val));
+												if (!in_array($val_clean, $printed_values)) {
+													$meta_str .= "$val &bull; ";
+													$printed_values[] = $val_clean;
+												}
+												continue;
+											}
+
+											// Hilangkan label "Ket 1:", tampilkan isinya saja
+											if (strpos($key_lower, 'ket_') === 0 && !$is_in_schema) {
+												$val = trim($val, '[]');
+												if (!empty($val)) {
+													if (isset($dt->kategori_id) && $dt->kategori_id == 1) {
+														if ($val == '1' || strtolower(trim($val)) == '1 side')
+															$val = '1 Sisi';
+														elseif ($val == '2' || strtolower(trim($val)) == '2 side')
+															$val = '2 Sisi';
+														elseif ($val == '3' || stripos($val, 'Tidak Ada') !== false)
+															continue;
+													}
+
+													$val_clean = strtolower(trim($val));
+													if (!in_array($val_clean, $printed_values)) {
+														$meta_str .= "$val &bull; ";
+														$printed_values[] = $val_clean;
+													}
+												}
+												continue;
+											}
 
 											$val_clean = strtolower(trim($val));
 											if (!in_array($val_clean, $printed_values)) {
-												$meta_str .= "$label: $val &bull; ";
+												if ($is_in_schema && !empty($label)) {
+													$meta_str .= "{$label}: {$val} &bull; ";
+												} else {
+													$meta_str .= "{$val} &bull; ";
+												}
 												$printed_values[] = $val_clean;
 											}
 										}
@@ -586,10 +608,10 @@ if (!function_exists('invoice_detail_metadata')) {
 									</td>
 									<td class="qty-col fw-bold text-center"><?= $dt->qty ?></td>
 									<td class="price-col text-secondary">
-										<?= number_format($harga) ?>
+										<?= number_format($harga, 0, ',', '.') ?>
 									</td>
 									<td class="total-col fw-bold" style="color: #0f172a;">
-										<?= number_format($jumlah) ?>
+										<?= number_format($jumlah, 0, ',', '.') ?>
 									</td>
 								</tr>
 							<?php endforeach; ?>
@@ -598,15 +620,48 @@ if (!function_exists('invoice_detail_metadata')) {
 
 					<!-- Payment Summary (Premium UI) -->
 					<div class="mt-3 p-3 rounded" style="background-color: #f8fafc; border: 1px dashed #cbd5e1;">
-						<div class="d-flex justify-content-between align-items-center mb-3">
-							<span class="text-secondary fw-semibold" style="letter-spacing: 0.5px; font-size: 13px;">TOTAL</span>
-							<span class="fw-bold text-dark font-monospace fs-5">Rp
+						<?php
+						$diskon = isset($pembayaran->diskon_total) ? floatval($pembayaran->diskon_total) : (isset($pembayaran->diskon) ? floatval($pembayaran->diskon) : 0);
+						$ongkir = isset($pembayaran->ongkir) ? floatval($pembayaran->ongkir) : 0;
+						$total_tagihan_calc = (isset($pembayaran->total_tagihan) && $pembayaran->total_tagihan > 0) ? floatval($pembayaran->total_tagihan) : ($subtotal + $ongkir - $diskon);
+						?>
+						<div class="d-flex justify-content-between align-items-center mb-2">
+							<span class="text-secondary fw-semibold"
+								style="letter-spacing: 0.5px; font-size: 13px;">SUBTOTAL</span>
+							<span class="fw-bold text-dark font-monospace">Rp
 								<?= number_format($subtotal, 0, ".", ".") ?></span>
 						</div>
 
+						<?php if ($diskon > 0): ?>
+							<div class="d-flex justify-content-between align-items-center mb-2">
+								<span class="text-danger fw-semibold"
+									style="letter-spacing: 0.5px; font-size: 13px;">DISKON</span>
+								<span class="fw-bold text-danger font-monospace">- Rp
+									<?= number_format($diskon, 0, ".", ".") ?></span>
+							</div>
+						<?php endif; ?>
+
+						<?php if ($ongkir > 0): ?>
+							<div class="d-flex justify-content-between align-items-center mb-2">
+								<span class="text-primary fw-semibold"
+									style="letter-spacing: 0.5px; font-size: 13px;">ONGKIR</span>
+								<span class="fw-bold text-primary font-monospace">+ Rp
+									<?= number_format($ongkir, 0, ".", ".") ?></span>
+							</div>
+						<?php endif; ?>
+
+						<?php if ($diskon > 0 || $ongkir > 0 || (isset($pembayaran->total_tagihan) && $pembayaran->total_tagihan != $subtotal)): ?>
+							<div class="d-flex justify-content-between align-items-center mb-3 pt-2 border-top">
+								<span class="text-secondary fw-bold"
+									style="letter-spacing: 0.5px; font-size: 13px;">TOTAL TAGIHAN</span>
+								<span class="fw-bold text-dark font-monospace fs-5">Rp
+									<?= number_format($total_tagihan_calc, 0, ".", ".") ?></span>
+							</div>
+						<?php endif; ?>
+
 						<div class="border-top border-secondary border-opacity-10 pt-3">
 							<?php
-							$selisih = $pembayaran->total_bayar - $subtotal;
+							$selisih = $pembayaran->total_bayar - $total_tagihan_calc;
 
 							// Logic Status Pembayaran
 							$has_payment_record = !empty($pembayaran->bayar_nospk);
@@ -695,8 +750,8 @@ if (!function_exists('invoice_detail_metadata')) {
 					<?php endif; ?>
 
 					<div class="mt-4 text-center">
-						<a href="<?= base_url('cekpesanan/cetak_invoice/' . urlencode(encrypt_spk($nospk))) ?>" target="_blank"
-							class="btn btn-primary d-print-none">
+						<a href="<?= base_url('cekpesanan/cetak_invoice/' . urlencode(encrypt_spk($nospk))) ?>"
+							target="_blank" class="btn btn-primary d-print-none">
 							<i class="fas fa-print me-2"></i> Cetak Invoice
 						</a>
 					</div>
@@ -738,10 +793,8 @@ if (!function_exists('invoice_detail_metadata')) {
 						// Cek status produksi untuk step selanjutnya
 						if ($status_prod == 'proses')
 							$current_step = 2; // Sedang Produksi
-						elseif ($status_prod == 'done')
-							$current_step = 3; // Sudah Di PB/Ready
-						elseif ($status_prod == 'on_pb')
-							$current_step = 4; // Sudah Diambil
+						elseif ($status_prod == 'done' || $status_prod == 'on_pb')
+							$current_step = 4; // Sudah Di PB/Ready (Siap Diambil)
 						elseif ($status_prod == 'on_costumer')
 							$current_step = 5; // Sudah Diambil
 					}
@@ -754,7 +807,7 @@ if (!function_exists('invoice_detail_metadata')) {
 							<div class="timeline-marker"></div>
 							<div class="timeline-content">
 								<h6>Belum Bayar</h6>
-								<p>Menunggu pembayaran dari pelanggan.</p>
+								<p>Menunggu pembayaran agar pesanan dapat diproses.</p>
 							</div>
 						</li>
 
@@ -764,7 +817,10 @@ if (!function_exists('invoice_detail_metadata')) {
 							<div class="timeline-marker"></div>
 							<div class="timeline-content">
 								<?php
-								$selisih_track = $pembayaran->total_bayar - $subtotal_status;
+								$diskon_track = isset($pembayaran->diskon_total) ? floatval($pembayaran->diskon_total) : (isset($pembayaran->diskon) ? floatval($pembayaran->diskon) : 0);
+								$ongkir_track = isset($pembayaran->ongkir) ? floatval($pembayaran->ongkir) : 0;
+								$tagihan_track = (isset($pembayaran->total_tagihan) && $pembayaran->total_tagihan > 0) ? floatval($pembayaran->total_tagihan) : ($subtotal_status + $ongkir_track - $diskon_track);
+								$selisih_track = $pembayaran->total_bayar - $tagihan_track;
 								if ($current_step >= 1 && $selisih_track < 0):
 									?>
 									<h6 class="text-danger">Pembayaran Belum Lunas (DP)</h6>
@@ -774,7 +830,7 @@ if (!function_exists('invoice_detail_metadata')) {
 									</p>
 								<?php else: ?>
 									<h6>Sudah Bayar</h6>
-									<p>Pembayaran telah diterima LUNAS.</p>
+									<p>Pembayaran berhasil dikonfirmasi. Pesanan akan segera diproduksi.</p>
 								<?php endif; ?>
 							</div>
 						</li>
@@ -785,7 +841,7 @@ if (!function_exists('invoice_detail_metadata')) {
 							<div class="timeline-marker"></div>
 							<div class="timeline-content">
 								<h6>Sedang Produksi</h6>
-								<p>Pesanan sedang dalam proses produksi.</p>
+								<p>Pesanan sedang diproduksi sesuai spesifikasi yang telah disetujui.</p>
 							</div>
 						</li>
 
@@ -794,8 +850,8 @@ if (!function_exists('invoice_detail_metadata')) {
 							class="timeline-item <?= ($current_step >= 4) ? 'passed' : '' ?> <?= ($current_step == 4) ? 'active' : '' ?>">
 							<div class="timeline-marker"></div>
 							<div class="timeline-content">
-								<h6>Sudah Selesai (Ready) - On PB</h6>
-								<p>Barang selesai dan siap diambil di PB</p>
+								<h6>Pesanan Selesai (Siap Diambil)</h6>
+								<p>Pesanan telah selesai diproduksi dan siap diambil di toko.</p>
 							</div>
 						</li>
 
@@ -805,7 +861,8 @@ if (!function_exists('invoice_detail_metadata')) {
 							<div class="timeline-marker"></div>
 							<div class="timeline-content">
 								<h6>Sudah Diambil</h6>
-								<p>Pesanan telah diambil oleh customer.</p>
+								<p>Pesanan telah berhasil diterima. Terima kasih telah berbelanja di <b>TGM PRINT</b>.
+								</p>
 							</div>
 						</li>
 					</ul>

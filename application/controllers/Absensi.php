@@ -222,12 +222,24 @@ class Absensi extends MY_Controller
             foreach ($all_dates as $date) {
                 $att_day = isset($att_map[$date]) ? $att_map[$date] : null;
                 $day_spls = isset($lembur_map[$date]) ? $lembur_map[$date] : [];
-                $lembur_calc[$date] = $this->_build_daily_lembur_calc($karyawan_id, $date, $att_day, $day_spls);
+                $lembur_calc[$date] = $this->_build_daily_lembur_calc($karyawan_id, $date, $att_day, $day_spls, $jk_map);
                 
                 // Calculate dynamic meal sum
                 if ($att_day && $att_day->jam_pulang != '00:00:00' && !empty($att_day->jam_pulang)) {
                     $out_ts = strtotime($att_day->jam_pulang);
                     $day_num = date('N', strtotime($date));
+                    
+                    // --- PENYESUAIAN PENGURANGAN TELAT UNTUK UANG MAKAN (POIN 3) ---
+                    $jadwal = $this->db->get_where('tbl_jam_kerja', ['urutan' => $day_num])->row();
+                    $jadwal_masuk = $jadwal && !empty($jadwal->jam_masuk) ? strtotime("$date $jadwal->jam_masuk") : strtotime("$date 08:00:00");
+                    if (!empty($att_day->jam_masuk) && $att_day->jam_masuk != '00:00:00') {
+                        $jam_masuk_real = strtotime("$date $att_day->jam_masuk");
+                        if ($jam_masuk_real > $jadwal_masuk) {
+                            $out_ts -= ($jam_masuk_real - $jadwal_masuk);
+                        }
+                    }
+                    // -------------------------------------------------------------
+                    
                     $biaya_makan = 0;
                     if ($day_num <= 6) {
                         $batas_1 = strtotime('19:00:00');
@@ -424,7 +436,7 @@ class Absensi extends MY_Controller
         foreach ($all_dates as $date) {
             $att_day = isset($att_map[$date]) ? $att_map[$date] : null;
             $day_spls = isset($lembur_map[$date]) ? $lembur_map[$date] : [];
-            $lembur_calc[$date] = $this->_build_daily_lembur_calc($karyawan_id, $date, $att_day, $day_spls);
+            $lembur_calc[$date] = $this->_build_daily_lembur_calc($karyawan_id, $date, $att_day, $day_spls, $jk_map);
         }
 
         $data = [
@@ -525,6 +537,18 @@ class Absensi extends MY_Controller
             'status' => 'Hadir'
         ];
 
+        // Cek apakah karyawan memiliki Izin Keterlambatan yang sudah di-approve hari ini
+        $cek_izin_telat = $this->db->get_where('tbl_pengajuan_izin', [
+            'karyawan_id' => $data['karyawan_id'],
+            'tanggal_mulai' => $data['tanggal'],
+            'tipe_izin' => 'izin_telat',
+            'status' => 'Approved'
+        ])->row();
+
+        if ($cek_izin_telat) {
+            $data['is_izin_telat'] = 1;
+        }
+
         $result = $this->Absensi_model->insert($data);
 
         if ($result) {
@@ -600,7 +624,7 @@ class Absensi extends MY_Controller
 
         // Validasi input
         $this->form_validation->set_rules('karyawan_id', 'Karyawan ID', 'required|numeric');
-        $this->form_validation->set_rules('status', 'Status', 'required|in_list[izin,sakit,cuti]');
+        $this->form_validation->set_rules('status', 'Status', 'required|in_list[izin,sakit,cuti,pulang_cepat,izin_telat]');
         $this->form_validation->set_rules('durasi_tipe', 'Tipe Durasi', 'required|in_list[jam,hari]');
         $this->form_validation->set_rules('durasi_jumlah', 'Jumlah Durasi', 'required|numeric|greater_than[0]');
         $this->form_validation->set_rules('kegiatan', 'Alasan', 'max_length[500]');
@@ -710,15 +734,31 @@ class Absensi extends MY_Controller
             $durasi_tipe = 'jam';
         }
 
-        // Handle Upload Dokumen/Surat Sakit
+        // Khusus Izin Telat
+        $jam_rencana_hadir = null;
+        if ($status == 'izin_telat') {
+            $jam_rencana_hadir = $this->input->post('jam_rencana_hadir', true);
+            if (empty($jam_rencana_hadir)) {
+                $this->session->set_flashdata('error', 'Jam rencana hadir wajib diisi untuk Izin Keterlambatan.');
+                redirect('mobile/sakit');
+            }
+            $durasi_tipe = 'jam';
+            $durasi_jumlah = 0; // Keterlambatan dihitung otomatis saat absensi aktual
+            $kegiatan = $kegiatan . " (Rencana Hadir: {$jam_rencana_hadir})";
+        }
+
+        // Handle Upload Dokumen/Surat Sakit/Bukti Telat
         $dokumen_path = '';
-        if ($status == 'sakit' && !empty($_FILES['dokumen']['name'])) {
+        if (in_array($status, ['sakit', 'izin_telat']) && !empty($_FILES['dokumen']['name'])) {
             $upload_res = $this->_upload_dokumen($karyawan_id);
             if (!$upload_res['status']) {
-                $this->session->set_flashdata('error', 'Gagal mengunggah surat sakit: ' . $upload_res['error'] . ' (Pastikan format PDF/JPG/PNG max 5MB)');
+                $this->session->set_flashdata('error', 'Gagal mengunggah dokumen: ' . $upload_res['error'] . ' (Pastikan format PDF/JPG/PNG max 5MB)');
                 redirect('mobile/sakit');
             }
             $dokumen_path = $upload_res['path'];
+        } elseif ($status == 'izin_telat' && empty($_FILES['dokumen']['name'])) {
+            $this->session->set_flashdata('error', 'Bukti foto wajib dilampirkan untuk Izin Keterlambatan.');
+            redirect('mobile/sakit');
         }
 
         // Data untuk insert ke tabel pengajuan izin (pending)
@@ -873,7 +913,7 @@ class Absensi extends MY_Controller
         }
     }
 
-    private function _build_daily_lembur_calc($karyawan_id, $date, $att_day, $day_spls = [])
+    private function _build_daily_lembur_calc($karyawan_id, $date, $att_day, $day_spls = [], $jk_map = [])
     {
         $res_wajib = $this->Payroll_model->_hitung_jam_lembur($karyawan_id, '00:00', '00:00', $date, $att_day);
 
@@ -923,6 +963,62 @@ class Absensi extends MY_Controller
                     $total_kerjaan += (float)$res['raw_wajib'];
                 } else {
                     $total_wajib = (float)$res['raw_wajib'];
+                }
+            }
+        }
+
+        // LATE DEDUCTION LOGIC
+        $late_deduction = 0;
+        if ($att_day && isset($att_day->status) && $att_day->status === 'Hadir' && !empty($att_day->jam_masuk) && $att_day->jam_masuk !== '00:00:00') {
+            $day_num = date('w', strtotime($date));
+            $daysIndo = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+            $hariIndo = $daysIndo[$day_num];
+            
+            $limit = isset($jk_map[$hariIndo]) ? $jk_map[$hariIndo]->jam_masuk : '08:00:00';
+            $masuk_time = strtotime($att_day->jam_masuk);
+            $limit_time = strtotime($limit);
+            
+            if ($masuk_time > $limit_time) {
+                $late_minutes = floor(($masuk_time - $limit_time) / 60);
+                if ($late_minutes >= 1 && $late_minutes <= 59) {
+                    $late_deduction = 1;
+                } else if ($late_minutes >= 60) {
+                    $late_deduction = 2;
+                }
+            }
+        }
+
+        if ($late_deduction > 0) {
+            $to_deduct = $late_deduction;
+            
+            // Deduct dari SPL dulu
+            if ($total_kerjaan >= $to_deduct) {
+                $total_kerjaan -= $to_deduct;
+                $to_deduct = 0;
+            } else {
+                $to_deduct -= $total_kerjaan;
+                $total_kerjaan = 0;
+            }
+            
+            // Deduct dari Wajib jika masih ada
+            if ($to_deduct > 0) {
+                if ($total_wajib >= $to_deduct) {
+                    $total_wajib -= $to_deduct;
+                    $to_deduct = 0;
+                } else {
+                    $to_deduct -= $total_wajib;
+                    $total_wajib = 0;
+                }
+            }
+            
+            // Deduct dari Pagi jika masih ada
+            if ($to_deduct > 0) {
+                if ($total_pagi >= $to_deduct) {
+                    $total_pagi -= $to_deduct;
+                    $to_deduct = 0;
+                } else {
+                    $to_deduct -= $total_pagi;
+                    $total_pagi = 0;
                 }
             }
         }
@@ -1072,6 +1168,11 @@ class Absensi extends MY_Controller
         $this->db->where("k.nama_lengkap NOT LIKE 'OPERATOR %'");
         $this->db->where("k.nik NOT LIKE 'STATION-%'");
         $this->db->where("k.nik NOT LIKE 'TERM%'");
+
+        if (!empty($this->session->userdata('perusahaan_id'))) {
+            $this->db->where('k.perusahaan_id', $this->session->userdata('perusahaan_id'));
+        }
+
         $total_employees = $this->db->count_all_results();
         $stats['total'] = $total_employees;
 
@@ -1466,6 +1567,82 @@ class Absensi extends MY_Controller
         $this->load_admin_view('admin/absensi/approval', $data);
     }
 
+    // ==========================================
+    // PENGATURAN KOREKSI ABSENSI
+    // ==========================================
+    public function koreksi_absen()
+    {
+        $conf = array(
+            'perusahaan' => $this->db->get_where('tbl_perusahaan', array('id_perusahaan' => $this->session->userdata('perusahaan_id')))->row_array(),
+            'hakakses' => $this->db->get_where('tbl_divisi', array('divisi_id' => $this->session->userdata('level')))->row_array(),
+        );
+
+        $data = array(
+            'controller' => $this->uri->segment(1),
+            'function' => 'koreksi_absen',
+            'title' => 'Koreksi Absen Karyawan',
+            'perusahaan' => $conf['perusahaan']['nama_perusahaan'] ?? '',
+            'hakakses' => $conf['hakakses']['divisi_nama'] ?? '',
+        );
+        
+        $this->db->select('tbl_pengajuan_koreksi_absen.*, tbl_karyawan.nama_lengkap, tbl_karyawan.nik, tbl_karyawan.foto');
+        $this->db->from('tbl_pengajuan_koreksi_absen');
+        $this->db->join('tbl_karyawan', 'tbl_karyawan.karyawan_id = tbl_pengajuan_koreksi_absen.karyawan_id');
+        $this->db->order_by('created_at', 'DESC');
+        $data['pengajuan'] = $this->db->get()->result();
+
+        $this->load_admin_view('admin/absensi/koreksi_absen', $data);
+    }
+
+    public function approve_koreksi($id)
+    {
+        $koreksi = $this->db->get_where('tbl_pengajuan_koreksi_absen', ['id' => $id])->row();
+        if ($koreksi && $koreksi->status == 'Pending') {
+            // Update status pengajuan
+            $this->db->update('tbl_pengajuan_koreksi_absen', ['status' => 'Disetujui'], ['id' => $id]);
+
+            // Update jam di tbl_absensi
+            $update_absen = [];
+            if (!empty($koreksi->jam_masuk_baru)) {
+                $update_absen['jam_masuk'] = $koreksi->jam_masuk_baru;
+            }
+            if (!empty($koreksi->jam_pulang_baru)) {
+                $update_absen['jam_pulang'] = $koreksi->jam_pulang_baru;
+            }
+
+            if (!empty($update_absen)) {
+                // Cek apakah data absen di tanggal tsb ada
+                $absen_exist = $this->db->get_where('absensi', [
+                    'karyawan_id' => $koreksi->karyawan_id,
+                    'tanggal' => $koreksi->tanggal_absen
+                ])->row();
+
+                if ($absen_exist) {
+                    $this->db->update('absensi', $update_absen, ['id' => $absen_exist->id]);
+                } else {
+                    // Buat absen baru
+                    $update_absen['karyawan_id'] = $koreksi->karyawan_id;
+                    $update_absen['tanggal'] = $koreksi->tanggal_absen;
+                    $update_absen['status'] = 'Hadir';
+                    // We need dummy strings for non-nullable fields based on DB schema
+                    $update_absen['foto_masuk'] = '';
+                    $update_absen['foto_pulang'] = '';
+                    $this->db->insert('absensi', $update_absen);
+                }
+            }
+
+            $this->session->set_flashdata('success', 'Koreksi absen berhasil disetujui dan data absensi telah diupdate.');
+        }
+        redirect('absensi/koreksi_absen');
+    }
+
+    public function reject_koreksi($id)
+    {
+        $this->db->update('tbl_pengajuan_koreksi_absen', ['status' => 'Ditolak'], ['id' => $id]);
+        $this->session->set_flashdata('success', 'Koreksi absen telah ditolak.');
+        redirect('absensi/koreksi_absen');
+    }
+
     public function approval_cuti()
     {
         $userid = $this->session->userdata('id');
@@ -1537,7 +1714,7 @@ class Absensi extends MY_Controller
         }
         // -----------------------------------------------------
 
-        $this->db->select('k.karyawan_id, k.nama_lengkap, j.nama_jabatan, q.quota_awal, q.terpakai, q.sisa, q.menikah_sisa, q.duka_sisa, q.sakitkel_sisa, q.melahirkansuami_sisa');
+        $this->db->select('k.karyawan_id, k.nama_lengkap, j.nama_jabatan, q.quota_awal, q.terpakai, q.sisa, q.menikah_sisa, q.duka_sisa, q.sakitkel_sisa, q.melahirkansuami_sisa, q.melahirkan_sisa');
         $this->db->from('tbl_karyawan k');
         $this->db->join('tbl_quota_cuti q', "q.karyawan_id = k.karyawan_id AND q.tahun = '$year'", 'left');
         $this->db->join('tbl_jabatan j', 'k.jabatan_id = j.jabatan_id', 'left');
@@ -1560,6 +1737,90 @@ class Absensi extends MY_Controller
         $data['pending_cuti'] = $this->db->get()->result();
 
         $this->load_admin_view('admin/absensi/sisa_cuti', $data);
+    }
+
+    public function update_quota_cuti()
+    {
+        if ($this->input->server('REQUEST_METHOD') !== 'POST') {
+            redirect('absensi/sisa_cuti');
+        }
+        
+        $karyawan_id = $this->input->post('karyawan_id', true);
+        $sisa = (int)$this->input->post('sisa', true);
+        $menikah_sisa = (int)$this->input->post('menikah_sisa', true);
+        $duka_sisa = (int)$this->input->post('duka_sisa', true);
+        $sakitkel_sisa = (int)$this->input->post('sakitkel_sisa', true);
+        $melahirkansuami_sisa = (int)$this->input->post('melahirkansuami_sisa', true);
+        $melahirkan_sisa = (int)$this->input->post('melahirkan_sisa', true);
+        $tahun = date('Y');
+        
+        $row = $this->db->get_where('tbl_quota_cuti', ['karyawan_id' => $karyawan_id, 'tahun' => $tahun])->row();
+        if ($row) {
+            $data_update = [
+                'quota_awal' => $sisa + $row->terpakai,
+                'menikah_awal' => $menikah_sisa + $row->menikah_terpakai,
+                'duka_awal' => $duka_sisa + $row->duka_terpakai,
+                'sakitkel_awal' => $sakitkel_sisa + $row->sakitkel_terpakai,
+                'melahirkansuami_awal' => $melahirkansuami_sisa + $row->melahirkansuami_terpakai,
+                'melahirkan_awal' => $melahirkan_sisa + $row->melahirkan_terpakai,
+                'updated_at' => date('Y-m-d H:i:s')
+            ];
+            
+            $this->db->where('karyawan_id', $karyawan_id);
+            $this->db->where('tahun', $tahun);
+            if ($this->db->update('tbl_quota_cuti', $data_update)) {
+                $this->_sync_quota_cuti($karyawan_id);
+                $this->session->set_flashdata('success', 'Kuota cuti berhasil diupdate.');
+            } else {
+                $this->session->set_flashdata('error', 'Gagal mengupdate kuota cuti.');
+            }
+        } else {
+             $this->session->set_flashdata('error', 'Gagal mengupdate kuota cuti. Data tidak ditemukan.');
+        }
+        
+        redirect('absensi/sisa_cuti');
+    }
+
+    public function add_riwayat_manual()
+    {
+        if ($this->input->server('REQUEST_METHOD') !== 'POST') {
+            redirect('absensi/sisa_cuti');
+        }
+
+        $karyawan_id = $this->input->post('karyawan_id', true);
+        $tipe_izin = $this->input->post('tipe_izin', true);
+        $tanggal_mulai = $this->input->post('tanggal_mulai', true);
+        $durasi_jumlah = (int)$this->input->post('durasi_jumlah', true);
+        $keterangan = $this->input->post('keterangan', true);
+
+        if (!$karyawan_id || !$tipe_izin || !$tanggal_mulai || $durasi_jumlah <= 0) {
+            $this->session->set_flashdata('error', 'Data riwayat tidak valid.');
+            redirect('absensi/sisa_cuti');
+        }
+
+        $data_insert = [
+            'karyawan_id' => $karyawan_id,
+            'tipe_izin' => $tipe_izin,
+            'tanggal_mulai' => $tanggal_mulai,
+            'durasi_tipe' => 'hari',
+            'durasi_jumlah' => $durasi_jumlah,
+            'keterangan' => $keterangan,
+            'status' => 'Approved',
+            'created_at' => date('Y-m-d H:i:s'),
+            'responded_at' => date('Y-m-d H:i:s'),
+            'responded_by' => $this->session->userdata('user_id') ? $this->session->userdata('user_id') : 1,
+            'dokumen' => ''
+        ];
+
+        if ($this->db->insert('tbl_pengajuan_izin', $data_insert)) {
+            // Sync the quota so the sisa will be reduced but quota_awal stays the same
+            $this->_sync_quota_cuti($karyawan_id);
+            $this->session->set_flashdata('success', 'Riwayat cuti manual berhasil ditambahkan dan sisa cuti telah diperbarui.');
+        } else {
+            $this->session->set_flashdata('error', 'Gagal menambahkan riwayat cuti.');
+        }
+
+        redirect('absensi/sisa_cuti');
     }
 
     public function get_riwayat_cuti($karyawan_id)
@@ -1622,10 +1883,7 @@ class Absensi extends MY_Controller
 
                 $ket = !empty($r->keterangan) ? $r->keterangan : '-';
 
-                $delete_btn = '';
-                if ($r->status == 'Rejected' || $r->status == 'Ditolak') {
-                    $delete_btn = '<button class="btn btn-sm btn-outline-danger mt-2 py-0 px-2" style="font-size: 0.7rem;" onclick="hapusRiwayat(' . $r->id . ')"><i class="bi bi-trash"></i> Hapus</button>';
-                }
+                $delete_btn = '<button class="btn btn-sm btn-outline-danger mt-2 py-0 px-2" style="font-size: 0.7rem;" onclick="hapusRiwayat(' . $r->id . ')"><i class="bi bi-trash"></i> Hapus</button>';
 
                 $html .= '<tr>';
                 $html .= '<td class="text-center">'.$no++.'</td>';
@@ -1646,16 +1904,22 @@ class Absensi extends MY_Controller
 
     public function delete_riwayat_cuti($id)
     {
-        // Pastikan hanya bisa menghapus jika statusnya Rejected (Ditolak)
+        // Ambil data karyawan_id sebelum dihapus untuk keperluan sinkronisasi ulang
+        $izin = $this->db->get_where('tbl_pengajuan_izin', ['id' => $id])->row();
+        if (!$izin) {
+            echo json_encode(['status' => 'error', 'message' => 'Data tidak ditemukan']);
+            return;
+        }
+
         $this->db->where('id', $id);
-        $this->db->where_in('status', ['Ditolak', 'Rejected']);
-        
         $this->db->delete('tbl_pengajuan_izin');
 
         if ($this->db->affected_rows() > 0) {
+            // Sinkronisasi ulang kuota cuti karena ada data yang dihapus
+            $this->_sync_quota_cuti($izin->karyawan_id);
             echo json_encode(['status' => 'success']);
         } else {
-            echo json_encode(['status' => 'error', 'message' => 'Data tidak ditemukan atau status bukan Ditolak']);
+            echo json_encode(['status' => 'error', 'message' => 'Gagal menghapus data']);
         }
     }
 
@@ -1717,12 +1981,27 @@ class Absensi extends MY_Controller
                 'tahun' => $year,
                 'quota_awal' => 12,
                 'terpakai' => 0,
-                'sisa' => 12
+                'sisa' => 12,
+                'menikah_awal' => 7,
+                'duka_awal' => 3,
+                'sakitkel_awal' => 2,
+                'melahirkansuami_awal' => 3,
+                'melahirkan_awal' => 90
             ];
             $this->db->insert('tbl_quota_cuti', $quota_init);
             $quota_total = 12;
+            $menikah_awal = 7;
+            $duka_awal = 3;
+            $sakitkel_awal = 2;
+            $melahirkansuami_awal = 3;
+            $melahirkan_awal = 90;
         } else {
             $quota_total = ($quota_row->quota_awal > 0) ? $quota_row->quota_awal : 12;
+            $menikah_awal = isset($quota_row->menikah_awal) ? $quota_row->menikah_awal : 7;
+            $duka_awal = isset($quota_row->duka_awal) ? $quota_row->duka_awal : 3;
+            $sakitkel_awal = isset($quota_row->sakitkel_awal) ? $quota_row->sakitkel_awal : 2;
+            $melahirkansuami_awal = isset($quota_row->melahirkansuami_awal) ? $quota_row->melahirkansuami_awal : 3;
+            $melahirkan_awal = isset($quota_row->melahirkan_awal) ? $quota_row->melahirkan_awal : 90;
         }
 
         // Ambil semua pengajuan tahun ini
@@ -1735,14 +2014,15 @@ class Absensi extends MY_Controller
         $used_annual_pending = 0;
 
         $limits = [
-            'cuti menikah' => 7,
-            'cuti duka' => 3,
-            'cuti keluarga sakit' => 2,
-            'cuti melahirkan suami' => 3
+            'cuti menikah' => $menikah_awal,
+            'cuti duka' => $duka_awal,
+            'cuti keluarga sakit' => $sakitkel_awal,
+            'cuti melahirkan suami' => $melahirkansuami_awal,
+            'cuti melahirkan' => $melahirkan_awal
         ];
 
-        $usage_special_approved = ['cuti menikah' => 0, 'cuti duka' => 0, 'cuti keluarga sakit' => 0, 'cuti melahirkan suami' => 0];
-        $usage_special_pending = ['cuti menikah' => 0, 'cuti duka' => 0, 'cuti keluarga sakit' => 0, 'cuti melahirkan suami' => 0];
+        $usage_special_approved = ['cuti menikah' => 0, 'cuti duka' => 0, 'cuti keluarga sakit' => 0, 'cuti melahirkan suami' => 0, 'cuti melahirkan' => 0];
+        $usage_special_pending = ['cuti menikah' => 0, 'cuti duka' => 0, 'cuti keluarga sakit' => 0, 'cuti melahirkan suami' => 0, 'cuti melahirkan' => 0];
 
         foreach ($requests as $req) {
             $status_lower = strtolower($req->status);
@@ -1786,7 +2066,8 @@ class Absensi extends MY_Controller
         $menikah_used = min($limits['cuti menikah'], $usage_special_approved['cuti menikah'] + $usage_special_pending['cuti menikah']);
         $duka_used = min($limits['cuti duka'], $usage_special_approved['cuti duka'] + $usage_special_pending['cuti duka']);
         $sakitkel_used = min($limits['cuti keluarga sakit'], $usage_special_approved['cuti keluarga sakit'] + $usage_special_pending['cuti keluarga sakit']);
-        $melahirkan_used = min($limits['cuti melahirkan suami'], $usage_special_approved['cuti melahirkan suami'] + $usage_special_pending['cuti melahirkan suami']);
+        $melahirkansuami_used = min($limits['cuti melahirkan suami'], $usage_special_approved['cuti melahirkan suami'] + $usage_special_pending['cuti melahirkan suami']);
+        $melahirkan_used = min($limits['cuti melahirkan'], $usage_special_approved['cuti melahirkan'] + $usage_special_pending['cuti melahirkan']);
 
         $this->db->where(['karyawan_id' => $karyawan_id, 'tahun' => $year])
             ->update('tbl_quota_cuti', [
@@ -1799,8 +2080,10 @@ class Absensi extends MY_Controller
                 'duka_sisa' => max(0, $limits['cuti duka'] - $duka_used),
                 'sakitkel_terpakai' => $sakitkel_used,
                 'sakitkel_sisa' => max(0, $limits['cuti keluarga sakit'] - $sakitkel_used),
-                'melahirkansuami_terpakai' => $melahirkan_used,
-                'melahirkansuami_sisa' => max(0, $limits['cuti melahirkan suami'] - $melahirkan_used)
+                'melahirkansuami_terpakai' => $melahirkansuami_used,
+                'melahirkansuami_sisa' => max(0, $limits['cuti melahirkan suami'] - $melahirkansuami_used),
+                'melahirkan_terpakai' => $melahirkan_used,
+                'melahirkan_sisa' => max(0, $limits['cuti melahirkan'] - $melahirkan_used)
             ]);
     }
 

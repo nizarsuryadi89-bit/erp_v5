@@ -316,34 +316,10 @@
     }
 </style>
 
-<div class="warehouse-header-section">
-    <div class="container-fluid px-5">
-        <div class="row align-items-start">
-            <div class="col-md-7">
-                <div class="header-content">
-                    <div class="header-icon">
-                        <i class="fa fa-scroll"></i>
-                    </div>
-                    <div class="header-text">
-                        <p class="header-subtitle">Tahap 6: Auditing & Penelusuran</p>
-                        <h1 class="header-title">Kartu Stok & Audit Ledger</h1>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-5 text-end header-actions d-flex justify-content-end align-items-center gap-2">
-                <button class="btn btn-outline-light btn-premium rounded-pill px-3" data-bs-toggle="modal"
-                    data-bs-target="#modalLedgerGuide">
-                    <i class="fa fa-info-circle me-1"></i>BANTUAN/SOP
-                </button>
-                <a href="<?= base_url('warehouse') ?>" class="btn btn-outline-light btn-premium rounded-pill px-3">
-                    <i class="fa fa-arrow-left me-1"></i>DASHBOARD
-                </a>
-            </div>
-        </div>
-    </div>
-</div>
+<div style="height: 35px;"></div>
 
 <div class="container-fluid px-5">
+    <?php $this->load->view('admin/warehouse/components/sop_stepper', ['active_step' => 5]); ?>
     <!-- Stats Overview -->
     <div class="stats-container">
         <div class="row g-4">
@@ -394,7 +370,7 @@
     <div class="selector-area">
         <div class="warehouse-nav-container">
             <button class="nav-btn-premium tab-btn <?= $current_gudang == 0 ? 'active' : '' ?>" data-id="0">
-                <i class="fas fa-globe-asia"></i> Semua Gudang
+                <i class="fas fa-globe-asia"></i> Semua Gudang (Rekap)
             </button>
             <?php foreach ($warehouses as $wh): ?>
                 <button class="nav-btn-premium tab-btn <?= $current_gudang == $wh->gudang_id ? 'active' : '' ?>"
@@ -403,6 +379,7 @@
                 </button>
             <?php endforeach; ?>
         </div>
+    </div>
     </div>
 
     <!-- Dynamic Content Section -->
@@ -572,6 +549,112 @@
             });
         });
     });
+
+    function viewMaterialHistory(material_id, gudang_id, bahan_nama, varian) {
+        let displayTitle = bahan_nama;
+        if (varian && bahan_nama.toLowerCase().trim() !== varian.toLowerCase().trim()) {
+            displayTitle += ' - ' + varian;
+        }
+        $('#historyMaterialName').text(displayTitle);
+        $('#historyTableBody').html('<tr><td colspan="7" class="text-center py-4"><i class="fas fa-spinner fa-spin fa-2x text-primary mb-2"></i><br>Loading history...</td></tr>');
+        $('#modalMaterialHistory').modal('show');
+
+        $.ajax({
+            url: '<?= base_url('warehouse/ajax_get_material_history') ?>',
+            type: 'GET',
+            data: { material_id: material_id, gudang_id: gudang_id },
+            dataType: 'json',
+            success: function(res) {
+                if(res.status === 'success') {
+                    let html = '';
+                    if(res.data.length === 0) {
+                        html = '<tr><td colspan="7" class="text-center py-4 text-muted">Belum ada history pergerakan.</td></tr>';
+                    } else {
+                        res.data.forEach(function(row) {
+                            let badgeStyle = 'bg-light text-dark';
+                            if (row.trx_type === 'Pembelian') badgeStyle = 'bg-soft-success text-success';
+                            else if (row.trx_type === 'Pengambilan') badgeStyle = 'bg-soft-danger text-danger';
+                            else if (row.trx_type === 'Produksi') badgeStyle = 'bg-soft-warning text-warning';
+                            else if (row.trx_type === 'Opname') badgeStyle = 'bg-soft-danger text-danger';
+                            else if (row.trx_type && row.trx_type.indexOf('Mutation') !== -1) badgeStyle = 'bg-soft-blue text-primary';
+
+                            html += `
+                                <tr>
+                                    <td class="text-nowrap" style="font-size:0.75rem">${row.tanggal}</td>
+                                    <td><span class="badge-premium ${badgeStyle}" style="font-size:0.65rem">${row.trx_type || 'SYS'}</span></td>
+                                    <td class="text-success text-nowrap">
+                                        <div class="fw-bold">${row.qty_in > 0 ? '+' + row.qty_in_base_fmt : '-'}</div>
+                                        ${row.qty_in > 0 ? `<div class="small opacity-75" style="font-size:0.65rem;">+${row.qty_in_fmt}</div>` : ''}
+                                    </td>
+                                    <td class="text-danger text-nowrap">
+                                        <div class="fw-bold">${row.qty_out > 0 ? '-' + row.qty_out_base_fmt : '-'}</div>
+                                        ${row.qty_out > 0 ? `<div class="small opacity-75" style="font-size:0.65rem;">-${row.qty_out_fmt}</div>` : ''}
+                                    </td>
+                                    <td class="bg-light text-nowrap">
+                                        <div class="fw-bold">${row.qty_balance_base_fmt}</div>
+                                        <div class="small text-muted" style="font-size:0.65rem;">${row.qty_balance_fmt}</div>
+                                    </td>
+                                    <td style="font-size:0.75rem">${row.catatan || '-'}</td>
+                                    <td><span class="badge-premium bg-soft-blue text-primary px-2" style="font-size:0.65rem">${row.username || 'SYS'}</span></td>
+                                </tr>
+                            `;
+                        });
+                    }
+                    $('#historyTableBody').html(html);
+                } else {
+                    $('#historyTableBody').html('<tr><td colspan="7" class="text-center py-4 text-danger">Gagal memuat data: ' + res.message + '</td></tr>');
+                }
+            },
+            error: function() {
+                $('#historyTableBody').html('<tr><td colspan="7" class="text-center py-4 text-danger">Terjadi kesalahan koneksi.</td></tr>');
+            }
+        });
+    }
 </script>
+
+<!-- Modal Material History -->
+<div class="modal fade" id="modalMaterialHistory" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header border-bottom px-4 py-3 bg-light">
+                <h5 class="modal-title fw-800 text-dark">
+                    <i class="fas fa-history text-primary me-2"></i> History Pergerakan: <span id="historyMaterialName" class="text-primary"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="bg-light px-4 py-2 border-bottom d-flex flex-wrap gap-3" style="font-size: 0.7rem;">
+                    <div class="fw-bold text-muted me-2"><i class="fas fa-info-circle me-1"></i> LEGEND TRX:</div>
+                    <div><span class="badge-premium bg-soft-success text-success py-1 px-2">Pembelian</span> Barang masuk dari PO</div>
+                    <div><span class="badge-premium bg-soft-blue text-primary py-1 px-2">Mutation</span> Perpindahan antar gudang</div>
+                    <div><span class="badge-premium bg-soft-danger text-danger py-1 px-2">Opname</span> / <span class="badge-premium bg-soft-danger text-danger py-1 px-2">Adjustment</span> Penyesuaian stok manual</div>
+                    <div><span class="badge-premium bg-soft-warning text-warning py-1 px-2">Produksi</span> Barang digunakan produksi</div>
+                    <div><span class="badge-premium bg-light text-dark py-1 px-2 border">SYS</span> Transaksi sistem (Misal: Revert Invoice)</div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-premium table-hover align-middle mb-0">
+                        <thead class="bg-light sticky-top">
+                            <tr>
+                                <th class="text-nowrap px-4">TANGGAL</th>
+                                <th>TIPE TRX</th>
+                                <th>IN</th>
+                                <th>OUT</th>
+                                <th>BALANCE</th>
+                                <th>CATATAN / REF</th>
+                                <th class="px-4">USER</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyTableBody">
+                            <!-- Data will be loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer bg-light px-4 border-top">
+                <button type="button" class="btn btn-premium btn-light" data-bs-dismiss="modal">Tutup</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <?php $this->load->view('admin/warehouse/components/v_modal_ledger_guide'); ?>

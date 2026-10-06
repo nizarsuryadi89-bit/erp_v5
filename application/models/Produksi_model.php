@@ -4,6 +4,7 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 class Produksi_model extends CI_Model
 {
 
+
     // Ambil semua data produksi beserta detailnya
     public function get_all_produksi($operator_id = null)
     {
@@ -18,6 +19,7 @@ class Produksi_model extends CI_Model
 
         $this->db->join('tbl_pemesanan pm', 'p.nospk = pm.nospk', 'inner');
         $this->db->where('pm.status_pembayaran', 'paid');
+        $this->db->where_in('p.status_produksi', ['approve', 'proses']);
 
         // Filter by operator_id if provided (for operator users)
         // Join with detail_produksi because operator_id is there
@@ -28,6 +30,20 @@ class Produksi_model extends CI_Model
 
         $this->db->order_by('p.produksi_id', 'DESC');
         $this->db->group_by('p.produksi_id'); // Group by produksi_id instead of nospk to avoid missing items
+        return $this->db->get()->result();
+    }
+
+    // Ambil data produksi yang sedang di Packing Barang (on_pb)
+    public function get_pb_list()
+    {
+        $this->db->select('p.*, k.konsumen_nama, pr.product_nama, s.satuan_nama');
+        $this->db->from('tbl_produksi p');
+        $this->db->join('tbl_konsumen k', 'p.konsumen_id = k.konsumen_id', 'left');
+        $this->db->join('tbl_product pr', 'p.product_id = pr.product_id', 'left');
+        $this->db->join('tbl_satuan s', 'pr.satuan_id = s.satuan_id', 'left');
+        $this->db->where('p.status_produksi', 'on_pb');
+        
+        $this->db->order_by('p.produksi_id', 'DESC');
         return $this->db->get()->result();
     }
 
@@ -195,7 +211,7 @@ class Produksi_model extends CI_Model
     // Data produksi yang sudah diserahkan ke konsumen (status_produksi = '4')
     public function get_produksi_handover()
     {
-        $this->db->select('p.*, k.konsumen_nama, pr.product_nama, s.satuan_nama');
+        $this->db->select('p.*, k.konsumen_nama, pr.product_nama, s.satuan_nama, dp.waktu_selesai');
         $this->db->from('tbl_produksi p');
         $this->db->join('detail_produksi dp', 'p.produksi_id = dp.produksi_id', 'inner');
         $this->db->join('tbl_konsumen k', 'p.konsumen_id = k.konsumen_id', 'left');
@@ -206,6 +222,7 @@ class Produksi_model extends CI_Model
 
         $this->db->group_by('p.produksi_id');
         $this->db->order_by('dp.waktu_selesai', 'DESC');
+        $this->db->limit(100); // Limit to last 100 items to keep page light
         return $this->db->get()->result();
     }
 
@@ -342,6 +359,82 @@ class Produksi_model extends CI_Model
             $grouped[$row->nospk][] = $row;
         }
         return $grouped;
+    }
+
+    const STATUS_ON_PB = 'on_pb';
+
+    public function set_status_pb($produksi_id, $perusahaan_id, $level, $user_id, $batch = false)
+    {
+        $this->load->model('Wip_workflow_model', 'wip_workflow');
+        try {
+            $actor = $this->wip_workflow->actor();
+            return $this->wip_workflow->execute([$produksi_id], 'handover', $actor);
+        } catch (Exception $e) {
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    public function change_status($produksi_id, $new_status, $user_id, $catatan_khusus = '')
+    {
+        $this->load->model('Wip_workflow_model', 'wip_workflow');
+        if ($new_status === 'on_pb') {
+            return $this->set_status_pb($produksi_id, null, null, $user_id)['success'];
+        }
+        $started = false;
+        try {
+            $actor = $this->wip_workflow->actor();
+            $this->wip_workflow->assert_transactional_storage();
+            $this->wip_quality->assert_storage();
+            if (!$this->db->trans_begin()) return false;
+            $started = true;
+            $curr = $this->db->query('SELECT * FROM tbl_produksi WHERE produksi_id = ? FOR UPDATE', [(int) $produksi_id])->row();
+            $this->wip_workflow->assert_access($curr, $actor);
+            if (!Production_workflow::can_transition($curr->status_produksi, $new_status)) {
+                throw new DomainException('Transisi status produksi tidak diperbolehkan.');
+            }
+            if ($curr->status_produksi === $new_status) {
+                return $this->db->trans_commit();
+            }
+            $steps = $this->wip_workflow->steps($curr, true);
+            if ($new_status === 'done' && !Production_workflow::all_completed($steps)) {
+                throw new DomainException('Seluruh tahap harus diselesaikan dahulu.');
+            }
+            if ($new_status === 'proses') {
+                $running = array_filter($steps, function ($step) { return (string) $step->status_produksi === '1'; });
+                if (!$running) throw new DomainException('Mulai operasi melalui alur produksi.');
+            }
+            $now = date('Y-m-d H:i:s');
+            $data = ['status_produksi' => $new_status, 'update_time' => $now];
+            if ($new_status === 'proses' && empty($curr->tgl_mulai)) $data['tgl_mulai'] = $now;
+            if ($new_status === 'done' && empty($curr->tgl_selesai)) $data['tgl_selesai'] = $now;
+            if (!$this->db->where('produksi_id', $produksi_id)->update('tbl_produksi', $data)) {
+                throw new RuntimeException('Gagal menyimpan status.');
+            }
+            if ($new_status === 'done') $this->wip_quality->enroll($curr, $actor);
+            // Header transitions never replace operation statuses or operator history.
+            if (!$this->db->insert('tbl_produksi_log', ['produksi_id' => $produksi_id,
+                'user_id' => $actor['user_id'], 'status_asal' => $curr->status_produksi,
+                'status_tujuan' => $new_status, 'catatan' => $catatan_khusus ?: 'Status diubah ke ' . strtoupper($new_status)])) {
+                throw new RuntimeException('Gagal menyimpan riwayat.');
+            }
+            if (!$this->db->trans_status()) throw new RuntimeException('Transaksi gagal.');
+            return $this->db->trans_commit();
+        } catch (Exception $e) {
+            if ($started) $this->db->trans_rollback();
+            log_message('error', 'Production transition rejected: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    public function get_produksi_log($produksi_id)
+    {
+        $this->db->select('l.*, u.username, k.nama_lengkap, k.foto');
+        $this->db->from('tbl_produksi_log l');
+        $this->db->join('users u', 'l.user_id = u.user_id', 'left');
+        $this->db->join('tbl_karyawan k', 'u.karyawan_id = k.karyawan_id', 'left');
+        $this->db->where('l.produksi_id', $produksi_id);
+        $this->db->order_by('l.created_at', 'DESC');
+        return $this->db->get()->result();
     }
 
 }

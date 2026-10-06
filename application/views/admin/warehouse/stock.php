@@ -761,9 +761,9 @@
                             <div class="d-flex justify-content-between text-muted small mb-1" style="font-size: 0.7rem; font-weight: 700;">
                                 <span>SISA STOK</span>
                                 <span class="fw-900 text-dark">
-                                    <?= number_format($a_whole) ?> <?= $pm->satuan_gudang ?>
+                                    <?= number_format($a_whole, 0, ',', '.') ?> <?= $pm->satuan_gudang ?>
                                     <?php if ($konversi > 1 && $a_small > 0): ?>
-                                        + <?= number_format($a_small) ?> <?= $pm->satuan_produksi ?: 'Lbr' ?>
+                                        <?= $stok_akhir <= -0.01 ? '-' : '+' ?> <?= number_format($a_small, 0, ',', '.') ?> <?= $pm->satuan_produksi ?: 'Lbr' ?>
                                     <?php endif; ?>
                                 </span>
                             </div>
@@ -917,6 +917,9 @@
                             </button>
                         </div>
                     </div>
+                    <button onclick="resetStokGudang()" class="btn btn-danger btn-premium shadow-sm border border-danger text-white">
+                        <i class="fa fa-trash me-1"></i>RESET STOK & LOG
+                    </button>
                     <button class="btn btn-light btn-premium shadow-sm border" onclick="location.reload()">
                         <i class="fa fa-sync-alt me-1 text-primary"></i>REFRESH
                     </button>
@@ -994,12 +997,12 @@
                                 <td class="text-end">
                                     <?php
                                     $konversi = (float) ($s->konversi ?: 1);
-                                    $in_val = (float) ($s->total_in_month ?? 0);
-                                    $out_val = (float) ($s->total_out_month ?? 0);
+                                    $in_val = (float) ($s->total_in_all_month ?? 0);
+                                    $out_val = (float) ($s->total_out_all_month ?? 0);
                                     $stok_akhir = (float) $s->qty_stock;
 
-                                    // Matematika UI yang solid menjamin Awal + In - Out = Akhir
-                                    // Awal = Akhir - Pembelian + Dispatch
+                                    // Gunakan total ALL in/out agar perhitungan saldo awal akurat
+                                    // dan tidak menjadi minus akibat adanya Opname/Revert
                                     $awal_bulan = $stok_akhir - $in_val + $out_val;
 
                                     $ab_abs = abs($awal_bulan);
@@ -1011,12 +1014,12 @@
                                     }
                                     ?>
                                     <div class="fw-800 text-muted" style="font-size: 0.85rem">
-                                        <?= ($awal_bulan <= -0.01 ? '-' : '') . number_format($ab_whole) ?> <span
+                                        <?= ($awal_bulan <= -0.01 ? '-' : '') . number_format($ab_whole, 0, ',', '.') ?> <span
                                             class="small opacity-75"><?= $s->satuan_nama ?></span>
                                     </div>
                                     <?php if ($konversi > 1 && $ab_small > 0): ?>
                                         <div class="text-muted fw-bold" style="font-size: 0.65rem; margin-top: -2px;">
-                                            + <?= number_format($ab_small) ?>         <?= $s->satuan_produksi ?: 'Pcs' ?>
+                                            <?= $awal_bulan <= -0.01 ? '-' : '+' ?> <?= number_format($ab_small, 0, ',', '.') ?>         <?= $s->satuan_produksi ?: 'Pcs' ?>
                                         </div>
                                     <?php endif; ?>
                                 </td>
@@ -1033,13 +1036,20 @@
                                         $f_small = 0;
                                     }
                                     ?>
-                                    <div class="fw-800 text-dark">
-                                        <?= ($in_month < 0 ? '-' : '') . number_format($f_whole) ?> <span
+                                    <div class="fw-800 text-dark"
+                                        <?php if ($s->in_label == 'Dispatch'): ?>
+                                            onclick="showDispatchDetail(<?= $s->material_id ?>, '<?= htmlspecialchars($s->varian ?? $s->bahan_nama) ?>')"
+                                            style="cursor: pointer;" title="Klik untuk melihat detail histori dispatch"
+                                        <?php elseif ($s->in_label == 'Pembelian'): ?>
+                                            onclick="showPembelianDetail(<?= $s->material_id ?>, '<?= htmlspecialchars($s->varian ?? $s->bahan_nama) ?>')"
+                                            style="cursor: pointer;" title="Klik untuk melihat detail histori pembelian"
+                                        <?php endif; ?>>
+                                        <?= ($in_month < 0 && $f_whole > 0 ? '-' : '') . number_format($f_whole, 0, ',', '.') ?> <span
                                             class="small opacity-75"><?= $s->satuan_nama ?></span>
                                     </div>
                                     <?php if ($konversi > 1 && $f_small > 0): ?>
                                         <div class="text-primary fw-bold" style="font-size: 0.65rem; margin-top: -2px;">
-                                            + <?= number_format($f_small) ?>         <?= $s->satuan_produksi ?: 'Lembar' ?>
+                                            <?= $in_month < 0 ? '-' : '+' ?> <?= number_format($f_small, 0, ',', '.') ?>         <?= $s->satuan_produksi ?: 'Lembar' ?>
                                         </div>
                                     <?php endif; ?>
                                     <div class="text-muted mt-1" style="font-size: 0.6rem; font-weight: 800;">
@@ -1048,29 +1058,42 @@
                                 </td>
 
                                 <td class="text-center">
-                                    <?php $out_month = round($out_month, 2); ?>
-                                    <?php if ($out_month >= 0.01): ?>
-                                        <?php
-                                        // Calculate dual units for outflow usage
-                                        $p_abs = abs($out_month);
-                                        $p_whole = floor($p_abs);
-                                        $p_small = round(($p_abs - $p_whole) * $konversi);
-                                        if ($p_small >= $konversi) {
-                                            $p_whole++;
-                                            $p_small = 0;
-                                        }
-                                        ?>
+                                    <?php 
+                                    $out_month = (float) ($s->total_out_month ?? 0);
+                                    $p_abs = abs($out_month);
+                                    $p_whole = floor($p_abs);
+                                    $p_small = round(($p_abs - $p_whole) * $konversi);
+                                    if ($p_small >= $konversi) {
+                                        $p_whole++;
+                                        $p_small = 0;
+                                    }
+                                    $total_prod_base = round($p_abs * $konversi);
+                                    ?>
+                                    <?php if ($p_whole > 0 || $p_small > 0 || $total_prod_base > 0): ?>
                                         <div
+                                            <?php if ($s->out_label == 'Produksi'): ?>
+                                                onclick="showProduksiDetail(<?= $s->material_id ?>, '<?= htmlspecialchars($s->varian ?? $s->bahan_nama) ?>')"
+                                                style="cursor: pointer;" title="Klik untuk melihat detail histori produksi"
+                                            <?php elseif ($s->out_label == 'Dispatch'): ?>
+                                                onclick="showDispatchDetail(<?= $s->material_id ?>, '<?= htmlspecialchars($s->varian ?? $s->bahan_nama) ?>')"
+                                                style="cursor: pointer;" title="Klik untuk melihat detail histori dispatch"
+                                            <?php endif; ?>
                                             class="badge-premium <?= $s->out_label == 'Dispatch' ? 'bg-soft-blue text-primary' : 'bg-soft-danger text-danger' ?> px-3 py-1 d-inline-block">
                                             <i
                                                 class="fas <?= $s->out_label == 'Dispatch' ? 'fa-truck' : 'fa-industry' ?> me-1"></i>
-                                            <?= number_format($p_whole) ?> <small><?= $s->satuan_nama ?></small>
-                                            <?php if ($konversi > 1 && $p_small > 0): ?>
-                                                <span class="ms-1 border-start ps-1">
-                                                    <?= number_format($p_small) ?> <small>
-                                                        <?= $s->satuan_produksi ?: 'Lbr' ?>
-                                                    </small>
-                                                </span>
+                                            <?php if ($konversi > 1): ?>
+                                                <?php if ($p_whole > 0): ?>
+                                                    <?= ($out_month < 0 ? '-' : '') . number_format($p_whole, 0, ',', '.') ?> <small><?= $s->satuan_nama ?></small>
+                                                    <?php if ($p_small > 0): ?>
+                                                        <span class="ms-1 border-start ps-1">
+                                                            <?= number_format($p_small, 0, ',', '.') ?> <small><?= $s->satuan_produksi ?: 'Pcs' ?></small>
+                                                        </span>
+                                                    <?php endif; ?>
+                                                <?php else: ?>
+                                                    <?= ($out_month < 0 ? '-' : '') . number_format($p_small > 0 ? $p_small : $total_prod_base, 0, ',', '.') ?> <small><?= $s->satuan_produksi ?: 'Pcs' ?></small>
+                                                <?php endif; ?>
+                                            <?php else: ?>
+                                                <?= ($out_month < 0 ? '-' : '') . number_format($p_whole, 0, ',', '.') ?> <small><?= $s->satuan_nama ?></small>
                                             <?php endif; ?>
                                         </div>
                                         <div class="text-muted mt-1" style="font-size: 0.6rem; font-weight: 800;">TOTAL
@@ -1093,23 +1116,43 @@
                                     ?>
                                     <div class="fw-900 fs-5 mb-0 <?= $stok_akhir <= 0 ? 'text-danger' : 'text-success' ?>"
                                         style="line-height: 1.2;">
-                                        <?= ($stok_akhir <= -0.01 ? '-' : '') . number_format($a_whole) ?> <span
+                                        <?= ($stok_akhir <= -0.01 && $a_whole > 0 ? '-' : '') . number_format($a_whole, 0, ',', '.') ?> <span
                                             class="fs-7 text-uppercase opacity-75"><?= $s->satuan_nama ?></span>
                                     </div>
                                     <?php if ($konversi > 1 && $a_small > 0): ?>
                                         <div class="fw-bold <?= $stok_akhir <= 0 ? 'text-danger' : 'text-primary' ?>"
                                             style="font-size: 0.75rem; margin-top: -2px;">
-                                            + <?= number_format($a_small) ?> <span
+                                            <?= $stok_akhir <= -0.01 ? '-' : '+' ?> <?= number_format($a_small, 0, ',', '.') ?> <span
                                                 class="small opacity-75"><?= $s->satuan_produksi ?: 'Pcs' ?></span>
                                         </div>
                                     <?php endif; ?>
+                                    <?php
+                                    $in_val_all = (float) ($s->total_in_all_month ?? 0);
+                                    $in_val_vis = (float) ($s->total_in_month ?? 0);
+                                    $adj_in = $in_val_all - $in_val_vis;
+                                    
+                                    $out_val_all = (float) ($s->total_out_all_month ?? 0);
+                                    $out_val_vis = (float) ($s->total_out_month ?? 0);
+                                    $adj_out = $out_val_all - $out_val_vis;
+                                    
+                                    $net_adj = $adj_in - $adj_out;
+                                    if (abs($net_adj) >= 0.01):
+                                    ?>
+                                    <div class="mt-1 opacity-75" style="font-size: 0.65rem; color: #858796;" title="Ada Penyesuaian/Lainnya di luar operasional harian">
+                                        (Adj: <?= $net_adj > 0 ? '+' : '' ?><?= number_format($net_adj, 2) ?> <?= $s->satuan_nama ?>)
+                                    </div>
+                                    <?php endif; ?>
                                 </td>
                                 <td class="text-center">
-                                    <?php if ($s->qty_stock <= 0): ?>
+                                    <?php 
+                                    $base_qty = round((float)$s->qty_stock * $konversi);
+                                    $min_qty = round((float)($s->stok_min ?? 5) * $konversi);
+                                    if ($base_qty <= 0): 
+                                    ?>
                                         <span class="badge-premium bg-soft-danger status-pill">
                                             <div class="status-dot" style="background: #f43f5e;"></div> HABIS
                                         </span>
-                                    <?php elseif ($s->qty_stock <= $s->stok_min): ?>
+                                    <?php elseif ($base_qty <= $min_qty): ?>
                                         <span class="badge-premium bg-soft-warning status-pill">
                                             <div class="status-dot" style="background: #f59e0b;"></div> LIMIT
                                         </span>
@@ -1251,10 +1294,17 @@
 
                     <div class="row g-3">
                         <div class="col-8">
-                            <label class="form-label-premium">Stok Real Terbaru (Unit)</label>
-                            <input type="number" step="0.01" name="qty_aktual" id="adj_qty_aktual"
-                                class="form-control form-control-premium" required>
-                            <small class="text-muted">Masukkan angka stok fisik yang terlihat di gudang.</small>
+                            <label class="form-label-premium">Stok Real Terbaru</label>
+                            <div class="input-group">
+                                <input type="number" step="0.01" id="adj_input_gudang" class="form-control form-control-premium text-center fw-bold" placeholder="0" required>
+                                <span class="input-group-text bg-light text-dark fw-bold" id="adj_lbl_gudang" style="border-right: 0;">Unit</span>
+                                
+                                <input type="number" step="0.01" id="adj_input_produksi" class="form-control form-control-premium text-center fw-bold" placeholder="0" style="display:none; border-left: 1px solid #dee2e6;">
+                                <span class="input-group-text bg-light text-dark fw-bold" id="adj_lbl_produksi" style="display:none;">Pcs</span>
+                            </div>
+                            <small class="text-muted mt-1 d-block">Masukkan angka stok fisik yang terlihat di gudang.</small>
+                            <input type="hidden" name="qty_aktual" id="adj_qty_aktual">
+                            <input type="hidden" id="adj_konversi_val" value="1">
                         </div>
                         <div class="col-4">
                             <label class="form-label-premium" title="Gunakan PIN Produksi Anda (dari Data Karyawan)">PIN
@@ -1348,6 +1398,9 @@
 
 <script>
     function openAdjustModal(data) {
+        // Reset form first before setting values
+        $('#formAdjustStock')[0].reset();
+
         $('#adj_material_id').val(data.material_id);
         $('#adj_gudang_id').val(data.gudang_id);
 
@@ -1357,11 +1410,40 @@
         $('#adj_unit_display').text(data.satuan_nama);
 
         $('#adj_qty_aktual').val(parseFloat(data.qty_stock));
+        
+        let konv = parseFloat(data.konversi) || 1;
+        $('#adj_konversi_val').val(konv);
+        
+        let qty_stock = parseFloat(data.qty_stock) || 0;
+        let s_abs = Math.abs(qty_stock);
+        let s_whole = Math.floor(s_abs);
+        let s_small = Math.round((s_abs - s_whole) * konv);
+        if (s_small >= konv) { s_whole++; s_small = 0; }
+        if (qty_stock < 0) s_whole = -s_whole;
 
-        // Reset and show
-        $('#formAdjustStock')[0].reset();
+        $('#adj_lbl_gudang').text(data.satuan_nama);
+        $('#adj_input_gudang').val(s_whole);
+
+        if (konv > 1) {
+            $('#adj_input_produksi').show().val(s_small);
+            $('#adj_lbl_produksi').show().text(data.satuan_produksi || 'Pcs');
+        } else {
+            $('#adj_input_produksi').hide().val(0);
+            $('#adj_lbl_produksi').hide();
+        }
+
         $('#modalAdjustStock').modal('show');
     }
+    
+    // Calculate final qty before submit or when changed
+    $('#adj_input_gudang, #adj_input_produksi').on('input', function() {
+        let konv = parseFloat($('#adj_konversi_val').val()) || 1;
+        let g_val = parseFloat($('#adj_input_gudang').val()) || 0;
+        let p_val = parseFloat($('#adj_input_produksi').val()) || 0;
+        
+        let total = g_val + (p_val / konv);
+        $('#adj_qty_aktual').val(total);
+    });
 
     function openMoveModal(data) {
         $('#move_material_id').val(data.material_id);
@@ -1663,6 +1745,182 @@
         });
         // ========= END DUAL-MODE SEARCH =========
     });
+
+    function resetStokGudang() {
+        Swal.fire({
+            title: 'Apakah Anda yakin?',
+            text: "Ini akan mereset semua stok dan log penggunaan pada gudang ini menjadi 0!",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'Ya, Reset!',
+            cancelButtonText: 'Batal'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                window.location.href = "<?= base_url('warehouse/reset_stock_gudang/' . $selected_gudang) ?>";
+            }
+        });
+    }
+
+    function showProduksiDetail(materialId, materialName) {
+        $('#modalDetailProduksiName').text(materialName);
+        $('#modalDetailProduksiBody').html(`
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <div class="mt-2 text-muted">Memuat data riwayat...</div>
+            </div>
+        `);
+        
+        var myModal = new bootstrap.Modal(document.getElementById('modalDetailProduksi'));
+        myModal.show();
+        
+        $.ajax({
+            url: '<?= site_url("wip/ajax_detail_konsumsi/") ?>' + materialId,
+            type: 'GET',
+            dataType: 'json',
+            success: function(response) {
+                if (response.status === 'success') {
+                    $('#modalDetailProduksiBody').html(response.html);
+                } else {
+                    $('#modalDetailProduksiBody').html('<div class="alert alert-danger">Gagal memuat data.</div>');
+                }
+            },
+            error: function() {
+                $('#modalDetailProduksiBody').html('<div class="alert alert-danger">Terjadi kesalahan saat memuat riwayat.</div>');
+            }
+        });
+    }
+
+    function showDispatchDetail(materialId, materialName) {
+        $('#modalDetailDispatchName').text(materialName);
+        $('#modalDetailDispatchBody').html(`
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <div class="mt-2 text-muted">Memuat data riwayat...</div>
+            </div>
+        `);
+        
+        var myModal = new bootstrap.Modal(document.getElementById('modalDetailDispatch'));
+        myModal.show();
+        
+        // Pass gudang_id parameter to scope dispatch to current warehouse
+        let gudangId = <?= json_encode($selected_gudang) ?>;
+
+        $.ajax({
+            url: '<?= site_url("warehouse/ajax_detail_dispatch/") ?>' + materialId,
+            type: 'GET',
+            data: { gudang_id: gudangId },
+            dataType: 'json',
+            success: function(response) {
+                if (response.status === 'success') {
+                    $('#modalDetailDispatchBody').html(response.html);
+                } else {
+                    $('#modalDetailDispatchBody').html('<div class="alert alert-danger">Gagal memuat data.</div>');
+                }
+            },
+            error: function() {
+                $('#modalDetailDispatchBody').html('<div class="alert alert-danger">Terjadi kesalahan saat memuat riwayat dispatch.</div>');
+            }
+        });
+    }
+
+    function showPembelianDetail(materialId, materialName) {
+        $('#modalDetailPembelianName').text(materialName);
+        $('#modalDetailPembelianBody').html(`
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <div class="mt-2 text-muted">Memuat data riwayat...</div>
+            </div>
+        `);
+        
+        var myModal = new bootstrap.Modal(document.getElementById('modalDetailPembelian'));
+        myModal.show();
+        
+        let gudangId = <?= json_encode($selected_gudang) ?>;
+
+        $.ajax({
+            url: '<?= site_url("warehouse/ajax_detail_pembelian/") ?>' + materialId,
+            type: 'GET',
+            data: { gudang_id: gudangId },
+            dataType: 'json',
+            success: function(response) {
+                if (response.status === 'success') {
+                    $('#modalDetailPembelianBody').html(response.html);
+                } else {
+                    $('#modalDetailPembelianBody').html('<div class="alert alert-danger">Gagal memuat data.</div>');
+                }
+            },
+            error: function() {
+                $('#modalDetailPembelianBody').html('<div class="alert alert-danger">Terjadi kesalahan saat memuat riwayat pembelian.</div>');
+            }
+        });
+    }
 </script>
 
+<!-- Modal Detail Pembelian -->
+<div class="modal fade" id="modalDetailPembelian" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-light">
+                <h5 class="modal-title fw-bold">
+                    <i class="fas fa-shopping-cart me-2 text-primary"></i> Detail Pembelian: <span id="modalDetailPembelianName" class="text-primary"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body bg-white" id="modalDetailPembelianBody">
+            </div>
+            <div class="modal-footer bg-light">
+                <button type="button" class="btn btn-secondary fw-bold rounded-pill px-4" data-bs-dismiss="modal">Tutup</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Detail Dispatch -->
+<div class="modal fade" id="modalDetailDispatch" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-light">
+                <h5 class="modal-title fw-bold">
+                    <i class="fas fa-truck-loading me-2 text-primary"></i> Detail Dispatch: <span id="modalDetailDispatchName" class="text-primary"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body bg-white" id="modalDetailDispatchBody">
+            </div>
+            <div class="modal-footer bg-light">
+                <button type="button" class="btn btn-secondary fw-bold rounded-pill px-4" data-bs-dismiss="modal">Tutup</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Detail Produksi -->
+<div class="modal fade" id="modalDetailProduksi" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-light">
+                <h5 class="modal-title fw-bold">
+                    <i class="fas fa-history me-2 text-primary"></i> Detail Produksi: <span id="modalDetailProduksiName" class="text-primary"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body bg-white" id="modalDetailProduksiBody">
+            </div>
+            <div class="modal-footer bg-light">
+                <button type="button" class="btn btn-secondary fw-bold rounded-pill px-4" data-bs-dismiss="modal">Tutup</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
 <?php $this->load->view('admin/warehouse/components/v_modal_stock_guide'); ?>
+</content>
