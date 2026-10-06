@@ -768,13 +768,19 @@ class Warehouse_model extends CI_Model
                 sp.satuan_nama as satuan_produksi,
                 IFNULL(SUM(CASE
                     WHEN sl.trx_type IN ('Pembelian', 'Pembelian/Koreksi')
-                    THEN sl.qty_in ELSE 0 END), 0) as total_dibeli,
+                    THEN sl.qty_in
+                    WHEN sl.trx_type = 'Koreksi/Edit Pembelian'
+                    THEN -sl.qty_out
+                    ELSE 0 END), 0) as total_dibeli,
                 IFNULL(SUM(CASE
                     WHEN sl.trx_type = 'Produksi'
                     THEN sl.qty_out ELSE 0 END), 0) as total_terpakai,
                 IFNULL(SUM(CASE
                     WHEN sl.trx_type IN ('Pembelian', 'Pembelian/Koreksi')
-                    THEN sl.qty_in ELSE 0 END), 0)
+                    THEN sl.qty_in
+                    WHEN sl.trx_type = 'Koreksi/Edit Pembelian'
+                    THEN -sl.qty_out
+                    ELSE 0 END), 0)
                 -
                 IFNULL(SUM(CASE
                     WHEN sl.trx_type = 'Produksi'
