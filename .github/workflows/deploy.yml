@@ -7,24 +7,31 @@ on:
 
 jobs:
   deploy:
-    name: Deploy via SSH
+    name: Deploy via cPanel API
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to Server
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          script: |
-            cd /home/tgmprin2/repositories/erp_v5
-            git pull origin main
-            cp -R application /home/tgmprin2/erp.tgmprint.com/
-            cp -R assets /home/tgmprin2/erp.tgmprint.com/
-            cp -R system /home/tgmprin2/erp.tgmprint.com/
-            cp -R vendor /home/tgmprin2/erp.tgmprint.com/
-            cp index.php /home/tgmprin2/erp.tgmprint.com/
-            cp .htaccess /home/tgmprin2/erp.tgmprint.com/
-            echo "✅ Deploy selesai: $(date)"
+      - name: Trigger cPanel Git Pull & Deploy
+        run: |
+          # Step 1: Pull latest from GitHub into cPanel's repository
+          echo "Triggering git pull on server..."
+          PULL_RESPONSE=$(curl -s -k -H "Authorization: cpanel ${{ secrets.CPANEL_USER }}:${{ secrets.CPANEL_TOKEN }}" \
+            "https://${{ secrets.SSH_HOST }}:2083/execute/VersionControl/update?repository_root=%2Fhome%2F${{ secrets.CPANEL_USER }}%2Frepositories%2Ferp_v5")
+          echo "Pull response: $PULL_RESPONSE"
+
+          # Step 2: Deploy (copy files from repository to web folder)
+          echo "Triggering deployment..."
+          DEPLOY_RESPONSE=$(curl -s -k -H "Authorization: cpanel ${{ secrets.CPANEL_USER }}:${{ secrets.CPANEL_TOKEN }}" \
+            -X POST \
+            "https://${{ secrets.SSH_HOST }}:2083/execute/VersionControlDeployment/create" \
+            -d "repository_root=%2Fhome%2F${{ secrets.CPANEL_USER }}%2Frepositories%2Ferp_v5")
+          echo "Deploy response: $DEPLOY_RESPONSE"
+
+          # Check if deployment was triggered successfully
+          if echo "$DEPLOY_RESPONSE" | grep -q '"errors":null'; then
+            echo "✅ Deployment triggered successfully!"
+          elif echo "$DEPLOY_RESPONSE" | grep -q '"errors":\[\]'; then
+            echo "✅ Deployment triggered successfully!"
+          else
+            echo "⚠️ Deploy response: $DEPLOY_RESPONSE"
+          fi
