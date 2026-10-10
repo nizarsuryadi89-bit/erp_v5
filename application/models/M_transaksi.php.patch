@@ -1,0 +1,102 @@
+--- /Applications/XAMPP/xamppfiles/htdocs/tgm_erp/application/models/M_transaksi.php
++++ /Applications/XAMPP/xamppfiles/htdocs/tgm_erp/application/models/M_transaksi.php
+@@ -638,6 +638,98 @@
+         return $this->db->get('tbl_pemesanan');
+     }
+ 
++    private function _get_datatables_query_sudahbayar($postData, $status, $perusahaan_override = null)
++    {
++        $perusahaan = $perusahaan_override ?? $this->session->userdata('perusahaan_id');
++        $user = $this->session->userdata('id');
++        $level = $this->session->userdata('level');
++
++        // Table definition
++        $this->db->from('tbl_pemesanan');
++        
++        $this->db->join('tbl_konsumen', 'tbl_konsumen.konsumen_id = tbl_pemesanan.konsumen_id');
++        $this->db->join('users', 'users.user_id = tbl_pemesanan.deskprint_id');
++        $this->db->join('tbl_karyawan', 'tbl_karyawan.karyawan_id = users.karyawan_id');
++        $this->db->join('tbl_jenis_transaksi', 'tbl_jenis_transaksi.id_jenis_transaksi = tbl_pemesanan.id_jenis_transaksi');
++        $this->db->join('tbl_marketplace', 'tbl_marketplace.marketplace_id = tbl_pemesanan.marketplace_id', 'left');
++        $this->db->join('tbl_pengiriman', 'tbl_pengiriman.id_pengiriman = tbl_pemesanan.id_pengiriman', 'left');
++        $this->db->join('tbl_pembayaran', 'tbl_pembayaran.nospk = tbl_pemesanan.nospk', 'left');
++
++        // Basic Filters
++        if ($perusahaan_override !== null) {
++            $this->db->where('tbl_pemesanan.perusahaan_id', $perusahaan_override);
++        } else {
++            if (!in_array((int) $level, [1, 2, 17, 21], true)) {
++                $this->db->where('tbl_pemesanan.perusahaan_id', $perusahaan);
++            }
++        }
++
++        $this->db->where('tbl_pemesanan.status_pembayaran', $status == '0' ? 'pending' : ($status == '1' ? 'paid' : $status));
++        
++        if (!in_array((int) $level, [1, 2, 17, 21], true)) {
++            $this->db->where('tbl_pembayaran.kasir_id', $user);
++        }
++        
++        // Batasi pencarian awal tanpa batas atau bisa set batas default misal 1 tahun
++        
++        $column_search = array('tbl_pemesanan.nospk', 'tbl_konsumen.konsumen_nama', 'tbl_konsumen.konsumen_nohp');
++        $i = 0;
++        foreach ($column_search as $item) {
++            if (isset($postData['search']['value']) && $postData['search']['value']) {
++                if ($i === 0) {
++                    $this->db->group_start();
++                    $this->db->like($item, $postData['search']['value']);
++                } else {
++                    $this->db->or_like($item, $postData['search']['value']);
++                }
++                if (count($column_search) - 1 == $i)
++                    $this->db->group_end();
++            }
++            $i++;
++        }
++
++        $column_order = array(null, 'tbl_pemesanan.created_at', 'tbl_konsumen.konsumen_nama', 'tbl_jenis_transaksi.nama_jenis_transaksi', null, null, null, null, null, 'tbl_karyawan.karyawan_nama');
++        
++        if (isset($postData['order'])) {
++            $this->db->order_by($column_order[$postData['order']['0']['column']], $postData['order']['0']['dir']);
++        } else if (isset($this->order)) {
++            $order = $this->order;
++            $this->db->order_by(key($order), $order[key($order)]);
++        } else {
++            $this->db->order_by('tbl_pemesanan.created_at', 'DESC');
++        }
++        
++        $this->db->group_by('tbl_pemesanan.nospk');
++    }
++
++    public function get_datatables_sudahbayar($postData, $status, $perusahaan_override = null)
++    {
++        $this->_get_datatables_query_sudahbayar($postData, $status, $perusahaan_override);
++        if (isset($postData['length']) && $postData['length'] != -1)
++            $this->db->limit($postData['length'], $postData['start']);
++        
++        $this->db->select('tbl_pemesanan.*, tbl_konsumen.konsumen_nama, tbl_konsumen.konsumen_nohp, tbl_jenis_transaksi.nama_jenis_transaksi, tbl_marketplace.marketplace_nama, tbl_pembayaran.bayar_tunai, tbl_pembayaran.bayar_debit, tbl_pembayaran.bayar_kartukredit, tbl_pembayaran.bayar_transfer, tbl_pembayaran.bayar_ewallet, tbl_karyawan.karyawan_nama');
++        $query = $this->db->get();
++        return $query->result();
++    }
++
++    public function count_filtered_sudahbayar($postData, $status, $perusahaan_override = null)
++    {
++        $this->_get_datatables_query_sudahbayar($postData, $status, $perusahaan_override);
++        // Subquery trick to count group by
++        $query = $this->db->get_compiled_select();
++        $count_query = $this->db->query("SELECT COUNT(*) AS total FROM ($query) AS t");
++        return $count_query->row()->total;
++    }
++
++    public function count_all_sudahbayar($status, $perusahaan_override = null)
++    {
++        // Mimic minimal query without search
++        $this->_get_datatables_query_sudahbayar([], $status, $perusahaan_override);
++        $query = $this->db->get_compiled_select();
++        $count_query = $this->db->query("SELECT COUNT(*) AS total FROM ($query) AS t");
++        return $count_query->row()->total;
++    }
++
+     function getpenjualanall()
+     {
+         $bulanini = date('Y-m');

@@ -132,16 +132,47 @@
                                     </select>
                                 </div>
                             </div>
+                            <!-- NEW FEATURE: LINKED ITEM (KAITKAN PRODUK) -->
+                            <div class="mb-2 d-none" id="linked-item-container" style="display: none !important;">
+                                <label class="form-label small fw-bold mb-1 text-uppercase" style="color: #db2777;">
+                                    <i class="fas fa-link me-1"></i> Terapkan Pada (Target)
+                                </label>
+                                <select id="linked_item_select" class="form-select form-select-sm" style="border-color: #fbcfe8; background-color: #fdf2f8; color: #9d174d; font-weight: 700; font-size: 0.8rem;">
+                                    <option value="">-- Tidak Dikaitkan --</option>
+                                </select>
+                                <div class="mt-1" style="font-size: 0.65rem; color: #be185d;">
+                                    Pilih produk utama jika item ini adalah Jasa / Sablon tambahannya.
+                                </div>
+                            </div>
                             <!-- NEW FEATURE: KETERANGAN ITEM -->
                             <div class="mb-3">
                                 <label class="form-label small fw-bold text-muted mb-1 text-uppercase">Keterangan
                                     Khusus</label>
                                 <textarea name="keterangan"
                                     class="form-control form-control-sm rounded-3 border-primary-subtle" rows="2"
-                                    placeholder="Tulis catatan untuk produksi... (Fitur Baru!)"
+                                    placeholder="Tulis catatan untuk tim produksi..."
                                     style="font-size: 0.8rem;"></textarea>
                                 <div class="mt-1" style="font-size: 0.65rem; color: #0891b2;">
                                     <i class="fas fa-info-circle me-1"></i> Kini catatan langsung terbaca oleh tim produksi.
+                                </div>
+                            </div>
+                            <!-- ESTIMASI HARGA LIVE -->
+                            <div id="price-estimation-box" class="mb-3 d-none">
+                                <div class="d-flex justify-content-between align-items-end p-3 rounded-3" style="background: linear-gradient(135deg, #f0fdf4, #ecfdf5); border: 1px solid #bbf7d0;">
+                                    <div>
+                                        <span class="text-muted small fw-bold text-uppercase" style="font-size: 0.65rem;">Harga Satuan:</span>
+                                        <div id="est-harga-satuan" class="fw-bold" style="color: #059669; font-size: 1rem; font-style: italic;">Rp 0</div>
+                                    </div>
+                                    <div class="text-end">
+                                        <span class="text-muted small fw-bold text-uppercase" style="font-size: 0.65rem;">SUBTOTAL</span>
+                                        <div id="est-subtotal" class="fw-bold" style="color: #047857; font-size: 1.3rem;">Rp 0</div>
+                                        <div id="est-min-warning" class="d-none mt-1" style="font-size: 0.65rem;"><span class="badge bg-warning text-dark"><i class="fas fa-exclamation-circle me-1"></i>Min Price Diterapkan</span></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="price-estimation-warning" class="mb-3 d-none">
+                                <div class="p-2 rounded-3 text-center small" style="background: #fff7ed; border: 1px solid #fed7aa; color: #c2410c;">
+                                    <i class="fas fa-exclamation-triangle me-1"></i> <span id="est-warning-text">Harga belum dikonfigurasi</span>
                                 </div>
                             </div>
                             <button type="submit"

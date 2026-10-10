@@ -1,0 +1,73 @@
+--- application/views/admin/absensi/sisa_cuti.php
++++ application/views/admin/absensi/sisa_cuti.php
+@@ -155,2 +155,5 @@
+                                                 <button class="btn btn-sm btn-outline-primary" onclick="showRiwayat(<?= $row->karyawan_id ?>, '<?= addslashes($row->nama_lengkap) ?>')">
+                                                     <i class="bi bi-clock-history"></i> Riwayat
+                                                 </button>
++                                                <button class="btn btn-sm btn-outline-warning" onclick="editQuota(<?= $row->karyawan_id ?>, '<?= addslashes($row->nama_lengkap) ?>', <?= isset($row->sisa) ? $row->sisa : 0 ?>, <?= isset($row->menikah_sisa) ? $row->menikah_sisa : 0 ?>, <?= isset($row->duka_sisa) ? $row->duka_sisa : 0 ?>, <?= isset($row->sakitkel_sisa) ? $row->sakitkel_sisa : 0 ?>, <?= isset($row->melahirkansuami_sisa) ? $row->melahirkansuami_sisa : 0 ?>)">
++                                                    <i class="bi bi-pencil"></i> Edit
++                                                </button>
+@@ -204,2 +207,56 @@
+ 
++<!-- Modal Edit Quota -->
++<div class="modal fade" id="modalEditQuota" tabindex="-1" aria-labelledby="modalEditQuotaLabel" aria-hidden="true">
++    <div class="modal-dialog modal-dialog-centered">
++        <div class="modal-content border-0 shadow" style="border-radius: 20px;">
++            <form action="<?= site_url('absensi/update_quota_cuti') ?>" method="POST">
++                <div class="modal-header border-bottom-0 pb-0">
++                    <h5 class="modal-title fw-bold" id="modalEditQuotaLabel">Edit Kuota Cuti</h5>
++                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
++                </div>
++                <div class="modal-body">
++                    <div class="text-center mb-4">
++                        <h6 class="fw-bold mb-0 text-primary-tgm" id="editKaryawanName">Nama Karyawan</h6>
++                    </div>
++                    <input type="hidden" name="karyawan_id" id="editKaryawanId">
++                    
++                    <div class="mb-3">
++                        <label class="form-label fw-bold small text-muted">Sisa Cuti Tahunan</label>
++                        <input type="number" class="form-control" name="sisa" id="editSisa" required>
++                    </div>
++                    <div class="mb-3">
++                        <label class="form-label fw-bold small text-muted">Sisa Cuti Menikah</label>
++                        <input type="number" class="form-control" name="menikah_sisa" id="editMenikahSisa" required>
++                    </div>
++                    <div class="mb-3">
++                        <label class="form-label fw-bold small text-muted">Sisa Cuti Duka</label>
++                        <input type="number" class="form-control" name="duka_sisa" id="editDukaSisa" required>
++                    </div>
++                    <div class="mb-3">
++                        <label class="form-label fw-bold small text-muted">Sisa Cuti Keluarga Sakit</label>
++                        <input type="number" class="form-control" name="sakitkel_sisa" id="editSakitkelSisa" required>
++                    </div>
++                    <div class="mb-3">
++                        <label class="form-label fw-bold small text-muted">Sisa Cuti Istri Melahirkan</label>
++                        <input type="number" class="form-control" name="melahirkansuami_sisa" id="editMelahirkanSuamiSisa" required>
++                    </div>
++                </div>
++                <div class="modal-footer border-top-0 pt-0">
++                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Batal</button>
++                    <button type="submit" class="btn btn-primary px-4 fw-bold shadow-sm" style="border-radius: 10px;">Simpan Perubahan</button>
++                </div>
++            </form>
++        </div>
++    </div>
++</div>
++
+ <script>
+@@ -271,2 +328,16 @@
+     }
++
++    function editQuota(id, nama, sisa, menikah, duka, sakitkel, melahirkan) {
++        $('#editKaryawanId').val(id);
++        $('#editKaryawanName').text(nama);
++        $('#editSisa').val(sisa);
++        $('#editMenikahSisa').val(menikah);
++        $('#editDukaSisa').val(duka);
++        $('#editSakitkelSisa').val(sakitkel);
++        $('#editMelahirkanSuamiSisa').val(melahirkan);
++        
++        var modal = new bootstrap.Modal(document.getElementById('modalEditQuota'));
++        modal.show();
++    }
+ </script>

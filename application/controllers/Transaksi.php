@@ -1047,7 +1047,7 @@ class Transaksi extends MY_Controller
 
                 if ($name === 'jenisprint_id' || strpos($labelLower, 'mesin') !== false || strpos($labelLower, 'metode') !== false || strpos($labelLower, 'jenis print') !== false) {
                     $key_dim2 = $name;
-                } elseif ($name === 'side_id' || strpos($labelLower, 'sisi') !== false) {
+                } elseif ($name === 'side_id') {
                     // ignore for pricing (ket_1 and jenisprint_id are the only ones used)
                 } elseif ($name === 'ket_1' || strpos($labelLower, 'varian') !== false) {
                     $key_dim1 = $name;
@@ -1064,12 +1064,125 @@ class Transaksi extends MY_Controller
             $key_dim2 = array_shift($unmapped_names);
         }
         
-        if ($key_dim1 !== 'ket_1' && $this->input->post($key_dim1) !== null) {
+        // Prevent assigning the same POST field to both dimensions
+        if ($key_dim1 === $key_dim2) {
+            // If they are the same, it means the default key (e.g. ket_1) was explicitly matched to the other dimension (e.g. jenisprint_id)
+            // We clear dim1 to avoid duplication
+            $key_dim1 = null;
+        }
+
+        // Reset inputs to avoid dirty duplicate values from action_add_temp defaults
+        $inputs['ket_1'] = 0;
+        $inputs['jenisprint_id'] = 0;
+
+        if ($key_dim1 && $this->input->post($key_dim1) !== null) {
             $inputs['ket_1'] = $this->input->post($key_dim1, true);
         }
-        if ($key_dim2 !== 'jenisprint_id' && $this->input->post($key_dim2) !== null) {
+        if ($key_dim2 && $this->input->post($key_dim2) !== null) {
             $inputs['jenisprint_id'] = $this->input->post($key_dim2, true);
         }
+    }
+    /**
+     * Estimate price without inserting - for live preview in SPK form
+     */
+    public function estimate_price()
+    {
+        $inputs = [
+            'product' => $this->input->post('product_id', true),
+            'qty' => $this->input->post('qty', true),
+            'panjang' => $this->input->post('panjang', true) ?? 0,
+            'lebar' => $this->input->post('lebar', true) ?? 0,
+            'kategori' => $this->input->post('kategori_id', true),
+            'ket_1' => $this->input->post('ket_1', true) ?? 0,
+            'jenisprint_id' => $this->input->post('jenisprint_id', true) ?? 0,
+        ];
+
+        if (empty($inputs['product']) || empty($inputs['qty'])) {
+            return $this->output->set_content_type('application/json')
+                ->set_output(json_encode(['status' => 'empty']));
+        }
+
+        // Resolve dynamic pricing keys
+        $this->_resolve_dynamic_pricing_keys($inputs['product'], $inputs);
+
+        $product_info = $this->db->select('satuan_id')->get_where('tbl_product', ['product_id' => $inputs['product']])->row();
+        $satuan_id = $product_info ? $product_info->satuan_id : 0;
+
+        // Calculate Pricing Quantity based on Category (same logic as action_add_temp)
+        $pricing_qty = floatval($inputs['qty']);
+        if (in_array($inputs['kategori'], [2, 3, 5, 6, 8, 9])) {
+            $panjang = floatval($inputs['panjang'] ?? 0);
+            $lebar = floatval($inputs['lebar'] ?? 0);
+
+            if (in_array($inputs['kategori'], [3, 6]) && ($panjang > 0 || $lebar > 0)) {
+                if ($panjang < 5) $panjang = 5;
+                if ($lebar < 5) $lebar = 5;
+            }
+
+            if ($inputs['kategori'] == 6 && !empty($this->input->post('metode_laser', true))) {
+                $inputs['jenisprint_id'] = $this->input->post('metode_laser', true);
+            }
+
+            if (in_array($inputs['kategori'], [8, 9])) {
+                $area_mapping = [
+                    '1' => 100, '2' => 350, '3' => 630, '4' => 1260, '5' => 1536
+                ];
+                if ($inputs['kategori'] == 9 && $inputs['ket_1'] == '5') {
+                    $inputs['lebar'] = 0;
+                    $lebar = 0;
+                } else {
+                    $selected_area = $area_mapping[$inputs['ket_1']] ?? 0;
+                    if ($selected_area > 0) {
+                        $pricing_qty = ($selected_area / 10000) * $inputs['qty'];
+                    }
+                }
+            }
+
+            if ($satuan_id == 11) {
+                $pricing_qty = $panjang * $inputs['qty'];
+            } else if ($panjang > 0 && $lebar > 0) {
+                $area = ($panjang * $lebar) / 10000;
+                $pricing_qty = $area * $inputs['qty'];
+            } else if ($panjang > 0 && empty($lebar)) {
+                $pricing_qty = $panjang * $inputs['qty'];
+            }
+        }
+
+        $hargaQuery = $this->M_transaksi->get_product_price($inputs['product'], $pricing_qty, [
+            'ket_1' => $inputs['ket_1'],
+            'jenisprint_id' => $inputs['jenisprint_id']
+        ]);
+
+        $cekhargaproduct = $hargaQuery->row_array();
+
+        if ($cekhargaproduct) {
+            $harga_satuan = floatval($cekhargaproduct['harga_1'] ?? 0);
+            $subtotal = $harga_satuan * floatval($inputs['qty']);
+            $detail = $cekhargaproduct['detail_product'] ?? '';
+            
+            $harga_minimal = floatval($cekhargaproduct['harga_minimal'] ?? 0);
+            $is_min_applied = false;
+            
+            if ($harga_minimal > 0 && $subtotal < $harga_minimal) {
+                $subtotal = $harga_minimal;
+                $is_min_applied = true;
+            }
+
+            $response = [
+                'status' => 'success',
+                'harga_satuan' => $harga_satuan,
+                'subtotal' => $subtotal,
+                'qty' => floatval($inputs['qty']),
+                'pricing_qty' => round($pricing_qty, 4),
+                'detail' => $detail,
+                'is_min_applied' => $is_min_applied,
+                'harga_minimal_value' => $harga_minimal
+            ];
+        } else {
+            $response = ['status' => 'not_found', 'message' => 'Harga belum dikonfigurasi untuk spesifikasi ini'];
+        }
+
+        $this->output->set_content_type('application/json')->set_output(json_encode($response));
     }
 
     public function action_add_temp()
@@ -1211,7 +1324,13 @@ class Transaksi extends MY_Controller
             if (!empty($cekhargaproduct['metadata'])) {
                 $product_metadata = json_decode($cekhargaproduct['metadata'], true);
                 if (is_array($product_metadata)) {
-                    $metadata = array_merge($product_metadata, $metadata);
+                    foreach ($product_metadata as $pk => $pv) {
+                        // Skip empty keys caused by unlabelled attributes in price generator
+                        if ($pk === '') continue;
+                        if (!isset($metadata[$pk])) {
+                            $metadata[$pk] = $pv;
+                        }
+                    }
                 }
             }
 
@@ -1426,7 +1545,13 @@ class Transaksi extends MY_Controller
             if (!empty($cekhargaproduct['metadata'])) {
                 $product_metadata = json_decode($cekhargaproduct['metadata'], true);
                 if (is_array($product_metadata)) {
-                    $metadata = array_merge($product_metadata, $metadata);
+                    foreach ($product_metadata as $pk => $pv) {
+                        // Skip empty keys caused by unlabelled attributes in price generator
+                        if ($pk === '') continue;
+                        if (!isset($metadata[$pk])) {
+                            $metadata[$pk] = $pv;
+                        }
+                    }
                 }
             }
 
@@ -1772,11 +1897,132 @@ class Transaksi extends MY_Controller
         $data = $this->_get_common_data('Daftar Semua Transaksi');
         $data['table'] = 'tbl_kategori';
         $data['controller'] = 'transaksi';
-        $data['transaksi_sudahbayar'] = $this->M_transaksi->getbayarsukses('1')->result();
-        $data['total_sudahbayar'] = count($data['transaksi_sudahbayar']);
+        
+        $data['total_sudahbayar'] = $this->M_transaksi->count_all_sudahbayar('1');
         $data['total_belumbayar'] = $this->M_transaksi->getCountPemesanankasir('0');
+        $data['transaksi_sudahbayar'] = []; // Not used anymore for initial load
+        $data['all_details'] = []; // Not used anymore for initial load
 
         $this->load_admin_view('admin/transaksi/transaksi_sudahbayar', $data);
+    }
+
+    private function _invoice_detail_metadata($item)
+    {
+        if (empty($item->metadata) || !is_string($item->metadata)) {
+            return [];
+        }
+
+        $decoded = json_decode($item->metadata, true);
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    private function _invoice_detail_price($item)
+    {
+        $metadata = $this->_invoice_detail_metadata($item);
+        if (isset($metadata['unit_price']) && is_numeric($metadata['unit_price'])) {
+            return (float) $metadata['unit_price'];
+        }
+
+        return (float) ($item->harga_1 ?? 0);
+    }
+
+    private function _invoice_detail_total($item, $harga = null)
+    {
+        $metadata = $this->_invoice_detail_metadata($item);
+        if (isset($metadata['subtotal']) && is_numeric($metadata['subtotal'])) {
+            return (float) $metadata['subtotal'];
+        }
+
+        $harga = $harga === null ? $this->_invoice_detail_price($item) : (float) $harga;
+        $qty = (float) ($item->qty ?? 0);
+        $panjang = (float) ($item->panjang ?? 0);
+        $lebar = (float) ($item->lebar ?? 0);
+
+        if ($panjang > 0 && $lebar > 0) {
+            return round($panjang * $lebar * $harga * $qty);
+        }
+
+        return $harga * $qty;
+    }
+
+    public function ajax_transaksi_sudahbayar()
+    {
+        $postData = $this->input->post();
+        $list = $this->M_transaksi->get_datatables_sudahbayar($postData, '1');
+        $data = array();
+        
+        $nospks = array_column($list, 'nospk');
+        $all_details = [];
+        if (!empty($nospks)) {
+            $chunks = array_chunk($nospks, 500);
+            $all_details_flat = [];
+            foreach ($chunks as $chunk) {
+                $all_details_flat = array_merge($all_details_flat, $this->M_transaksi->getDetailPesanByNospkArray($chunk));
+            }
+            foreach ($all_details_flat as $det) {
+                $all_details[$det->nospk][] = $det;
+            }
+        }
+
+        foreach ($list as $dt) {
+            $row = array();
+            
+            // Format sama persis dengan view
+            $konsumen = $dt->konsumen_nama . ' | ' . $dt->konsumen_nohp;
+            
+            $qdetail = isset($all_details[$dt->nospk]) ? $all_details[$dt->nospk] : [];
+            $item = count($qdetail);
+
+            $real_total = 0;
+            foreach ($qdetail as $item_dt) {
+                $harga_satuan = $this->_invoice_detail_price($item_dt);
+                $real_total += $this->_invoice_detail_total($item_dt, $harga_satuan);
+            }
+            
+            $total_bayar = (float) ($dt->total_bayar ?? 0);
+            $kurang_bayar = $real_total - $total_bayar;
+            if ($kurang_bayar < 0) $kurang_bayar = 0;
+            
+            // Generate action buttons
+            $action = '<div class="btn-group">';
+            if ($dt->status_pembayaran == 'pending' || $dt->status_pembayaran == 'paid' || $dt->status_pembayaran == 'finish') {
+                $action .= '<a href="' . base_url() . 'transaksi/invoice_pesanan/' . $dt->nospk . '" class="btn btn-sm btn-info text-white"><i class="fa fa-print"></i> Detail</a>';
+            }
+            $action .= '</div>';
+            
+            $status_pemb = "";
+            if ($dt->status_pembayaran == 'pending') {
+                $status_pemb = '<span class="badge badge-warning text-white">BELUM BAYAR</span>';
+            } elseif ($dt->status_pembayaran == 'paid') {
+                $status_pemb = '<span class="badge badge-success text-white">LUNAS</span>';
+            } elseif ($dt->status_pembayaran == 'finish') {
+                $status_pemb = '<span class="badge badge-success text-white">SELESAI</span>';
+            } else {
+                $status_pemb = '<span class="badge badge-danger text-white">HUTANG</span>';
+            }
+
+            $row[] = $dt->nospk;
+            $row[] = shortdate_indo($dt->created_at);
+            $row[] = $konsumen;
+            $row[] = $dt->nama_jenis_transaksi . '<br><small>' . $dt->marketplace_nama . '</small>';
+            $row[] = $item;
+            $row[] = "Rp. " . number_format($real_total, 0, ',', '.');
+            $row[] = $status_pemb;
+            $row[] = "Rp. " . number_format($total_bayar, 0, ',', '.');
+            $row[] = "Rp. " . number_format($kurang_bayar, 0, ',', '.');
+            $row[] = strtoupper($dt->karyawan_nama);
+            $row[] = $action;
+
+            $data[] = $row;
+        }
+
+        $output = array(
+            "draw" => isset($postData['draw']) ? intval($postData['draw']) : 0,
+            "recordsTotal" => $this->M_transaksi->count_all_sudahbayar('1'),
+            "recordsFiltered" => $this->M_transaksi->count_filtered_sudahbayar($postData, '1'),
+            "data" => $data,
+        );
+        echo json_encode($output);
     }
 
     public function get_transaction_preview_ajax()
@@ -1808,6 +2054,7 @@ class Transaksi extends MY_Controller
             $side_map[$s->side_id] = str_replace('Side', 'Sisi', $s->side_name);
         }
 
+        $schema_cache = [];
         $items = [];
         foreach ($details as $item) {
             $harga_satuan = $this->resolve_detail_unit_price($item);
@@ -1831,10 +2078,65 @@ class Transaksi extends MY_Controller
                 $dimensi = '';
             }
 
-            // Extract metadata (e.g. warna)
+            // Extract metadata (e.g. warna, finishing, variasi, dll)
             $meta = !empty($item->metadata) ? json_decode($item->metadata, true) : [];
-            if (!empty($meta['warna'])) {
-                $dimensi .= ($dimensi !== '' ? ' - ' : '') . 'Warna: ' . strtoupper($meta['warna']);
+            $skip_keys = ['unit_price', 'subtotal', 'price_snapshot_at', 'kategori_id', 'jenisprint_id', 'user_id', 'user', 'subkategori_id', 'subkategori', 'kodeproduk'];
+            $variasi_list = [];
+            if (is_array($meta)) {
+                $prod_id = $item->product_id ?? 0;
+                $cat_id = $item->kategori_id ?? 0;
+                $cache_key = $cat_id . '_' . $prod_id;
+                
+                if (!isset($schema_cache[$cache_key])) {
+                    $local_schema = [];
+                    if ($cat_id) {
+                        $cat = $this->db->get_where('tbl_kategori', ['kategori_id' => $cat_id])->row();
+                        if ($cat && !empty($cat->form_schema)) {
+                            $sc = json_decode($cat->form_schema, true);
+                            if (is_array($sc)) $local_schema = array_merge($local_schema, $sc);
+                        }
+                    }
+                    if ($prod_id) {
+                        $prod = $this->db->get_where('tbl_product', ['product_id' => $prod_id])->row();
+                        if ($prod) {
+                            if (!empty($prod->form_schema)) {
+                                $sc = json_decode($prod->form_schema, true);
+                                if (is_array($sc)) $local_schema = array_merge($local_schema, $sc);
+                            }
+                            if (!empty($prod->subkategori_id)) {
+                                $sub = $this->db->get_where('tbl_subkategori', ['subkategori_id' => $prod->subkategori_id])->row();
+                                if ($sub && !empty($sub->form_schema)) {
+                                    $sc = json_decode($sub->form_schema, true);
+                                    if (is_array($sc)) $local_schema = array_merge($local_schema, $sc);
+                                }
+                            }
+                        }
+                    }
+                    $schema_cache[$cache_key] = $local_schema;
+                }
+                $schema = $schema_cache[$cache_key];
+
+                foreach ($meta as $mk => $mv) {
+                    if (!in_array(strtolower($mk), $skip_keys) && !empty($mv) && is_scalar($mv)) {
+                        $label = ucwords(str_replace('_', ' ', $mk));
+                        $resolved_val = $mv;
+                        foreach ($schema as $field) {
+                            if (isset($field['name']) && $field['name'] == $mk) {
+                                if (isset($field['label']) && !empty($field['label'])) {
+                                    $label = $field['label'];
+                                }
+                                if (isset($field['options'][$mv])) {
+                                    $resolved_val = $field['options'][$mv];
+                                }
+                                break;
+                            }
+                        }
+                        $variasi_list[] = [
+                            'label' => $label,
+                            'value' => strtoupper($resolved_val)
+                        ];
+                    }
+                }
             }
 
             $subtotal = $this->resolve_detail_subtotal($item, $harga_satuan);
@@ -1842,11 +2144,60 @@ class Transaksi extends MY_Controller
             $items[] = [
                 'nama' => $item->detail_product ?? $item->product_nama ?? 'Item',
                 'qty' => $item->qty,
+                'satuan' => !empty($item->satuan_nama) ? $item->satuan_nama : 'pcs',
                 'dimensi' => $dimensi,
+                'variasi' => $variasi_list,
                 'ket_1' => $item->ket_1 ?? '',
                 'harga' => (int) $harga_satuan,
                 'subtotal' => (int) round($subtotal)
             ];
+        }
+
+        // Fetch payment details
+        $pembayaran = $this->db->select('MAX(total_tagihan) as total_tagihan, MAX(total_bayar) as total_bayar')
+            ->from('tbl_pembayaran')
+            ->where('nospk', $nospk)
+            ->get()->row();
+            
+        $total_items = 0;
+        foreach ($items as $item_row) {
+            $total_items += (int)($item_row['subtotal'] ?? 0);
+        }
+
+        $dp = $pembayaran ? (int)$pembayaran->total_bayar : 0;
+        $total_tagihan = ($pembayaran && (int)$pembayaran->total_tagihan > 0) ? (int)$pembayaran->total_tagihan : $total_items;
+        $sisa_tagihan = $total_tagihan - $dp;
+        if ($sisa_tagihan < 0) $sisa_tagihan = 0;
+        
+        // Fetch completion date
+        $produksi = $this->db->select('MAX(tgl_selesai) as tgl_selesai')
+            ->from('tbl_produksi')
+            ->where('nospk', $nospk)
+            ->get()->row();
+        $selesai_at = ($produksi && !empty($produksi->tgl_selesai)) ? date('d/m/Y H:i', strtotime($produksi->tgl_selesai)) : '-';
+
+        // Count total transactions for this customer up to this order
+        $trx_count_query = $this->db->select('count(*) as total')
+            ->from('tbl_pemesanan')
+            ->where('konsumen_id', $header->konsumen_id)
+            ->where('created_at <=', $header->created_at)
+            ->get()->row();
+        $trx_count = $trx_count_query ? $trx_count_query->total : 1;
+
+        $perusahaan = null;
+        if (!empty($header->perusahaan_id)) {
+            $perusahaan = $this->db->get_where('tbl_perusahaan', ['id_perusahaan' => $header->perusahaan_id])->row_array();
+        }
+        if (!$perusahaan) {
+            $session_perusahaan_id = $this->session->userdata('perusahaan_id');
+            if ($session_perusahaan_id) {
+                $perusahaan = $this->db->get_where('tbl_perusahaan', ['id_perusahaan' => $session_perusahaan_id])->row_array();
+            }
+        }
+        if (!$perusahaan) {
+            $perusahaan = $this->db->get_where('tbl_perusahaan', ['status' => '1'])->row_array() 
+                ?? $this->db->get_where('tbl_perusahaan', ['status' => 'aktif'])->row_array() 
+                ?? $this->db->get('tbl_perusahaan')->row_array();
         }
 
         echo json_encode([
@@ -1856,13 +2207,23 @@ class Transaksi extends MY_Controller
                 'nospk_encrypted' => encrypt_url($header->nospk),
                 'nospk_encrypted_safe' => urlencode(encrypt_spk($header->nospk)),
                 'tanggal' => date('d/m/Y', strtotime($header->created_at)),
+                'terima_at' => date('d/m/Y H:i', strtotime($header->created_at)),
+                'selesai_at' => $selesai_at,
                 'konsumen' => $header->konsumen_nama,
+                'konsumen_trx_count' => $trx_count,
                 'nohp' => $header->konsumen_nohp,
                 'metode' => $header->nama_jenis_transaksi,
                 'marketplace' => $header->marketplace_nama,
                 'resi' => $header->resi_marketplace,
                 'items' => $items,
-                'is_paid' => $header->status_pembayaran === 'paid'
+                'is_paid' => $header->status_pembayaran === 'paid',
+                'status_pembayaran_text' => $header->status_pembayaran === 'paid' ? 'Lunas' : 'Belum lunas',
+                'dp' => $dp,
+                'total_tagihan' => $total_tagihan,
+                'sisa_tagihan' => $sisa_tagihan,
+                'perusahaan_nama' => $perusahaan['nama_perusahaan'] ?? 'TGM MERCH',
+                'perusahaan_alamat' => $perusahaan['alamat'] ?? 'Jl. Serma Marzuki No.50D - Bekasi Selatan',
+                'perusahaan_telp' => $perusahaan['no_telp'] ?? '081288192057'
             ]
         ]);
     }
@@ -1896,6 +2257,7 @@ class Transaksi extends MY_Controller
         $pending_payment = $this->db->order_by('pembayaran_id', 'desc')
             ->get_where('tbl_pembayaran', ['nospk' => $nospk])->row();
         $data['manual_total_tagihan'] = $pending_payment ? $pending_payment->total_tagihan : null;
+        $data['pending_payment'] = $pending_payment;
 
         if ($this->input->post('dateline_tgl', true)) {
             $id = $this->input->post('id', true);
@@ -1950,6 +2312,7 @@ class Transaksi extends MY_Controller
                 $total_bayar += rupiahToInt($post['bayar_debit'] ?? 0);
                 $total_bayar += rupiahToInt($post['bayar_ewallet'] ?? 0);
                 $total_bayar += rupiahToInt($post['bayar_dp'] ?? 0);
+                $total_bayar += rupiahToInt($post['bayar_qris'] ?? 0);
 
                 $sisa = rupiahToInt($post['grandtotal']) - $total_bayar;
                 $status_lunas = ($sisa <= 0) ? 'LUNAS' : 'BELUM LUNAS (Piutang)';
@@ -1987,8 +2350,12 @@ class Transaksi extends MY_Controller
     }
 
 
-    public function cetak_invoice($nospk)
+    public function cetak_invoice($nospk = NULL)
     {
+        if (empty($nospk)) {
+            $this->session->set_flashdata('error', 'Nomor SPK tidak valid.');
+            redirect('administrative/transaksi');
+        }
         $this->load->model('M_pembayaran');
         $this->load->model('M_transaksi');
         $level = $this->session->userdata('level');
@@ -2389,8 +2756,12 @@ class Transaksi extends MY_Controller
         exit;
     }
 
-    function cetak_invoice_ulang($nospk)
+    function cetak_invoice_ulang($nospk = NULL)
     {
+        if (empty($nospk)) {
+            $this->session->set_flashdata('error', 'Nomor SPK tidak valid.');
+            redirect('administrative/transaksi');
+        }
         $this->load->model('M_pembayaran');
         $this->load->model('M_transaksi');
         $level = $this->session->userdata('level');

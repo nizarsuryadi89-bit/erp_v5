@@ -59,6 +59,32 @@
             loadData();
         });
 
+        $('#btnExportExcel').on('click', function () {
+            const params = new URLSearchParams({
+                search: $('#search').val() || '',
+                gender: $('#gender_filter').val() || '',
+                status: $('#status_filter').val() || '',
+                jabatan: $('#jabatan_filter').val() || '',
+                divisi: $('#divisi_filter').val() || '',
+                perusahaan: $('#perusahaan_filter').val() || ''
+            }).toString();
+
+            window.open('<?= base_url("karyawan/export_karyawan_excel?") ?>' + params, '_blank');
+        });
+
+        $('#btnExportPdf').on('click', function () {
+            const params = new URLSearchParams({
+                search: $('#search').val() || '',
+                gender: $('#gender_filter').val() || '',
+                status: $('#status_filter').val() || '',
+                jabatan: $('#jabatan_filter').val() || '',
+                divisi: $('#divisi_filter').val() || '',
+                perusahaan: $('#perusahaan_filter').val() || ''
+            }).toString();
+
+            window.open('<?= base_url("karyawan/export_karyawan_pdf?") ?>' + params, '_blank');
+        });
+
         $('#payroll_jenis_gaji').on('change', function () {
             if ($(this).val() === 'Harian') {
                 $('#label_gaji_pokok').text('Nominal Gaji Harian');
@@ -265,6 +291,19 @@
                     tbody.html(html);
                 }
             });
+        });
+
+        // Photo Preview on File Input Change
+        $('#form_foto').on('change', function () {
+            const file = this.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    $('#photoPreview').attr('src', e.target.result);
+                    $('#photoPreviewWrapper').removeClass('d-none');
+                }
+                reader.readAsDataURL(file);
+            }
         });
 
         // Form Submit Actions
@@ -629,5 +668,19 @@
                 Swal.fire('Error', 'Gagal memuat data pengajuan dari server.', 'error');
             }
         });
+    }
+
+    function togglePinKaryawan() {
+        const pinInput = document.getElementById('form_pin_produksi');
+        const pinIcon = document.getElementById('icon_toggle_pin');
+        if (pinInput.type === 'password') {
+            pinInput.type = 'text';
+            pinIcon.classList.remove('fa-eye');
+            pinIcon.classList.add('fa-eye-slash');
+        } else {
+            pinInput.type = 'password';
+            pinIcon.classList.remove('fa-eye-slash');
+            pinIcon.classList.add('fa-eye');
+        }
     }
 </script>

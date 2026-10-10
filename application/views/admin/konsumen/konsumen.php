@@ -153,23 +153,69 @@
         </div>
         <div class="modal-body">
           <div class="row g-3">
-            <div class="col-md-6">
-              <label class="form-label small fw-bold">Nama Lengkap</label>
+            <div class="col-md-4">
+              <label class="form-label small fw-bold text-primary">Tipe Konsumen</label>
+              <select class="form-select border-primary" name="tipe_konsumen" id="tipe_konsumen_add" required onchange="toggleB2BFields('add')">
+                <option value="B2C">B2C (Reguler/End User)</option>
+                <option value="Reseller">Reseller</option>
+                <option value="B2B">B2B (Corporate)</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">Nama Lengkap / Kontak Utama</label>
               <input type="text" class="form-control" name="konsumen_nama" required>
             </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">Email (U/ Login Marketplace)</label>
+              <input type="email" class="form-control" name="konsumen_email">
+            </div>
+            
             <div class="col-md-6">
               <label class="form-label small fw-bold">Nomor WhatsApp / HP</label>
-              <input type="tel" class="form-control" id="wa_number" name="konsumen_nohp" placeholder="+6281..."
-                required>
+              <input type="tel" class="form-control" id="wa_number" name="konsumen_nohp" placeholder="081..." required>
               <div id="wa_error" class="text-danger small mt-1"></div>
             </div>
             <div class="col-md-6">
-              <label class="form-label small fw-bold">Email</label>
-              <input type="email" class="form-control" name="konsumen_email">
+              <label class="form-label small fw-bold">Password Login (Opsional)</label>
+              <input type="password" class="form-control" name="password" placeholder="Kosongkan jika belum ingin dibuat">
             </div>
-            <div class="col-md-6">
+
+            <!-- B2B Fields (Hidden by default) -->
+            <div class="col-12 b2b-fields-add" style="display:none;">
+              <hr class="opacity-25 my-2">
+              <h6 class="fw-bold text-primary mb-3"><i class="fas fa-building me-2"></i>Informasi Corporate (B2B)</h6>
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <label class="form-label small fw-bold">Nama Perusahaan (PT/CV)</label>
+                  <input type="text" class="form-control" name="perusahaan" id="perusahaan_add">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label small fw-bold">NPWP Perusahaan</label>
+                  <input type="text" class="form-control" name="npwp" id="npwp_add">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label small fw-bold">Nama PIC (Person in Charge)</label>
+                  <input type="text" class="form-control" name="pic_nama" id="pic_add">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label small fw-bold">Kredit Limit (Rp)</label>
+                  <input type="text" class="form-control text-end" name="kredit_limit" id="limit_add" value="0">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label small fw-bold">Term (TOP Hari)</label>
+                  <input type="number" class="form-control text-end" name="top_hari" id="top_add" value="0">
+                </div>
+              </div>
+              <hr class="opacity-25 my-2">
+            </div>
+
+            <div class="col-12">
               <label class="form-label small fw-bold">Alamat Lengkap</label>
-              <input type="text" class="form-control" name="konsumen_alamat" required>
+              <textarea class="form-control" name="konsumen_alamat" rows="2" required></textarea>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">Kode Pos</label>
+              <input type="text" class="form-control" name="kode_pos">
             </div>
           </div>
         </div>
@@ -194,28 +240,74 @@
         <div class="modal-body">
           <input type="hidden" name="konsumen_id" id="edit_id" required>
           <div class="row g-3">
-            <div class="col-md-6">
+            <div class="col-md-4">
+              <label class="form-label small fw-bold text-warning">Tipe Konsumen</label>
+              <select class="form-select border-warning" name="tipe_konsumen" id="edit_tipe_konsumen" required onchange="toggleB2BFields('edit')">
+                <option value="B2C">B2C (Reguler/End User)</option>
+                <option value="Reseller">Reseller</option>
+                <option value="B2B">B2B (Corporate)</option>
+              </select>
+            </div>
+            <div class="col-md-4">
               <label class="form-label small fw-bold">Nama Lengkap</label>
               <input type="text" name="konsumen_nama" id="edit_nama" class="form-control" required>
             </div>
-            <div class="col-md-6">
+            <div class="col-md-4">
               <label class="form-label small fw-bold">Nomor HP</label>
               <input type="tel" name="konsumen_nohp" id="edit_nohp" class="form-control" required>
             </div>
             <div class="col-md-6">
               <label class="form-label small fw-bold">Email</label>
-              <input type="email" name="konsumen_email" id="edit_email" class="form-control" required>
+              <input type="email" name="konsumen_email" id="edit_email" class="form-control">
             </div>
             <div class="col-md-6">
-              <label class="form-label small fw-bold">Status</label>
-              <select name="status" id="edit_status" class="form-select" required>
-                <option value="1">Aktif</option>
-                <option value="0">Tidak Aktif</option>
-              </select>
+              <label class="form-label small fw-bold">Reset Password (Opsional)</label>
+              <input type="password" name="password" class="form-control" placeholder="Ketik untuk mengubah password akun">
+            </div>
+
+            <!-- B2B Fields -->
+            <div class="col-12 b2b-fields-edit" style="display:none;">
+              <hr class="opacity-25 my-2 border-warning">
+              <h6 class="fw-bold text-warning mb-3"><i class="fas fa-building me-2"></i>Informasi Corporate (B2B)</h6>
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <label class="form-label small fw-bold">Nama Perusahaan</label>
+                  <input type="text" class="form-control" name="perusahaan" id="edit_perusahaan">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label small fw-bold">NPWP</label>
+                  <input type="text" class="form-control" name="npwp" id="edit_npwp">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label small fw-bold">Nama PIC</label>
+                  <input type="text" class="form-control" name="pic_nama" id="edit_pic_nama">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label small fw-bold">Kredit Limit</label>
+                  <input type="text" class="form-control text-end" name="kredit_limit" id="edit_kredit_limit">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label small fw-bold">Term (TOP)</label>
+                  <input type="number" class="form-control text-end" name="top_hari" id="edit_top_hari">
+                </div>
+              </div>
+              <hr class="opacity-25 my-2 border-warning">
+            </div>
+
+            <div class="col-md-9">
+              <label class="form-label small fw-bold">Alamat Lengkap</label>
+              <textarea class="form-control" name="konsumen_alamat" id="edit_alamat" rows="2" required></textarea>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small fw-bold">Kode Pos</label>
+              <input type="text" class="form-control" name="kode_pos" id="edit_kode_pos">
             </div>
             <div class="col-12">
-              <label class="form-label small fw-bold">Alamat</label>
-              <input type="text" name="konsumen_alamat" id="edit_alamat" class="form-control" required>
+              <label class="form-label small fw-bold">Status Akun</label>
+              <select name="status" id="edit_status" class="form-select" required>
+                <option value="1">Aktif (Dapat Login & Order)</option>
+                <option value="0">Tidak Aktif (Di-Suspend)</option>
+              </select>
             </div>
           </div>
         </div>
@@ -333,11 +425,18 @@
                             <div class="btn-group">
                                 <button class="btn btn-sm btn-outline-warning btn-edit-konsumen"
                                     data-id="${row.konsumen_id}"
-                                    data-nama="${row.konsumen_nama}"
-                                    data-alamat="${row.konsumen_alamat}"
-                                    data-nohp="${row.konsumen_nohp}"
-                                    data-email="${row.konsumen_email}"
-                                    data-status="${row.status}"
+                                    data-nama="${row.konsumen_nama || ''}"
+                                    data-alamat="${row.konsumen_alamat || ''}"
+                                    data-nohp="${row.konsumen_nohp || ''}"
+                                    data-email="${row.konsumen_email || ''}"
+                                    data-status="${row.status || ''}"
+                                    data-tipe="${row.tipe_konsumen || 'B2C'}"
+                                    data-perusahaan="${row.perusahaan || ''}"
+                                    data-npwp="${row.npwp || ''}"
+                                    data-pic="${row.pic_nama || ''}"
+                                    data-kredit="${row.kredit_limit || '0'}"
+                                    data-top="${row.top_hari || '0'}"
+                                    data-kodepos="${row.kode_pos || ''}"
                                     data-bs-toggle="modal"
                                     data-bs-target="#modalEditKonsumen">
                                     <i class="fas fa-pencil-alt"></i>
@@ -372,6 +471,18 @@
       $('#edit_nohp').val($(this).data('nohp'));
       $('#edit_email').val($(this).data('email'));
       $('#edit_status').val($(this).data('status'));
+      $('#edit_kode_pos').val($(this).data('kodepos'));
+      
+      const tipe = $(this).data('tipe');
+      $('#edit_tipe_konsumen').val(tipe);
+      
+      $('#edit_perusahaan').val($(this).data('perusahaan'));
+      $('#edit_npwp').val($(this).data('npwp'));
+      $('#edit_pic_nama').val($(this).data('pic'));
+      $('#edit_kredit_limit').val($(this).data('kredit'));
+      $('#edit_top_hari').val($(this).data('top'));
+
+      toggleB2BFields('edit');
     });
 
     $('#searchInput').on('keyup', function () {
@@ -451,5 +562,16 @@
     // Print window logic...
     alert('Silakan gunakan fitur Print browser (Ctrl+P) untuk hasil terbaik.');
     // Or implement window.open logic here similar to previous
+  }
+
+  function toggleB2BFields(mode) {
+    const tipe = document.getElementById(mode === 'add' ? 'tipe_konsumen_add' : 'edit_tipe_konsumen').value;
+    const b2bFields = document.querySelectorAll('.b2b-fields-' + mode);
+    
+    if (tipe === 'B2B') {
+      b2bFields.forEach(el => el.style.display = 'block');
+    } else {
+      b2bFields.forEach(el => el.style.display = 'none');
+    }
   }
 </script>

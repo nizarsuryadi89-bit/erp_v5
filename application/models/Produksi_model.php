@@ -18,6 +18,7 @@ class Produksi_model extends CI_Model
 
         $this->db->join('tbl_pemesanan pm', 'p.nospk = pm.nospk', 'inner');
         $this->db->where('pm.status_pembayaran', 'paid');
+        $this->db->where_in('p.status_produksi', ['approve', 'proses']);
 
         // Filter by operator_id if provided (for operator users)
         // Join with detail_produksi because operator_id is there
@@ -28,6 +29,20 @@ class Produksi_model extends CI_Model
 
         $this->db->order_by('p.produksi_id', 'DESC');
         $this->db->group_by('p.produksi_id'); // Group by produksi_id instead of nospk to avoid missing items
+        return $this->db->get()->result();
+    }
+
+    // Ambil data produksi yang sedang di Packing Barang (on_pb)
+    public function get_pb_list()
+    {
+        $this->db->select('p.*, k.konsumen_nama, pr.product_nama, s.satuan_nama');
+        $this->db->from('tbl_produksi p');
+        $this->db->join('tbl_konsumen k', 'p.konsumen_id = k.konsumen_id', 'left');
+        $this->db->join('tbl_product pr', 'p.product_id = pr.product_id', 'left');
+        $this->db->join('tbl_satuan s', 'pr.satuan_id = s.satuan_id', 'left');
+        $this->db->where('p.status_produksi', 'on_pb');
+        
+        $this->db->order_by('p.produksi_id', 'DESC');
         return $this->db->get()->result();
     }
 
@@ -195,7 +210,7 @@ class Produksi_model extends CI_Model
     // Data produksi yang sudah diserahkan ke konsumen (status_produksi = '4')
     public function get_produksi_handover()
     {
-        $this->db->select('p.*, k.konsumen_nama, pr.product_nama, s.satuan_nama');
+        $this->db->select('p.*, k.konsumen_nama, pr.product_nama, s.satuan_nama, dp.waktu_selesai');
         $this->db->from('tbl_produksi p');
         $this->db->join('detail_produksi dp', 'p.produksi_id = dp.produksi_id', 'inner');
         $this->db->join('tbl_konsumen k', 'p.konsumen_id = k.konsumen_id', 'left');
@@ -206,6 +221,7 @@ class Produksi_model extends CI_Model
 
         $this->db->group_by('p.produksi_id');
         $this->db->order_by('dp.waktu_selesai', 'DESC');
+        $this->db->limit(100); // Limit to last 100 items to keep page light
         return $this->db->get()->result();
     }
 
@@ -342,6 +358,148 @@ class Produksi_model extends CI_Model
             $grouped[$row->nospk][] = $row;
         }
         return $grouped;
+    }
+
+    const STATUS_ON_PB = 'on_pb';
+
+    public function set_status_pb($produksi_id, $perusahaan_id, $level, $user_id, $batch = false)
+    {
+        $this->db->trans_start();
+
+        // 1. Cek hak akses dan ambil data (Record Rule)
+        $this->db->where('produksi_id', $produksi_id);
+        if (!in_array((int) $level, [1, 17], true)) {
+            $this->db->group_start();
+            $this->db->where('lokasi_cetak', $perusahaan_id);
+            $this->db->or_group_start();
+            $this->db->where("(lokasi_cetak IS NULL OR lokasi_cetak = '' OR lokasi_cetak = '0')", NULL, FALSE);
+            $this->db->where('perusahaan_id', $perusahaan_id);
+            $this->db->group_end();
+            $this->db->group_end();
+        }
+        $curr = $this->db->get('tbl_produksi')->row();
+
+        if (!$curr) {
+            return ['success' => false, 'message' => 'Akses ditolak atau data tidak ditemukan'];
+        }
+
+        // 2. Update tabel produksi (Hanya field yang relevan)
+        $this->db->where('produksi_id', $produksi_id);
+        $this->db->update('tbl_produksi', [
+            'status_produksi' => self::STATUS_ON_PB,
+            'tgl_kirim_pb'    => date('Y-m-d H:i:s'),
+            'update_time'     => date('Y-m-d H:i:s')
+        ]);
+
+        // 3. Update tabel detail produksi
+        $this->db->where('produksi_id', $produksi_id);
+        $this->db->update('detail_produksi', [
+            'status_produksi' => self::STATUS_ON_PB,
+            'update_time'     => date('Y-m-d H:i:s')
+        ]);
+
+        // 4. Masukkan Riwayat ke Tabel Log
+        $catatan_log = $batch ? '[PB] Batch Handover ke PB' : '[PB] Dikirim ke Hub Pengambilan Barang';
+        $this->db->insert('tbl_produksi_log', [
+            'produksi_id'   => $produksi_id,
+            'user_id'       => $user_id,
+            'status_asal'   => $curr->status_produksi ?? '',
+            'status_tujuan' => self::STATUS_ON_PB,
+            'catatan'       => $catatan_log
+        ]);
+
+        $this->db->trans_complete();
+
+        if ($this->db->trans_status() === FALSE) {
+            return ['success' => false, 'message' => 'Gagal memindahkan status'];
+        }
+
+        return ['success' => true, 'message' => 'Berhasil dipindahkan ke PB Hub'];
+    }
+
+    /**
+     * Misi 1: Centralized State Machine for ERP
+     * Fungsi ini menggantikan semua hardcode update('tbl_produksi', ['status_produksi' => ...])
+     */
+    public function change_status($produksi_id, $new_status, $user_id, $catatan_khusus = '')
+    {
+        $this->db->trans_start();
+        $curr = $this->db->get_where('tbl_produksi', ['produksi_id' => $produksi_id])->row();
+        
+        if (!$curr) {
+            $this->db->trans_complete();
+            return false;
+        }
+
+        // Abaikan jika status sama dan tidak ada catatan khusus
+        if ($curr->status_produksi === $new_status && empty($catatan_khusus)) {
+            $this->db->trans_complete();
+            return true;
+        }
+
+        $timestamp = date('Y-m-d H:i:s');
+        $update_data = [
+            'status_produksi' => $new_status,
+            'update_time' => $timestamp
+        ];
+
+        // Trigger tgl berdasarkan state
+        if ($new_status === 'proses' && empty($curr->tgl_mulai)) {
+            $update_data['tgl_mulai'] = $timestamp;
+        }
+        if ($new_status === 'done' && empty($curr->tgl_selesai)) {
+            $update_data['tgl_selesai'] = $timestamp;
+        }
+        if ($new_status === 'on_pb') {
+            $update_data['tgl_kirim_pb'] = $timestamp;
+        }
+
+        $this->db->where('produksi_id', $produksi_id);
+        $this->db->update('tbl_produksi', $update_data);
+
+        // Update detail produksi agar tersinkronisasi statusnya
+        if (in_array($new_status, ['on_pb', 'done'])) {
+            $this->db->where('produksi_id', $produksi_id);
+            $this->db->update('detail_produksi', [
+                'status_produksi' => $new_status,
+                'update_time' => $timestamp
+            ]);
+        }
+
+        // Generate Catatan
+        $log_note = $catatan_khusus;
+        if (empty($log_note)) {
+            if ($new_status === 'proses') $log_note = 'Produksi dimulai';
+            elseif ($new_status === 'done') $log_note = 'Produksi selesai';
+            elseif ($new_status === 'on_pb') $log_note = '[PB] Dikirim ke Hub Pengambilan Barang';
+            else $log_note = 'Status diubah ke ' . strtoupper($new_status);
+        }
+
+        // Simpan ke history log
+        $this->db->insert('tbl_produksi_log', [
+            'produksi_id'   => $produksi_id,
+            'user_id'       => $user_id,
+            'status_asal'   => $curr->status_produksi ?? '',
+            'status_tujuan' => $new_status,
+            'catatan'       => $log_note
+        ]);
+
+        $this->db->trans_complete();
+        return $this->db->trans_status();
+    }
+
+    /**
+     * Misi 2: Fetch history for UI Chatter
+     */
+    public function get_produksi_log($produksi_id)
+    {
+        $this->db->select('l.*, u.username, k.nama_lengkap, k.foto');
+        $this->db->from('tbl_produksi_log l');
+        $this->db->join('users u', 'l.user_id = u.user_id', 'left');
+        $this->db->join('tbl_karyawan k', 'u.karyawan_id = k.karyawan_id', 'left');
+        $this->db->where('l.produksi_id', $produksi_id);
+        $this->db->order_by('l.created_at', 'DESC');
+        return $this->db->get()->result();
     }
 
 }

@@ -1,22 +1,15 @@
 <?php
-$mysqli = new mysqli("localhost", "root", "", "tgm_erp");
-if ($mysqli->connect_errno) {
-    echo "Failed to connect to MySQL: " . $mysqli->connect_error;
-    exit();
-}
-$result = $mysqli->query("SHOW COLUMNS FROM tbl_produksi");
-$has_ripping = false;
-while ($row = $result->fetch_assoc()) {
-    echo $row['Field'] . "\n";
-    if ($row['Field'] === 'ripping_group') $has_ripping = true;
-}
+define('ENVIRONMENT', 'development');
+$system_path = 'system';
+$application_folder = 'application';
+$view_folder = '';
 
-if (!$has_ripping) {
-    echo "Adding ripping_group column...\n";
-    $mysqli->query("ALTER TABLE tbl_produksi ADD COLUMN ripping_group VARCHAR(50) NULL AFTER status_produksi");
-    echo "Done adding ripping_group.\n";
+if (($_temp = realpath($system_path)) !== FALSE) {
+	$system_path = $_temp . '/';
 } else {
-    echo "ripping_group already exists.\n";
+	$system_path = rtrim($system_path, '/') . '/';
 }
-$mysqli->close();
-?>
+define('BASEPATH', str_replace('\\', '/', $system_path));
+define('APPPATH', $application_folder . '/');
+define('VIEWPATH', $application_folder . '/views/');
+require_once BASEPATH . 'core/CodeIgniter.php';

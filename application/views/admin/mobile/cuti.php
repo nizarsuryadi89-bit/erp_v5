@@ -105,7 +105,7 @@
                     <option value="cuti duka" <?= ($duka_sisa <= 0) ? 'disabled' : '' ?>>Duka Cita (Sisa: <?= $duka_sisa ?> Hari)</option>
                     <option value="cuti keluarga sakit" <?= ($sakitkel_sisa <= 0) ? 'disabled' : '' ?>>Keluarga Sakit (Sisa: <?= $sakitkel_sisa ?> Hari)</option>
                     <option value="cuti melahirkan suami" <?= ($melahirkansuami_sisa <= 0) ? 'disabled' : '' ?>>Cuti Melahirkan Bagi Suami (Sisa: <?= $melahirkansuami_sisa ?> Hari)</option>
-
+                    <option value="cuti melahirkan" <?= ($melahirkan_sisa <= 0) ? 'disabled' : '' ?>>Cuti Melahirkan (Sisa: <?= $melahirkan_sisa ?> Hari)</option>
                 </select>
             </div>
 
@@ -199,9 +199,25 @@
     </div>
 </div>
 
-
-
 <script>
+    <?php if ($this->session->flashdata('success')): ?>
+        Swal.fire({
+            icon: 'success',
+            title: 'Berhasil',
+            text: '<?= $this->session->flashdata('success') ?>',
+            borderRadius: '20px'
+        });
+    <?php endif; ?>
+
+    <?php if ($this->session->flashdata('error')): ?>
+        Swal.fire({
+            icon: 'error',
+            title: 'Opps...',
+            text: '<?= $this->session->flashdata('error') ?>',
+            borderRadius: '20px'
+        });
+    <?php endif; ?>
+
     document.getElementById('cutiForm').addEventListener('submit', function (e) {
         e.preventDefault();
 
@@ -307,6 +323,13 @@
             disetujui: <?= isset($usage_special_approved['cuti melahirkan suami']) ? $usage_special_approved['cuti melahirkan suami'] : 0 ?>,
             pending: <?= isset($usage_special_pending['cuti melahirkan suami']) ? $usage_special_pending['cuti melahirkan suami'] : 0 ?>,
             sisa: <?= isset($melahirkansuami_sisa) ? $melahirkansuami_sisa : 0 ?>
+        },
+        'cuti melahirkan': {
+            title: 'Cuti Melahirkan',
+            awal: <?= isset($limits['cuti melahirkan']) ? $limits['cuti melahirkan'] : 90 ?>,
+            disetujui: <?= isset($usage_special_approved['cuti melahirkan']) ? $usage_special_approved['cuti melahirkan'] : 0 ?>,
+            pending: <?= isset($usage_special_pending['cuti melahirkan']) ? $usage_special_pending['cuti melahirkan'] : 0 ?>,
+            sisa: <?= isset($melahirkan_sisa) ? $melahirkan_sisa : 0 ?>
         }
     };
 

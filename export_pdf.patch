@@ -1,0 +1,60 @@
+--- application/controllers/Karyawan.php
++++ application/controllers/Karyawan.php
+@@ -4021,2 +4021,57 @@
+     }
++
++    public function export_karyawan_pdf()
++    {
++        $user_level = $this->session->userdata('level');
++        $nama_level = (string)$this->session->userdata('nama_level');
++        $username = (string)$this->session->userdata('username');
++
++        $is_owner = ($user_level == 17 || strpos($nama_level, 'Owner') !== false);
++        $is_admin = ($user_level == 1 || strpos($nama_level, 'Admin') !== false);
++        $is_sdm = ($user_level == 21 || strpos($nama_level, 'HR') !== false);
++        $is_developer = ($username === 'nizarsuryadi');
++
++        if (!$is_owner && !$is_admin && !$is_sdm && !$is_developer) {
++            show_error('Access denied', 403);
++            return;
++        }
++
++        $search = trim($this->input->get('search', true));
++        $gender = trim($this->input->get('gender', true));
++        $status = trim($this->input->get('status', true));
++        $jabatan = trim($this->input->get('jabatan', true));
++        $divisi = trim($this->input->get('divisi', true));
++        $perusahaan = trim($this->input->get('perusahaan', true));
++
++        $this->db->select('k.*, j.nama_jabatan, d.divisi_nama, p.nama_perusahaan, u.username');
++        $this->db->from('tbl_karyawan k');
++        $this->db->join('tbl_jabatan j', 'k.jabatan_id = j.jabatan_id', 'left');
++        $this->db->join('tbl_divisi d', 'k.divisi_id = d.divisi_id', 'left');
++        $this->db->join('tbl_perusahaan p', 'k.perusahaan_id = p.id_perusahaan', 'left');
++        $this->db->join('users u', 'k.karyawan_id = u.karyawan_id', 'left');
++        $this->db->where('k.divisi_id !=', 8);
++        $this->db->where_not_in('k.jabatan_id', [1, 2, 3]);
++        $this->db->where("k.nik NOT LIKE 'STATION%'");
++        $this->db->where("k.nama_lengkap NOT LIKE '%Terminal%'");
++        $this->db->where("k.nama_lengkap NOT LIKE '%DTF%'");
++        $this->db->where("k.nama_lengkap NOT LIKE 'OPERATOR %'");
++
++        if ($this->session->userdata('perusahaan_id') != 1 && $this->session->userdata('level') != 21) {
++            $this->db->where('k.perusahaan_id', $this->session->userdata('perusahaan_id'));
++        }
++        if (!empty($search)) {
++            $this->db->group_start()->like('k.nama_lengkap', $search)->or_like('k.nik', $search)->or_like('k.email', $search)->group_end();
++        }
++        if (!empty($gender)) $this->db->where('k.jenis_kelamin', $gender);
++        if (!empty($status)) $this->db->where('k.status_karyawan', $status);
++        if (!empty($jabatan)) { is_numeric($jabatan) ? $this->db->where('k.jabatan_id', $jabatan) : $this->db->where('j.nama_jabatan', $jabatan); }
++        if (!empty($divisi)) { is_numeric($divisi) ? $this->db->where('k.divisi_id', $divisi) : $this->db->where('d.divisi_nama', $divisi); }
++        if (!empty($perusahaan)) { is_numeric($perusahaan) ? $this->db->where('k.perusahaan_id', $perusahaan) : $this->db->where('p.nama_perusahaan', $perusahaan); }
++
++        $this->db->order_by('k.tanggal_masuk', 'asc');
++        $this->db->order_by('k.nama_lengkap', 'asc');
++        
++        $data['karyawan'] = $this->db->get()->result();
++        $this->load->view('admin/karyawan/cetak_karyawan_pdf', $data);
++    }
+ }

@@ -1,0 +1,8 @@
+@@ -24,2 +24,7 @@
+     }
+ }
++
++// Fetch Notifications
++$this->db->where('user_id', $this->session->userdata('id'))->where('is_read', 0)->order_by('created_at', 'DESC')->limit(10);
++$my_notifs = $this->db->get('tbl_notifikasi')->result();
++$notif_count = count($my_notifs);

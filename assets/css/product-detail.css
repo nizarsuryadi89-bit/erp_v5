@@ -222,7 +222,7 @@
 .text-hpp-dark {
     color: #166534 !important;
 }
-/* Fix Select2 z-index inside Bootstrap Modals */
-.select2-container--open, .select2-dropdown, .select2-container {
+/* Fix Select2 dropdown z-index */
+.select2-container--open, .select2-dropdown {
     z-index: 99999 !important;
 }

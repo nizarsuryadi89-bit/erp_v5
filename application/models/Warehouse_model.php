@@ -140,8 +140,8 @@ class Warehouse_model extends CI_Model
         if ($warehouse_id == 1) {
             // For Main Warehouse: 
             // In = Purchasing, Out = Dispatching to Production
-            $this->db->select('(SELECT IFNULL(SUM(qty_in), 0) FROM tbl_stok_log WHERE material_id = m.material_id AND trx_type = "Pembelian" AND gudang_id = 1 AND rak_id <=> sg.rak_id AND DATE(created_at) >= "' . $start_date . '") as total_in_month');
-            $this->db->select('(SELECT IFNULL(SUM(qty_out), 0) FROM tbl_stok_log WHERE material_id = m.material_id AND trx_type = "Mutation" AND gudang_id = 1 AND rak_id <=> sg.rak_id AND DATE(created_at) >= "' . $start_date . '") as total_out_month');
+            $this->db->select('(SELECT IFNULL(SUM(qty_in), 0) FROM tbl_stok_log WHERE material_id = m.material_id AND trx_type = "Pembelian" AND gudang_id = 1 AND DATE(created_at) >= "' . $start_date . '") as total_in_month');
+            $this->db->select('(SELECT IFNULL(SUM(qty_out), 0) FROM tbl_stok_log WHERE material_id = m.material_id AND trx_type = "Mutation" AND gudang_id = 1 AND DATE(created_at) >= "' . $start_date . '") as total_out_month');
             $this->db->select('(SELECT IFNULL(SUM(qty_out), 0) FROM tbl_stok_log WHERE material_id = m.material_id AND trx_type = "Mutation" AND gudang_id = 1) as total_out_alltime');
 
             $this->db->select('"Pembelian" as in_label');
@@ -149,17 +149,17 @@ class Warehouse_model extends CI_Model
         } else {
             // For Production Warehouse: 
             // In = Received from Dispatch, Out = Consumed in Production
-            $this->db->select('(SELECT IFNULL(SUM(qty_in), 0) FROM tbl_stok_log WHERE material_id = m.material_id AND trx_type = "Mutation" AND gudang_id = ' . (int)$warehouse_id . ' AND rak_id <=> sg.rak_id AND DATE(created_at) >= "' . $start_date . '") as total_in_month');
-            $this->db->select('(SELECT IFNULL(SUM(qty_out), 0) FROM tbl_stok_log WHERE material_id = m.material_id AND trx_type = "Produksi" AND gudang_id = ' . (int)$warehouse_id . ' AND rak_id <=> sg.rak_id AND DATE(created_at) >= "' . $start_date . '") as total_out_month');
-            $this->db->select('(SELECT IFNULL(SUM(qty_out), 0) FROM tbl_stok_log WHERE material_id = m.material_id AND trx_type = "Produksi" AND gudang_id = ' . (int)$warehouse_id . ') as total_out_alltime');
+            $this->db->select('(SELECT IFNULL(SUM(qty_in), 0) FROM tbl_stok_log WHERE material_id = m.material_id AND trx_type = "Mutation" AND gudang_id = ' . (int)$warehouse_id . ' AND DATE(created_at) >= "' . $start_date . '") as total_in_month');
+            $this->db->select('(SELECT (IFNULL(SUM(CASE WHEN trx_type="Produksi" THEN qty_out ELSE 0 END), 0) - IFNULL(SUM(CASE WHEN trx_type="Return" THEN qty_in ELSE 0 END), 0)) FROM tbl_stok_log WHERE material_id = m.material_id AND trx_type IN ("Produksi", "Return") AND gudang_id = ' . (int)$warehouse_id . ' AND DATE(created_at) >= "' . $start_date . '") as total_out_month');
+            $this->db->select('(SELECT (IFNULL(SUM(CASE WHEN trx_type="Produksi" THEN qty_out ELSE 0 END), 0) - IFNULL(SUM(CASE WHEN trx_type="Return" THEN qty_in ELSE 0 END), 0)) FROM tbl_stok_log WHERE material_id = m.material_id AND trx_type IN ("Produksi", "Return") AND gudang_id = ' . (int)$warehouse_id . ') as total_out_alltime');
 
             $this->db->select('"Dispatch" as in_label');
             $this->db->select('"Produksi" as out_label');
         }
 
         // Add total aggregation regardless of transaction type to calculate precise beginning balance
-        $this->db->select('(SELECT IFNULL(SUM(qty_in), 0) FROM tbl_stok_log WHERE material_id = m.material_id AND gudang_id = ' . (int)$warehouse_id . ' AND rak_id <=> sg.rak_id AND DATE(created_at) >= "' . $start_date . '") as total_in_all_month');
-        $this->db->select('(SELECT IFNULL(SUM(qty_out), 0) FROM tbl_stok_log WHERE material_id = m.material_id AND gudang_id = ' . (int)$warehouse_id . ' AND rak_id <=> sg.rak_id AND DATE(created_at) >= "' . $start_date . '") as total_out_all_month');
+        $this->db->select('(SELECT IFNULL(SUM(qty_in), 0) FROM tbl_stok_log WHERE material_id = m.material_id AND gudang_id = ' . (int)$warehouse_id . ' AND DATE(created_at) >= "' . $start_date . '") as total_in_all_month');
+        $this->db->select('(SELECT IFNULL(SUM(qty_out), 0) FROM tbl_stok_log WHERE material_id = m.material_id AND gudang_id = ' . (int)$warehouse_id . ' AND DATE(created_at) >= "' . $start_date . '") as total_out_all_month');
 
         $this->db->from('tbl_material m');
         $this->db->join('tbl_bahan b', 'm.bahan_id = b.bahan_id');
@@ -254,6 +254,10 @@ class Warehouse_model extends CI_Model
 
         if (!empty($filters['gudang_id'])) {
             $this->db->where('sl.gudang_id', $filters['gudang_id']);
+        }
+
+        if (!empty($filters['date'])) {
+            $this->db->where('DATE(sl.created_at)', $filters['date']);
         }
 
         if (!empty($filters['limit'])) {
@@ -354,15 +358,16 @@ class Warehouse_model extends CI_Model
     /**
      * Get low stock materials
      */
-    public function get_low_stock_materials($warehouse_id = null)
+    public function get_low_stock_materials($warehouse_id = 1)
     {
-        $this->db->select('sg.*, b.bahan_nama, m.varian, b.barcode, s.satuan_nama, g.gudang_nama, m.stok_min');
+        $this->db->select('sg.*, b.bahan_nama, m.varian, b.barcode, s.satuan_nama, g.gudang_nama, m.stok_min, m.konversi, (m.stok_min * IFNULL(m.konversi, 1)) as stok_min_base');
         $this->db->from('tbl_stok_gudang sg');
         $this->db->join('tbl_material m', 'sg.material_id = m.material_id');
         $this->db->join('tbl_bahan b', 'm.bahan_id = b.bahan_id');
-        $this->db->join('tbl_satuan s', 'm.satuan_gudang_id = s.satuan_id');
+        $this->db->join('tbl_satuan s', 'm.satuan_gudang_id = s.satuan_id', 'left');
         $this->db->join('tbl_gudang g', 'sg.gudang_id = g.gudang_id');
-        $this->db->where('sg.qty <= m.stok_min');
+        $this->db->where('sg.qty <= (m.stok_min * IFNULL(m.konversi, 1))');
+        $this->db->where('m.stok_min >', 0); // Sync logic with get_critical_stock()
 
         if ($warehouse_id) {
             $this->db->where('sg.gudang_id', $warehouse_id);
@@ -393,7 +398,9 @@ class Warehouse_model extends CI_Model
         $this->db->join('tbl_bahan b', 'm.bahan_id = b.bahan_id');
         $this->db->join('tbl_satuan s', 'm.satuan_gudang_id = s.satuan_id');
         $this->db->join('tbl_stok_gudang sg', 'm.material_id = sg.material_id', 'left');
+        $this->db->select('(SELECT COUNT(*) FROM tbl_stok_log sl WHERE sl.material_id = m.material_id) as popularity');
         $this->db->group_by('m.material_id, b.bahan_nama, m.varian, s.satuan_nama');
+        $this->db->order_by('popularity', 'DESC');
         $this->db->order_by('b.bahan_nama', 'ASC');
 
         $query_results = $this->db->get()->result();
@@ -453,14 +460,17 @@ class Warehouse_model extends CI_Model
     public function get_daily_stock_report($date_from, $date_to, $warehouse_id = null)
     {
         $this->db->select('DATE(sl.created_at) as tanggal,
-                          b.bahan_nama, m.varian, s.satuan_nama,
+                          b.bahan_nama, m.varian, s.satuan_nama, s_prod.satuan_nama as satuan_produksi, m.konversi,
                           sl.trx_type, 
                           SUM(sl.qty_in) as total_masuk, 
-                          SUM(sl.qty_out) as total_keluar');
+                          SUM(sl.qty_out) as total_keluar,
+                          SUM(CASE WHEN sl.qty_base > 0 THEN sl.qty_base ELSE (ABS(sl.qty_out) * COALESCE(m.konversi, 1)) END) as total_produksi_keluar
+                          ');
         $this->db->from('tbl_stok_log sl');
         $this->db->join('tbl_material m', 'sl.material_id = m.material_id');
         $this->db->join('tbl_bahan b', 'm.bahan_id = b.bahan_id');
         $this->db->join('tbl_satuan s', 'm.satuan_gudang_id = s.satuan_id', 'left');
+        $this->db->join('tbl_satuan s_prod', 'b.satuan_id = s_prod.satuan_id', 'left');
         $this->db->where('DATE(sl.created_at) >=', $date_from);
         $this->db->where('DATE(sl.created_at) <=', $date_to);
 
@@ -633,25 +643,46 @@ class Warehouse_model extends CI_Model
     }
 
     /**
-     * OWNER REPORT 2: Critical Stock (below minimum or near zero)
+     * Get total sum of inventory value
      */
+    public function get_total_inventory_value()
+    {
+        $this->db->select('SUM(sg.qty * (SELECT pd.harga_beli 
+             FROM tbl_pembelian_detail pd 
+             WHERE pd.material_id = m.material_id 
+             ORDER BY pd.pembelian_id DESC LIMIT 1)) as total_value', FALSE);
+        $this->db->from('tbl_stok_gudang sg');
+        $this->db->join('tbl_material m', 'sg.material_id = m.material_id');
+        $this->db->where('sg.qty >', 0);
+        $result = $this->db->get()->row();
+        return $result ? (float)$result->total_value : 0;
+    }
+
+    /**
+     * OWNER REPORT 2: Critical Stock (below minimum or near zero)
+     */    
     public function get_critical_stock()
     {
         $this->db->select('
-            b.bahan_nama, m.varian, s.satuan_nama,
-            g.gudang_nama,
-            sg.qty as stok_aktif,
+            b.bahan_nama, m.varian, s.satuan_nama as satuan_gudang,
+            "Gudang Utama" as gudang_nama,
+            IFNULL(SUM(sg.qty), 0) as stok_aktif_base,
             m.stok_min,
-            (m.stok_min - sg.qty) as kekurangan
+            (m.stok_min * IFNULL(m.konversi, 1)) as stok_min_base,
+            ((m.stok_min * IFNULL(m.konversi, 1)) - IFNULL(SUM(sg.qty), 0)) as kekurangan_base,
+            m.konversi,
+            sp.satuan_nama as satuan_produksi
         ');
-        $this->db->from('tbl_stok_gudang sg');
-        $this->db->join('tbl_material m', 'sg.material_id = m.material_id');
+        $this->db->from('tbl_material m');
+        $this->db->join('tbl_stok_gudang sg', 'sg.material_id = m.material_id AND sg.gudang_id = 1', 'left'); // Only Gudang Utama
         $this->db->join('tbl_bahan b', 'm.bahan_id = b.bahan_id');
         $this->db->join('tbl_satuan s', 'm.satuan_gudang_id = s.satuan_id', 'left');
-        $this->db->join('tbl_gudang g', 'sg.gudang_id = g.gudang_id', 'left');
-        $this->db->where('sg.qty <= m.stok_min');
+        $this->db->join('tbl_satuan sp', 'b.satuan_id = sp.satuan_id', 'left');
         $this->db->where('m.stok_min >', 0);
-        $this->db->order_by('kekurangan', 'DESC');
+        $this->db->group_by('m.material_id');
+        $this->db->having('stok_aktif_base <= stok_min_base');
+        $this->db->order_by('kekurangan_base', 'DESC');
+
         return $this->db->get()->result();
     }
 
@@ -854,11 +885,12 @@ class Warehouse_model extends CI_Model
      */
     public function get_request_details($pengajuan_id)
     {
-        $this->db->select('pd.*, m.varian, b.bahan_nama, s.satuan_nama');
+        $this->db->select('pd.*, m.varian, m.konversi, b.bahan_nama, s.satuan_nama, s2.satuan_nama as satuan_dasar_nama');
         $this->db->from('tbl_pengajuan_material_detail pd');
         $this->db->join('tbl_material m', 'pd.material_id = m.material_id');
         $this->db->join('tbl_bahan b', 'm.bahan_id = b.bahan_id');
         $this->db->join('tbl_satuan s', 'm.satuan_gudang_id = s.satuan_id');
+        $this->db->join('tbl_satuan s2', 'b.satuan_id = s2.satuan_id', 'left');
         $this->db->where('pd.pengajuan_id', $pengajuan_id);
         return $this->db->get()->result();
     }
@@ -973,5 +1005,180 @@ class Warehouse_model extends CI_Model
         $this->db->trans_complete();
 
         return $this->db->trans_status();
+    }
+
+    /**
+     * Get recent stock mutations for all materials
+     */
+    public function get_recent_stock_mutations($limit = 50)
+    {
+        return $this->get_stock_mutations_filtered([], $limit);
+    }
+
+    public function get_stock_mutations_filtered($filters = [], $limit = 500)
+    {
+        $this->db->select('sl.*, b.bahan_nama, m.barcode, s.satuan_nama, s2.satuan_nama as satuan_dasar_nama, g.gudang_nama, u.username as created_by_name,
+                          sl.trx_type as jenis_mutasi,
+                          m.konversi,
+                          (sl.qty_in + sl.qty_out) as qty_mutasi,
+                          DATE(sl.created_at) as tanggal_mutasi,
+                          TIME(sl.created_at) as waktu_mutasi');
+        $this->db->from('tbl_stok_log sl');
+        $this->db->join('tbl_material m', 'sl.material_id = m.material_id');
+        $this->db->join('tbl_bahan b', 'm.bahan_id = b.bahan_id');
+        $this->db->join('tbl_satuan s', 'm.satuan_gudang_id = s.satuan_id', 'left');
+        $this->db->join('tbl_satuan s2', 'b.satuan_id = s2.satuan_id', 'left');
+        $this->db->join('tbl_gudang g', 'sl.gudang_id = g.gudang_id', 'left');
+        $this->db->join('users u', 'sl.user_id = u.user_id', 'left');
+
+        if (!empty($filters['material_id'])) {
+            $this->db->where('sl.material_id', $filters['material_id']);
+        }
+        if (!empty($filters['gudang_id'])) {
+            $this->db->where('sl.gudang_id', $filters['gudang_id']);
+        }
+        if (!empty($filters['start_date'])) {
+            $this->db->where('DATE(sl.created_at) >=', $filters['start_date']);
+        }
+        if (!empty($filters['end_date'])) {
+            $this->db->where('DATE(sl.created_at) <=', $filters['end_date']);
+        }
+
+        if (!empty($filters['material_id'])) {
+            // If filtering by material, show chronologically for ledger
+            $this->db->order_by('sl.created_at', 'ASC');
+        } else {
+            $this->db->order_by('sl.created_at', 'DESC');
+        }
+
+        if ($limit && empty($filters['material_id'])) {
+            $this->db->limit($limit);
+        }
+
+        return $this->db->get()->result();
+    }
+
+    public function get_saldo_awal($filters)
+    {
+        if (empty($filters['material_id'])) return 0;
+        if (empty($filters['start_date'])) return 0;
+        
+        $this->db->select('SUM(sl.qty_in) as total_in, SUM(sl.qty_out) as total_out, MAX(m.konversi) as konversi');
+        $this->db->from('tbl_stok_log sl');
+        $this->db->join('tbl_material m', 'sl.material_id = m.material_id', 'left');
+        $this->db->where('sl.material_id', $filters['material_id']);
+        
+        if (!empty($filters['gudang_id'])) {
+            $this->db->where('sl.gudang_id', $filters['gudang_id']);
+        }
+        
+        $this->db->where('DATE(sl.created_at) <', $filters['start_date']);
+        
+        $row = $this->db->get()->row();
+        if ($row) {
+            $konversi = (float)$row->konversi > 0 ? (float)$row->konversi : 1;
+            $saldo_pack = (float)$row->total_in - (float)$row->total_out;
+            return $saldo_pack * $konversi;
+        }
+        return 0;
+    }
+
+    /**
+     * Get Total Purchases / Spending for the current month
+     */
+    public function get_monthly_spending($year = null, $month = null)
+    {
+        if (!$year) $year = date('Y');
+        if (!$month) $month = date('m');
+
+        $this->db->select('SUM(pd.qty * pd.harga_beli) as total_spending');
+        $this->db->from('tbl_pembelian p');
+        $this->db->join('tbl_pembelian_detail pd', 'p.pembelian_id = pd.pembelian_id', 'left');
+        $this->db->where('YEAR(p.pembelian_tgl)', $year);
+        $this->db->where('MONTH(p.pembelian_tgl)', $month);
+        
+        $result = $this->db->get()->row();
+        return $result ? (float)$result->total_spending : 0;
+    }
+
+    /**
+     * Get count of today's inbound (pembelian)
+     */
+    public function get_today_inbound_count() {
+        $this->db->where('DATE(pembelian_tgl)', date('Y-m-d'));
+        return $this->db->count_all_results('tbl_pembelian');
+    }
+
+    /**
+     * Get count of today's outbound (pengambilan)
+     */
+    public function get_today_outbound_count() {
+        $this->db->where('DATE(pengambilan_tgl)', date('Y-m-d'));
+        return $this->db->count_all_results('tbl_pengambilan');
+    }
+
+    /**
+     * Get Rack Utilization Statistics
+     */
+    public function get_rack_utilization()
+    {
+        $total_racks = $this->db->count_all('tbl_rak');
+        if ($total_racks == 0) {
+            return ['used' => 0, 'total' => 0, 'percentage' => 0];
+        }
+        
+        $this->db->select('rak_id');
+        $this->db->from('tbl_stok_gudang');
+        $this->db->where('qty >', 0);
+        $this->db->where('rak_id IS NOT NULL');
+        $this->db->where('rak_id !=', 0);
+        $this->db->group_by('rak_id');
+        $used_racks = $this->db->get()->num_rows();
+        
+        $percentage = ($used_racks / $total_racks) * 100;
+        
+        return [
+            'used' => $used_racks,
+            'total' => $total_racks,
+            'percentage' => round($percentage, 1)
+        ];
+    }
+
+    /**
+     * Get Dead Stock Count (No movement in last 90 days)
+     */
+    public function get_dead_stock_count($days = 90)
+    {
+        $date_threshold = date('Y-m-d', strtotime("-$days days"));
+        
+        $this->db->select('m.material_id');
+        $this->db->from('tbl_material m');
+        $this->db->join('tbl_stok_gudang sg', 'm.material_id = sg.material_id', 'inner');
+        $this->db->where('sg.qty >', 0);
+        $this->db->where("m.material_id NOT IN (SELECT material_id FROM tbl_stok_log WHERE created_at >= '$date_threshold')", NULL, FALSE);
+        $this->db->group_by('m.material_id');
+        
+        $query = $this->db->get();
+        return $query->num_rows();
+    }
+
+    /**
+     * Get material movement history for a specific material in a specific warehouse
+     */
+    public function get_material_history($material_id, $gudang_id, $limit = 50)
+    {
+        $this->db->select('l.*, u.username, m.konversi, sg.satuan_nama as satuan_gudang, sp.satuan_nama as satuan_produksi');
+        $this->db->from('tbl_stok_log l');
+        $this->db->join('users u', 'u.user_id = l.user_id', 'left');
+        $this->db->join('tbl_material m', 'm.material_id = l.material_id', 'left');
+        $this->db->join('tbl_bahan b', 'b.bahan_id = m.bahan_id', 'left');
+        $this->db->join('tbl_satuan sg', 'sg.satuan_id = m.satuan_gudang_id', 'left');
+        $this->db->join('tbl_satuan sp', 'sp.satuan_id = b.satuan_id', 'left');
+        $this->db->where('l.material_id', $material_id);
+        $this->db->where('l.gudang_id', $gudang_id);
+        $this->db->order_by('l.log_id', 'desc');
+        $this->db->limit($limit);
+        
+        return $this->db->get()->result();
     }
 }

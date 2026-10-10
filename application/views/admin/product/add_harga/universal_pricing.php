@@ -29,23 +29,39 @@
             <div class="step-text">Matriks Harga</div>
         </div>
     </div>
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <?php endif; ?>
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-3 gap-2">
+        <?php if (!isset($hide_tracker) || !$hide_tracker): ?>
         <h5 class="fw-bold m-0 text-slate-900">
             <i class="bi bi-currency-dollar me-2 text-primary-pro"></i>Matriks Skala Harga Jual
         </h5>
-        <div class="d-flex gap-2">
-    <?php else: ?>
-    <div class="d-flex justify-content-end align-items-center mb-4">
-        <div class="d-flex gap-2">
-    <?php endif; ?>
+        <?php else: ?>
+        <h6 class="fw-bold m-0 text-primary text-uppercase letter-spacing-1">
+            <i class="bi bi-table me-2"></i> Manajemen Skala Harga
+        </h6>
+        <?php endif; ?>
+        
+        <div class="d-flex flex-wrap gap-2 justify-content-md-end align-items-center">
             <?php if ($showSide): ?>
-                <button type="button" class="btn-pro btn-pro-outline btn-sm" onclick="cloneToSide2()">
-                    <i class="bi bi-layers me-1 text-info"></i> Auto-Generate 2 Sisi
+                <button type="button" class="btn btn-sm btn-info text-white rounded-pill shadow-sm px-3 fw-bold" onclick="cloneToSide2()">
+                    <i class="bi bi-layers me-1"></i> Auto 2 Sisi
                 </button>
             <?php endif; ?>
-            <button type="button" class="btn-pro btn-pro-primary btn-sm" onclick="addNewPriceRow()">
+            
+
+            
+            <button type="button" class="btn btn-sm btn-primary rounded-pill shadow-sm px-3 fw-bold" onclick="addNewPriceRow()">
                 <i class="bi bi-plus-lg me-1"></i> Tambah Range
             </button>
+            
+            <div class="btn-group shadow-sm rounded-pill">
+                <button type="button" class="btn btn-sm btn-danger px-3 fw-bold" onclick="bulkDeletePrice()" style="border-top-left-radius: 50rem; border-bottom-left-radius: 50rem;">
+                    <i class="bi bi-trash3 me-1"></i> Hapus
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-danger fw-bold" onclick="detectDuplicates()" title="Cari & Tandai Duplikat" style="border-top-right-radius: 50rem; border-bottom-right-radius: 50rem; background-color: #f8d7da;">
+                    <i class="bi bi-search"></i>
+                </button>
+            </div>
         </div>
     </div>
 
@@ -98,7 +114,7 @@
                 $labelMachine = $dim['label'];
                 $schemaMachineOptions = $dim['options'];
                 $dim['name'] = 'jenisprint_id';
-            } elseif ($name === 'side_id' || strpos($labelLower, 'sisi') !== false) {
+            } elseif ($name === 'side_id') {
                 $showThird = true;
                 $labelThird = $dim['label'];
                 $schemaThirdOptions = $dim['options'];
@@ -162,6 +178,20 @@
     }
     ?>
 
+    <style>
+        #priceMatrixTable {
+            counter-reset: rowNumber;
+        }
+        #priceMatrixTable tbody tr:not(.empty-row) {
+            counter-increment: rowNumber;
+        }
+        #priceMatrixTable tbody tr:not(.empty-row) td.row-number::before {
+            content: counter(rowNumber);
+            font-weight: 600;
+            color: #64748b;
+        }
+    </style>
+
     <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
         <?php if (empty($schema)): ?>
             <div class="alert alert-warning m-3 d-flex align-items-center" role="alert" style="border-radius: 16px; border: 1px solid #fde047; background-color: #fefce8;">
@@ -178,10 +208,14 @@
             <input type="hidden" name="segmen2" value="<?= $segment2 ?>">
 
             <div class="table-responsive">
-                <table class="table table-pro mb-0" id="priceMatrixTable">
+                <table class="table table-sm table-pro mb-0 align-middle" id="priceMatrixTable" style="font-size: 0.85rem;">
                     <thead>
                         <tr>
-                            <th width="25%">
+                            <th style="width: 40px;" class="text-center align-middle">
+                                <input class="form-check-input shadow-sm" type="checkbox" id="selectAllForBOM" checked onchange="$('.row-bom-checkbox').prop('checked', this.checked)">
+                            </th>
+                            <th style="width: 40px;" class="text-center text-muted">#</th>
+                            <th style="min-width: 180px;">
                                 <div class="d-flex align-items-center justify-content-between">
                                     <span>KETERANGAN VARIASI</span>
                                     <button type="button" class="btn btn-xs btn-outline-primary py-0 px-1"
@@ -191,19 +225,19 @@
                                 </div>
                             </th>
                             <?php if ($showSide): ?>
-                                <th width="12%"><?= $labelSide ?></th>
+                                <th style="min-width: 100px;"><?= $labelSide ?></th>
                             <?php endif; ?>
                             <?php if ($showMachine): ?>
-                                <th width="15%"><?= $labelMachine ?></th>
+                                <th style="min-width: 100px;"><?= $labelMachine ?></th>
                             <?php endif; ?>
                             <?php if ($showThird): ?>
-                                <th width="12%"><?= $labelThird ?></th>
+                                <th style="min-width: 100px;"><?= $labelThird ?></th>
                             <?php endif; ?>
                             <?php foreach ($extraDimensions as $extDim): ?>
-                                <th width="12%"><?= $extDim['label'] ?></th>
+                                <th style="min-width: 100px;"><?= $extDim['label'] ?></th>
                             <?php endforeach; ?>
-                            <th width="20%" class="text-center">RANGE QUANTITY</th>
-                            <th width="15%">
+                            <th style="min-width: 140px;" class="text-center">RENTANG JUMLAH</th>
+                            <th style="min-width: 130px;">
                                 <div class="d-flex align-items-center justify-content-between">
                                     <span>HPP (EST)</span>
                                     <button type="button" class="btn btn-xs btn-outline-primary py-0 px-1"
@@ -212,9 +246,9 @@
                                     </button>
                                 </div>
                             </th>
-                            <th width="15%">HARGA JUAL</th>
-                            <th width="15%">MIN CHARGE</th>
-                            <th width="5%" class="text-center"></th>
+                            <th style="min-width: 130px;">HARGA JUAL</th>
+                            <th style="min-width: 130px;">BIAYA MINIMAL</th>
+                            <th style="min-width: 70px;" class="text-center"></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -230,17 +264,45 @@
                                 </td>
                             </tr>
                         <?php else: ?>
+                            <?php 
+                            // Pastel colors for visual grouping
+                            $pastelColors = ['#ffffff', '#f1f5f9', '#f0fdf4', '#eff6ff', '#fefce8', '#fff1f2', '#fdf4ff', '#fff7ed'];
+                            $groupColors = [];
+                            $colorIndex = 0;
+                            ?>
                             <?php foreach ($getHarga as $hrg): ?>
-                                <tr>
+                                <?php 
+                                    // Determine the primary grouping key
+                                    $groupKey = '';
+                                    if ($showSide) {
+                                        $groupKey = $hrg->ket_1;
+                                    } elseif ($showMachine) {
+                                        $groupKey = $hrg->jenisprint_id;
+                                    } elseif (!empty($extraDimensions)) {
+                                        $meta = !empty($hrg->metadata) ? json_decode($hrg->metadata, true) : [];
+                                        $groupKey = $meta[$extraDimensions[0]['name']] ?? '';
+                                    }
+                                    
+                                    if (!isset($groupColors[$groupKey])) {
+                                        $groupColors[$groupKey] = $pastelColors[$colorIndex % count($pastelColors)];
+                                        $colorIndex++;
+                                    }
+                                    $rowBgColor = $groupColors[$groupKey];
+                                ?>
+                                <tr style="--bs-table-bg: <?= $rowBgColor ?>; --bs-table-striped-bg: <?= $rowBgColor ?>; background-color: <?= $rowBgColor ?> !important;">
+                                    <td class="text-center align-middle">
+                                        <input class="form-check-input shadow-sm row-bom-checkbox" type="checkbox" value="<?= $hrg->harga_id ?>" checked>
+                                    </td>
+                                    <td class="text-center align-middle row-number"></td>
                                     <td>
                                         <input type="hidden" name="harga_id[]" value="<?= $hrg->harga_id ?>">
-                                        <input type="text" name="detail_product[]" class="form-control border-0 bg-light small"
-                                            placeholder="Nama variasi..." value="<?= htmlspecialchars($hrg->detail_product) ?>">
+                                        <input type="text" name="detail_product[]" class="form-control form-control-sm border-0 bg-light"
+                                            placeholder="Nama variasi..." value="<?= htmlspecialchars($hrg->detail_product) ?>" style="font-size: 0.8rem;">
                                     </td>
 
                                     <?php if ($showSide): ?>
                                         <td>
-                                            <select name="ket_1[]" class="form-select border-0 bg-light small">
+                                            <select name="ket_1[]" class="form-select form-select-sm border-0 bg-light variation-select" style="font-size: 0.8rem;">
                                                 <option value="">-- <?= ucwords(strtolower($labelSide)) ?> --</option>
                                                 <?php if (!empty($schemaSideOptions)): ?>
                                                     <?php foreach ($schemaSideOptions as $val => $label): ?>
@@ -261,7 +323,7 @@
 
                                     <?php if ($showMachine): ?>
                                         <td>
-                                            <select name="jenisprint_id[]" class="form-select border-0 bg-light small">
+                                            <select name="jenisprint_id[]" class="form-select form-select-sm border-0 bg-light variation-select" style="font-size: 0.8rem;">
                                                 <option value="">-- <?= ucwords(strtolower($labelMachine)) ?> --</option>
                                                 <?php if (!empty($schemaMachineOptions)): ?>
                                                     <?php foreach ($schemaMachineOptions as $val => $label): ?>
@@ -283,7 +345,7 @@
 
                                     <?php if ($showThird): ?>
                                         <td>
-                                            <select name="side_id[]" class="form-select border-0 bg-light small">
+                                            <select name="side_id[]" class="form-select form-select-sm border-0 bg-light variation-select" style="font-size: 0.8rem;">
                                                 <option value="">-- <?= ucwords(strtolower($labelThird)) ?> --</option>
                                                 <?php foreach ($schemaThirdOptions as $val => $label): ?>
                                                     <option value="<?= $val ?>" <?= $val == $hrg->side_id ? 'selected' : '' ?>>
@@ -296,7 +358,7 @@
 
                                     <?php foreach ($extraDimensions as $extDim): ?>
                                         <td>
-                                            <select name="dim_<?= $extDim['name'] ?>[]" class="form-select border-0 bg-light small">
+                                            <select name="dim_<?= $extDim['name'] ?>[]" class="form-select form-select-sm border-0 bg-light variation-select" style="font-size: 0.8rem;">
                                                 <option value="">-- <?= ucwords(strtolower($extDim['label'])) ?> --</option>
                                                 <?php 
                                                 $meta = !empty($hrg->metadata) ? json_decode($hrg->metadata, true) : [];
@@ -334,24 +396,32 @@
 
                                     <td>
                                         <div class="input-group input-group-sm">
-                                            <span class="input-group-text border-0 bg-slate-800 text-white">Rp</span>
+                                            <span class="input-group-text border-0 bg-light text-secondary">Rp</span>
                                             <input type="text" name="harga_1[]"
-                                                class="form-control border-0 bg-slate-100 fw-bold text-primary-pro"
+                                                class="form-control border-0 bg-light fw-bold text-primary-pro"
                                                 value="<?= number_format($hrg->harga_1, 0, ',', '.') ?>">
                                         </div>
                                     </td>
 
                                     <td>
                                         <div class="input-group input-group-sm">
-                                            <span class="input-group-text border-0 bg-slate-800 text-white">Rp</span>
+                                            <span class="input-group-text border-0 bg-light text-secondary">Rp</span>
                                             <input type="text" name="harga_minimal[]"
-                                                class="form-control border-0 bg-slate-100 fw-bold text-warning"
+                                                class="form-control border-0 bg-light fw-bold text-warning"
                                                 value="<?= number_format($hrg->harga_minimal ?? 0, 0, ',', '.') ?>" placeholder="Min Harga">
                                         </div>
                                     </td>
 
-                                    <td class="text-center">
-                                        <button type="button" class="btn btn-link text-danger p-0 border-0"
+                                    <td class="text-center text-nowrap">
+                                        <button type="button" class="btn btn-link text-success p-0 border-0 me-2" title="Simpan Baris"
+                                            onclick="saveSinglePriceRow(this)">
+                                            <i class="bi bi-floppy"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-link text-primary p-0 border-0 me-2" title="Duplikat Row"
+                                            onclick="duplicatePriceRow(this)">
+                                            <i class="bi bi-copy"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-link text-danger p-0 border-0" title="Hapus"
                                             onclick="confirmDeletePrice('<?= base_url('manufaktur/del_harga/' . $hrg->harga_id . '/' . $getProduct['product_id']) ?>')">
                                             <i class="bi bi-trash3"></i>
                                         </button>
@@ -363,8 +433,8 @@
                 </table>
             </div>
 
-            <div class="bg-white p-3 border-top d-flex justify-content-end">
-                <button type="submit" class="btn-pro btn-pro-primary">
+            <div class="bg-white p-3 border-top d-flex justify-content-center">
+                <button type="submit" class="btn btn-primary rounded-pill shadow-sm px-5 py-2 fw-bold text-white">
                     <i class="bi bi-check-lg me-1"></i> Simpan Perubahan Matriks
                 </button>
             </div>
@@ -376,6 +446,133 @@
     $(document).ready(function () {
         if (typeof window.initRupiahFields === 'function') window.initRupiahFields();
     });
+
+    function duplicatePriceRow(btn) {
+        const $row = $(btn).closest('tr');
+        const productId = '<?= $getProduct['product_id'] ?>';
+        const detailProductVal = $row.find('input[name="detail_product[]"]').val();
+
+        $.ajax({
+            url: '<?= base_url('manufaktur/addHarga') ?>',
+            type: 'POST',
+            data: {
+                product_id: productId,
+                product_nama: detailProductVal || '<?= htmlspecialchars($getProduct['product_nama']) ?>',
+                segmen2: '<?= $segment2 ?>'
+            },
+            dataType: 'json',
+            success: function (response) {
+                if (response.success) {
+                    const newId = response.new_id;
+                    
+                    const $clonedRow = $row.clone();
+                    $clonedRow.find('input[name="harga_id[]"]').val(newId);
+                    $clonedRow.find('.row-bom-checkbox').val(newId);
+                    
+                    // Copy select values manually
+                    const originalSelects = $row.find('select');
+                    $clonedRow.find('select').each(function(index, item) {
+                        $(item).val(originalSelects.eq(index).val());
+                    });
+
+                    // Copy input values manually
+                    const originalInputs = $row.find('input[type="text"], input[type="number"]');
+                    $clonedRow.find('input[type="text"], input[type="number"]').each(function(index, item) {
+                        $(item).val(originalInputs.eq(index).val());
+                    });
+
+                    // Auto-increment Quantity Range
+                    let oldMin = parseInt($row.find('input[name="qty_min[]"]').val()) || 1;
+                    let oldMax = parseInt($row.find('input[name="qty_max[]"]').val()) || 1;
+                    
+                    if (oldMax >= oldMin) {
+                        let diff = oldMax - oldMin;
+                        let newMin = oldMax + 1;
+                        let newMax = newMin + diff;
+
+                        $clonedRow.find('input[name="qty_min[]"]').val(newMin);
+                        $clonedRow.find('input[name="qty_max[]"]').val(newMax);
+                    }
+
+                    // Update delete button URL
+                    $clonedRow.find('.btn-danger').attr('onclick', `confirmDeletePrice('<?= base_url('manufaktur/del_harga/') ?>${newId}/${productId}')`);
+
+                    $row.after($clonedRow);
+                    if (typeof window.initRupiahFields === 'function') window.initRupiahFields();
+                    
+                    Swal.fire({
+                        toast: true,
+                        position: 'top-end',
+                        icon: 'success',
+                        title: 'Variasi berhasil diduplikat',
+                        showConfirmButton: false,
+                        timer: 1500
+                    });
+                } else {
+                    Swal.fire('Error', 'Gagal menduplikat data', 'error');
+                }
+            },
+            error: function() {
+                Swal.fire('Error', 'Terjadi kesalahan jaringan', 'error');
+            }
+        });
+    }
+
+    function saveSinglePriceRow(btn) {
+        const $row = $(btn).closest('tr');
+        const $form = $('#formSavePrices');
+        const url = $form.attr('action');
+        
+        const data = {};
+        data['product_id'] = $form.find('input[name="product_id"]').val();
+        data['segmen2'] = $form.find('input[name="segmen2"]').val();
+
+        $row.find('input, select').each(function() {
+            let name = $(this).attr('name');
+            if (name) {
+                if (name.endsWith('[]')) {
+                    name = name.substring(0, name.length - 2);
+                    if (!data[name]) data[name] = [];
+                    data[name].push($(this).val());
+                } else {
+                    data[name] = $(this).val();
+                }
+            }
+        });
+
+        const $icon = $(btn).find('i');
+        const originalClass = $icon.attr('class');
+        $icon.attr('class', 'spinner-border spinner-border-sm text-success');
+        $(btn).prop('disabled', true);
+
+        $.ajax({
+            url: url,
+            type: 'POST',
+            data: data,
+            dataType: 'json',
+            success: function(response) {
+                if (response.success) {
+                    Swal.fire({
+                        toast: true,
+                        position: 'top-end',
+                        icon: 'success',
+                        title: 'Data baris berhasil disimpan',
+                        showConfirmButton: false,
+                        timer: 1500
+                    });
+                } else {
+                    Swal.fire('Error', response.message || 'Gagal menyimpan data', 'error');
+                }
+            },
+            error: function() {
+                Swal.fire('Error', 'Terjadi kesalahan jaringan saat menyimpan', 'error');
+            },
+            complete: function() {
+                $icon.attr('class', originalClass);
+                $(btn).prop('disabled', false);
+            }
+        });
+    }
 
     /**
      * Terapkan HPP kalkulasi dari BOM/Routing ke semua input HPP di tabel
@@ -394,20 +591,27 @@
 
         Swal.fire({
             title: 'Terapkan HPP Otomatis?',
-            text: `Apakah Anda ingin menerapkan HPP Rp ${new Intl.NumberFormat('id-ID').format(Math.round(lastCalculatedHPP))} ke semua baris skala harga?`,
+            text: `Apakah Anda ingin menghitung ulang dan menerapkan HPP Estimasi yang sesuai ke masing-masing baris variasi?`,
             icon: 'question',
             showCancelButton: true,
             confirmButtonColor: '#3b82f6',
             cancelButtonColor: '#64748b',
-            confirmButtonText: 'Ya, Terapkan Secara Massal',
+            confirmButtonText: 'Ya, Terapkan',
             cancelButtonText: 'Batal'
         }).then((result) => {
             if (result.isConfirmed) {
-                // Format nilai ke format ribuan rupiah (titik)
-                const formattedHPP = new Intl.NumberFormat('id-ID').format(Math.round(lastCalculatedHPP)).replace(/,/g, '.');
-
-                // Cari semua input hpp dan update nilainya
+                // Cari semua input hpp dan update nilainya sesuai harga_id
                 $('.hpp-input').each(function () {
+                    const row = $(this).closest('tr');
+                    const hargaId = row.find('input[name="harga_id[]"]').val() || '0';
+                    let hpp = 0;
+                    if (typeof window.getHppForVariation === 'function') {
+                        hpp = window.getHppForVariation(hargaId);
+                    } else {
+                        hpp = lastCalculatedHPP || 0;
+                    }
+
+                    const formattedHPP = new Intl.NumberFormat('id-ID').format(Math.round(hpp)).replace(/,/g, '.');
                     $(this).val(formattedHPP);
                     // Trigger input event if needed for custom formatting
                     $(this).trigger('input');
@@ -416,8 +620,8 @@
                 Swal.fire({
                     icon: 'success',
                     title: 'Berhasil Diterapkan',
-                    text: 'HPP telah diperbarui di tabel. Jangan lupa klik "Simpan Perubahan Matriks" untuk menyimpan secara permanen.',
-                    timer: 2500,
+                    text: 'HPP telah diperbarui di tabel berdasarkan variasi masing-masing. Jangan lupa klik "Simpan Perubahan Matriks" untuk menyimpan.',
+                    timer: 3000,
                     showConfirmButton: false
                 });
             }
@@ -469,17 +673,21 @@
                     const labelThird = '<?= $labelThird ?>';
 
                     let newRow = `
-<tr>
+<tr class="bg-light">
+    <td class="text-center align-middle">
+        <input class="form-check-input shadow-sm row-bom-checkbox" type="checkbox" value="${newId}" checked>
+    </td>
+    <td class="text-center align-middle row-number"></td>
     <td>
         <input type="hidden" name="harga_id[]" value="${newId}">
-        <input type="text" name="detail_product[]" class="form-control border-0 bg-light small"
-            placeholder="Nama variasi..." value="${productNama}">
+        <input type="text" name="detail_product[]" class="form-control form-control-sm border-0 bg-light"
+            placeholder="Nama variasi..." value="${productNama}" style="font-size: 0.8rem;">
     </td>`;
 
                     if (showSide) {
                         newRow += `
                         <td>
-                        <select name="ket_1[]" class="form-select border-0 bg-light small">
+                        <select name="ket_1[]" class="form-select form-select-sm border-0 bg-light variation-select" style="font-size: 0.8rem;">
                             <option value="">-- ${labelSide} --</option>
                             ${sideOptions}
                         </select>
@@ -489,7 +697,7 @@
                     if (showMachine) {
                         newRow += `
                         <td>
-                        <select name="jenisprint_id[]" class="form-select border-0 bg-light small">
+                        <select name="jenisprint_id[]" class="form-select form-select-sm border-0 bg-light variation-select" style="font-size: 0.8rem;">
                             <option value="">-- ${labelMachine} --</option>
                             ${machineOptions}
                         </select>
@@ -503,7 +711,7 @@
                             }, $schemaThirdOptions, array_keys($schemaThirdOptions)))) : '' ?>`;
                         newRow += `
                         <td>
-                        <select name="side_id[]" class="form-select border-0 bg-light small">
+                        <select name="side_id[]" class="form-select form-select-sm border-0 bg-light variation-select" style="font-size: 0.8rem;">
                             <option value="">-- ${labelThird} --</option>
                             ${thirdOptions}
                         </select>
@@ -517,7 +725,7 @@
                         foreach ($extDim['options'] as $val => $label) {
                             $optionsHtml .= "<option value='" . htmlspecialchars($val, ENT_QUOTES) . "'>" . htmlspecialchars($label, ENT_QUOTES) . "</option>";
                         }
-                        $extraDimCells .= "<td><select name='dim_" . $extDim['name'] . "[]' class='form-select border-0 bg-light small'><option value=''>-- " . ucwords(strtolower($extDim['label'])) . " --</option>" . $optionsHtml . "</select></td>";
+                        $extraDimCells .= "<td><select name='dim_" . $extDim['name'] . "[]' class='form-select form-select-sm border-0 bg-light variation-select' style='font-size: 0.8rem;'><option value=''>-- " . ucwords(strtolower($extDim['label'])) . " --</option>" . $optionsHtml . "</select></td>";
                     }
                     ?>
                     newRow += `<?= $extraDimCells ?>`;
@@ -540,20 +748,28 @@
                         </td>
                         <td>
                             <div class="input-group input-group-sm">
-                                <span class="input-group-text border-0 bg-slate-800 text-white">Rp</span>
-                                <input type="text" name="harga_1[]" class="form-control border-0 bg-slate-100 fw-bold text-primary-pro"
+                                <span class="input-group-text border-0 bg-light text-secondary">Rp</span>
+                                <input type="text" name="harga_1[]" class="form-control border-0 bg-light fw-bold text-primary-pro"
                                     value="0">
                             </div>
                         </td>
                         <td>
                             <div class="input-group input-group-sm">
-                                <span class="input-group-text border-0 bg-slate-800 text-white">Rp</span>
-                                <input type="text" name="harga_minimal[]" class="form-control border-0 bg-slate-100 fw-bold text-warning"
+                                <span class="input-group-text border-0 bg-light text-secondary">Rp</span>
+                                <input type="text" name="harga_minimal[]" class="form-control border-0 bg-light fw-bold text-warning"
                                     value="0" placeholder="Min Harga">
                             </div>
                         </td>
-                        <td class="text-center">
-                            <button type="button" class="btn btn-link text-danger p-0 border-0"
+                        <td class="text-center text-nowrap">
+                            <button type="button" class="btn btn-link text-success p-0 border-0 me-2" title="Simpan Baris"
+                                onclick="saveSinglePriceRow(this)">
+                                <i class="bi bi-floppy"></i>
+                            </button>
+                            <button type="button" class="btn btn-link text-primary p-0 border-0 me-2" title="Duplikat Row"
+                                onclick="duplicatePriceRow(this)">
+                                <i class="bi bi-copy"></i>
+                            </button>
+                            <button type="button" class="btn btn-link text-danger p-0 border-0" title="Hapus"
                                 onclick="confirmDeletePrice('<?= base_url('manufaktur/del_harga/') ?>${newId}/${productId}')">
                                 <i class="bi bi-trash3"></i>
                             </button>
@@ -669,4 +885,178 @@
             });
         }
     }
+
+    function bulkDeletePrice() {
+        let selectedHargaIds = [];
+        $('.row-bom-checkbox:checked').each(function() {
+            if ($(this).val()) selectedHargaIds.push($(this).val());
+        });
+
+        if (selectedHargaIds.length === 0) {
+            Swal.fire('Pilih Variasi', 'Silakan centang minimal 1 baris variasi di tabel untuk dihapus', 'warning');
+            return;
+        }
+
+        Swal.fire({
+            title: 'Hapus Variasi Terpilih?',
+            text: `Anda akan menghapus ${selectedHargaIds.length} variasi. Tindakan ini tidak dapat dibatalkan. Lanjutkan?`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#64748b',
+            confirmButtonText: 'Ya, Hapus!',
+            cancelButtonText: 'Batal',
+            showLoaderOnConfirm: true,
+            preConfirm: () => {
+                return $.ajax({
+                    url: '<?= base_url('manufaktur/bulk_del_harga') ?>',
+                    type: 'POST',
+                    data: { harga_ids: selectedHargaIds },
+                    dataType: 'json'
+                }).done(function (response) {
+                    return response;
+                }).fail(function() {
+                    Swal.showValidationMessage('Terjadi kesalahan jaringan');
+                });
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                if (result.value.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Berhasil Dihapus!',
+                        text: result.value.message,
+                    }).then(() => {
+                        window.location.reload();
+                    });
+                } else {
+                    Swal.fire('Info', result.value.message, 'info');
+                }
+            }
+        });
+    }
+
+    function detectDuplicates() {
+        let seen = {};
+        let duplicates = 0;
+        
+        // Reset borders
+        $('#priceMatrixTable tbody tr').removeClass('duplicate-row').css('border', '');
+        $('.row-bom-checkbox').prop('checked', false);
+
+        $('#priceMatrixTable tbody tr:not(.empty-row)').each(function() {
+            const row = $(this);
+            let signature = '';
+            
+            // build signature
+            signature += row.find('input[name="detail_product[]"]').val() + '|';
+            row.find('select.variation-select').each(function() {
+                signature += $(this).val() + '|';
+            });
+            signature += row.find('input[name="qty_min[]"]').val() + '|';
+            signature += row.find('input[name="qty_max[]"]').val() + '|';
+            
+            if (seen[signature]) {
+                duplicates++;
+                row.addClass('duplicate-row').css('border', '2px solid #ef4444');
+                row.find('.row-bom-checkbox').prop('checked', true);
+            } else {
+                seen[signature] = true;
+            }
+        });
+
+        if (duplicates > 0) {
+            Swal.fire({
+                icon: 'info',
+                title: 'Ditemukan ' + duplicates + ' Duplikat',
+                text: 'Baris yang sama persis (duplikat) telah ditandai dengan garis merah dan dicentang otomatis. Anda bisa klik "Hapus Terpilih" untuk menghapus semuanya secara massal.'
+            });
+        } else {
+            Swal.fire('Aman!', 'Tidak ditemukan baris variasi yang duplikat.', 'success');
+        }
+    }
+
+    function autoGenerateBOM() {
+        const bahan_id = $('#autoBOMMaterialSelect').val() || '';
+
+        let selectedHargaIds = [];
+        $('.row-bom-checkbox:checked').each(function() {
+            if ($(this).val()) selectedHargaIds.push($(this).val());
+        });
+
+        if (selectedHargaIds.length === 0) {
+            Swal.fire('Pilih Variasi', 'Silakan centang minimal 1 baris variasi di tabel untuk di-generate BOM-nya', 'warning');
+            return;
+        }
+
+        Swal.fire({
+            title: 'Auto-Generate BOM?',
+            text: `Sistem akan membuatkan masing-masing 1 Resep BOM untuk ${selectedHargaIds.length} variasi yang dicentang menggunakan material yang Anda pilih. Lanjutkan?`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#3b82f6',
+            cancelButtonColor: '#64748b',
+            confirmButtonText: 'Ya, Generate BOM!',
+            cancelButtonText: 'Batal',
+            showLoaderOnConfirm: true,
+            preConfirm: () => {
+                return $.ajax({
+                    url: '<?= base_url('manufaktur/auto_populate_bom') ?>',
+                    type: 'POST',
+                    data: {
+                        product_id: '<?= $getProduct['product_id'] ?>',
+                        bahan_id: bahan_id,
+                        harga_ids: selectedHargaIds
+                    },
+                    dataType: 'json'
+                }).done(function (response) {
+                    return response;
+                }).fail(function() {
+                    Swal.showValidationMessage('Terjadi kesalahan jaringan');
+                });
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                if (result.value.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Berhasil!',
+                        text: result.value.message,
+                    }).then(() => {
+                        // Switch to BOM tab if on detail page
+                        if ($('#bom-tab').length > 0) {
+                            $('#bom-tab').tab('show');
+                        } else if ($('.nav-pills button[data-bs-target="#sop-bom"]').length > 0) {
+                            // Focus on the right spot if inside modal
+                            $('.nav-pills button[data-bs-target="#sop-bom"]').tab('show');
+                        }
+                    });
+                } else {
+                    Swal.fire('Info', result.value.message, 'info');
+                }
+            }
+        });
+    }
+
+    $(document).ready(function() {
+        if ($('#autoBOMMaterialSelect').length) {
+            $('#autoBOMMaterialSelect').select2({
+                placeholder: "Cari material...",
+                allowClear: true,
+                ajax: {
+                    url: '<?= base_url('manufaktur/get_bahan_options') ?>',
+                    dataType: 'json',
+                    delay: 250,
+                    data: function (params) {
+                        return { term: params.term };
+                    },
+                    processResults: function (data) {
+                        return { results: data.results };
+                    },
+                    cache: true
+                },
+                minimumInputLength: 2
+            });
+        }
+    });
 </script>

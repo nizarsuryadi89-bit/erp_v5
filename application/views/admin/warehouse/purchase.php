@@ -262,37 +262,10 @@
     }
 </style>
 
-<div class="warehouse-header-section">
-    <div class="container-fluid px-5">
-        <div class="row align-items-center">
-            <div class="col-md-9">
-                <div class="header-content">
-                    <div class="header-icon">
-                        <i class="fa fa-shopping-basket"></i>
-                    </div>
-                    <div class="header-text">
-                        <p class="header-subtitle">Phase 2: Execution</p>
-                        <h1 class="header-title">Penerimaan & Pembelian Material</h1>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3 text-end header-actions d-flex justify-content-end align-items-center gap-2">
-                <button id="btnToggleWorkflow" class="btn btn-outline-light btn-premium rounded-pill px-4">
-                    <i class="fa fa-eye-slash me-2"></i>HIDE
-                </button>
-                <button class="btn btn-outline-light btn-premium rounded-pill px-4" data-bs-toggle="modal"
-                    data-bs-target="#modalPurchaseGuide">
-                    <i class="fa fa-info-circle me-2"></i>BANTUAN/SOP
-                </button>
-                <a href="<?= base_url('warehouse') ?>" class="btn btn-outline-light btn-premium rounded-pill px-4">
-                    <i class="fa fa-arrow-left me-2"></i>DASHBOARD
-                </a>
-            </div>
-        </div>
-    </div>
-</div>
+<div style="height: 35px;"></div>
 
 <div class="container-fluid px-5">
+    <?php $this->load->view('admin/warehouse/components/sop_stepper', ['active_step' => 3]); ?>
     <!-- Stats Row -->
     <div class="stats-container">
         <div class="row g-4">
@@ -503,15 +476,20 @@
                     </div>
                 <?php else: ?>
                     <?php foreach (array_slice($recent_purchases, 0, 7) as $rp): ?>
-                        <div class="history-item shadow-sm">
+                        <div class="history-item shadow-sm position-relative">
                             <div class="d-flex justify-content-between align-items-start mb-2">
                                 <div class="badge bg-soft-blue text-primary font-monospace small px-2 py-1 rounded-pill">
                                     <?= $rp->no_faktur ?>
                                 </div>
-                                <span
-                                    class="badge <?= $rp->metode_bayar == 'Cash' ? 'bg-soft-success text-success' : 'bg-soft-warning text-warning' ?> rounded-pill px-2">
-                                    <?= strtoupper($rp->metode_bayar) ?>
-                                </span>
+                                <div>
+                                    <span
+                                        class="badge <?= $rp->metode_bayar == 'Cash' ? 'bg-soft-success text-success' : 'bg-soft-warning text-warning' ?> rounded-pill px-2 me-1">
+                                        <?= strtoupper($rp->metode_bayar) ?>
+                                    </span>
+                                    <a href="<?= base_url('warehouse/purchase_edit/' . $rp->pembelian_id) ?>" class="btn btn-sm btn-light border p-1 rounded-circle" title="Edit Transaksi" style="width: 24px; height: 24px; line-height: 1; padding: 0 !important; display: inline-flex; align-items: center; justify-content: center;">
+                                        <i class="fa fa-pencil-alt text-warning" style="font-size: 10px;"></i>
+                                    </a>
+                                </div>
                             </div>
                             <div class="fw-900 text-dark mb-1 h6"><?= $rp->supplier_nama ?></div>
                             <div class="d-flex justify-content-between align-items-end mt-2">
@@ -562,7 +540,7 @@
                     <label class="form-label-premium">Penempatan Rak (Bin Location) <span
                             class="text-info small fw-bold ms-2">Gudang Utama</span></label>
                     <select name="rak_id" id="p_rak_id" class="form-select form-control-premium select2-modal">
-                        <option value="">-- Pilih Rak (Opsional) --</option>
+                        <option value="">-- Tidak Pilih Rak / Kosongkan --</option>
                         <!-- Dynamic Racks will be loaded via AJAX if needed, or pre-rendered -->
                         <?php
                         // Get main warehouse racks (id=1)

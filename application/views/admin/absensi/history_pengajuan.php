@@ -1,5 +1,11 @@
 <div class="app-content font-mono">
-    <?php $this->load->view('layout_admin/header_modul'); ?>
+    <?php 
+    $this->load->view('layout_admin/header_modul'); 
+    $role_check_1 = strtolower($hakakses ?? '');
+    $role_check_2 = strtolower($this->session->userdata('nama_level') ?? '');
+    $is_hr_or_owner = (strpos($role_check_1, 'owner') !== false || strpos($role_check_1, 'hr') !== false || strpos($role_check_1, 'human resource') !== false ||
+                       strpos($role_check_2, 'owner') !== false || strpos($role_check_2, 'hr') !== false || strpos($role_check_2, 'human resource') !== false);
+    ?>
 
     <div class="container-fluid pt-3">
         <div class="d-flex justify-content-between align-items-center mb-4">
@@ -67,12 +73,15 @@
                                 <th class="text-center">DOKUMEN</th>
                                 <th class="text-center">STATUS</th>
                                 <th class="text-center">DIPROSES OLEH</th>
+                                <?php if ($is_hr_or_owner): ?>
+                                    <th class="text-center" width="50"><i class="bi bi-trash"></i></th>
+                                <?php endif; ?>
                             </tr>
                         </thead>
                         <tbody>
                             <?php if (empty($riwayat)): ?>
                                 <tr>
-                                    <td colspan="9" class="text-center py-5 text-muted">Belum ada riwayat pengajuan dalam
+                                    <td colspan="<?= $is_hr_or_owner ? '10' : '9' ?>" class="text-center py-5 text-muted">Belum ada riwayat pengajuan dalam
                                         periode ini.</td>
                                 </tr>
                             <?php else: ?>
@@ -162,6 +171,13 @@
                                                 <?= $row->responded_at ? date('d/m/y H:i', strtotime($row->responded_at)) : '-' ?>
                                             </div>
                                         </td>
+                                        <?php if ($is_hr_or_owner): ?>
+                                        <td class="text-center">
+                                            <button type="button" class="btn btn-sm btn-outline-danger border-0 rounded-circle btn-delete-riwayat" data-id="<?= $row->id ?>" title="Hapus Data">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </td>
+                                        <?php endif; ?>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php endif; ?>
@@ -208,6 +224,44 @@
 
             $('#docContent').html(content);
             new bootstrap.Modal(document.getElementById('docPreviewModal')).show();
+        });
+
+        $('.btn-delete-riwayat').click(function() {
+            var id = $(this).data('id');
+            Swal.fire({
+                title: 'Hapus Riwayat?',
+                text: "Data pengajuan ini akan dihapus permanen dan kuota cuti akan disesuaikan kembali (jika cuti).",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'Ya, Hapus!',
+                cancelButtonText: 'Batal'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    $.ajax({
+                        url: '<?= base_url("absensi/delete_riwayat_cuti/") ?>' + id,
+                        type: 'POST',
+                        dataType: 'json',
+                        success: function(res) {
+                            if (res.status == 'success') {
+                                Swal.fire(
+                                    'Terhapus!',
+                                    'Riwayat pengajuan berhasil dihapus.',
+                                    'success'
+                                ).then(() => {
+                                    location.reload();
+                                });
+                            } else {
+                                Swal.fire('Error', res.message || 'Gagal menghapus data', 'error');
+                            }
+                        },
+                        error: function() {
+                            Swal.fire('Error', 'Terjadi kesalahan sistem', 'error');
+                        }
+                    });
+                }
+            });
         });
     });
 </script>

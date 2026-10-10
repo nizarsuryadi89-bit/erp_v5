@@ -207,6 +207,13 @@ class Hr extends MY_Controller
         }
         $data['pending_kontrak_count'] = $this->db->count_all_results('tbl_pengajuan_kontrak');
 
+        $this->db->where('status', 'Pending');
+        if ($pid) {
+            $this->db->join('tbl_karyawan', 'tbl_pengajuan_koreksi_absen.karyawan_id = tbl_karyawan.karyawan_id');
+            $this->db->where('tbl_karyawan.perusahaan_id', $pid);
+        }
+        $data['pending_koreksi_count'] = $this->db->count_all_results('tbl_pengajuan_koreksi_absen');
+
         return $data;
     }
 

@@ -321,7 +321,7 @@
             <div>
                 <div class="info-item">
                     <span class="info-label">No. Surat Jalan:</span>
-                    <span class="info-value"><?= $getData['pengambilan_id'] ?? 'N/A' ?></span>
+                    <span class="info-value"><?= !empty($getData['pengambilan_id']) ? 'DSP-' . str_pad($getData['pengambilan_id'], 5, '0', STR_PAD_LEFT) : 'N/A' ?></span>
                 </div>
                 <div class="info-item">
                     <span class="info-label">Tanggal:</span>
@@ -371,13 +371,13 @@
                 $no = 1;
                 $totalQty = 0;
                 foreach ($tampilData as $key => $value) {
-                    $totalQty += $value->pengambilan_qty ?? 0;
+                    $totalQty += $value->pengambilan_qty ?? $value->qty ?? 0;
                 ?>
                 <tr>
                     <td class="text-center"><?= $no ?></td>
                     <td><?= $value->barang_nama ?? $value->bahan_nama ?? 'N/A' ?></td>
                     <td class="text-center"><?= number_format($value->pengambilan_qty ?? $value->qty ?? 0) ?></td>
-                    <td class="text-center"><?= $value->satuan_nama ?? 'PCS' ?></td>
+                    <td class="text-center"><?= $value->nama_satuan_gudang ?? ($value->satuan_nama_dasar ?? ($value->satuan_nama ?? 'PCS')) ?></td>
                     <td class="text-center"><?= $value->kondisi ?? 'Baik' ?></td>
                     <td class="text-center"><?= $value->keterangan ?? '-' ?></td>
                 </tr>

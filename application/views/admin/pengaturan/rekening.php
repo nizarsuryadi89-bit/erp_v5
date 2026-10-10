@@ -167,7 +167,7 @@
 <!-- Modal Tambah Rekening -->
 <div class="modal fade" id="modalTambahRekening" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
-        <form id="formTambahRekening" class="modal-content border-0 rounded-4 shadow-lg">
+        <form id="formTambahRekening" class="modal-content border-0 rounded-4 shadow-lg" enctype="multipart/form-data">
             <div class="modal-header border-0 bg-dark text-white p-4">
                 <h5 class="modal-title fw-900 text-uppercase"><i class="fas fa-plus-circle me-2"></i> Registrasi
                     Rekening</h5>
@@ -193,6 +193,11 @@
                     <input type="text" name="atas_nama" class="form-control fw-bold" placeholder="Atas Nama"
                         style="border: 2px solid #f1f5f9; border-radius: 12px; padding: 0.75rem 1.25rem;" required>
                 </div>
+                <div class="mb-3">
+                    <label class="small text-uppercase fw-bold text-muted mb-2 d-block">Upload Gambar QRIS <small class="text-secondary">(Opsional)</small></label>
+                    <input type="file" name="qris_image" class="form-control" accept="image/*"
+                        style="border: 2px solid #f1f5f9; border-radius: 12px; padding: 0.5rem 1.25rem;">
+                </div>
                 <div class="form-check form-switch mt-4 p-3 bg-light rounded-3">
                     <input class="form-check-input ms-0 me-3" type="checkbox" name="status" value="1"
                         id="flexSwitchCheckChecked" checked style="cursor: pointer;">
@@ -215,7 +220,7 @@
 <!-- Modal Edit Rekening -->
 <div class="modal fade" id="modalEditRekening" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
-        <form id="formEditRekening" class="modal-content border-0 rounded-4 shadow-lg">
+        <form id="formEditRekening" class="modal-content border-0 rounded-4 shadow-lg" enctype="multipart/form-data">
             <div class="modal-header border-0 bg-dark text-white p-4">
                 <h5 class="modal-title fw-900 text-uppercase"><i class="fas fa-edit me-2"></i> Update Data Rekening</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
@@ -236,6 +241,12 @@
                     <label class="small text-uppercase fw-bold text-muted mb-2 d-block">Nama Pemegang Rekening</label>
                     <input type="text" name="atas_nama" id="edit_atas_nama" class="form-control fw-bold"
                         style="border: 2px solid #f1f5f9; border-radius: 12px; padding: 0.75rem 1.25rem;" required>
+                </div>
+                <div class="mb-3">
+                    <label class="small text-uppercase fw-bold text-muted mb-2 d-block">Upload Gambar QRIS Baru <small class="text-secondary">(Opsional)</small></label>
+                    <input type="file" name="qris_image" class="form-control" accept="image/*"
+                        style="border: 2px solid #f1f5f9; border-radius: 12px; padding: 0.5rem 1.25rem;">
+                    <small class="text-muted" id="edit_qris_preview_text">Biarkan kosong jika tidak ingin mengubah QRIS.</small>
                 </div>
                 <div class="form-check form-switch mt-4 p-3 bg-light rounded-3">
                     <input class="form-check-input ms-0 me-3" type="checkbox" name="status" value="1" id="edit_status"

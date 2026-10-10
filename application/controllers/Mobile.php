@@ -425,13 +425,16 @@ class Mobile extends MY_Controller
             redirect('mobile/lembur');
         }
 
+        $lokasi = $this->input->post('lokasi', true);
+        
         $this->db->insert('tbl_lembur', [
             'karyawan_id' => $this->karyawan_id,
             'tanggal' => $tanggal,
             'jam_mulai' => $jam_mulai,
             'jam_selesai' => '00:00:00',
             'status' => 'menunggu',
-            'create_at' => date('Y-m-d H:i:s')
+            'create_at' => date('Y-m-d H:i:s'),
+            'lokasi' => $lokasi
         ]);
 
         $this->session->set_flashdata('success', 'Lembur dimulai! Selamat bekerja.');
@@ -1488,6 +1491,115 @@ class Mobile extends MY_Controller
         }
     }
 
+    public function koreksi_absen()
+    {
+        $data = $this->_get_common_data('Koreksi Absen');
+        $data['perusahaan'] = $data['perusahaan']['nama_perusahaan'];
+
+        // Get history
+        $data['riwayat'] = $this->db->where('karyawan_id', $this->karyawan_id)
+            ->order_by('created_at', 'DESC')
+            ->get('tbl_pengajuan_koreksi_absen')->result();
+
+        // Get daftar tanggal kesiangan (jam_masuk > 08:00:00) hanya bulan berjalan
+        $data['tgl_kesiangan'] = $this->db->where('karyawan_id', $this->karyawan_id)
+            ->where('jam_masuk >', '08:00:00')
+            ->where('status !=', 'Alpha') // hanya yang hadir/telat
+            ->where('MONTH(tanggal)', date('m'))
+            ->where('YEAR(tanggal)', date('Y'))
+            ->order_by('tanggal', 'DESC')
+            ->get('absensi')->result();
+
+        $this->load->view('admin/mobile/head', $data);
+        $this->load->view('admin/mobile/koreksi_absen', $data);
+        $this->load->view('admin/mobile/footer', $data);
+    }
+
+    public function get_absensi_info_by_date()
+    {
+        $tanggal = $this->input->get('tanggal');
+        if (!$tanggal) {
+            echo json_encode(['status' => false, 'message' => 'Tanggal tidak valid.']);
+            return;
+        }
+
+        $absen = $this->db->get_where('absensi', [
+            'karyawan_id' => $this->karyawan_id,
+            'tanggal' => $tanggal
+        ])->row();
+
+        if ($absen) {
+            $jam_masuk = $absen->jam_masuk ? substr($absen->jam_masuk, 0, 5) : '-';
+            $jam_pulang = $absen->jam_pulang ? substr($absen->jam_pulang, 0, 5) : '-';
+            
+            $terlambat_menit = 0;
+            if ($absen->jam_masuk && $absen->jam_masuk > '08:00:00') {
+                $masuk_time = strtotime($tanggal . ' ' . $absen->jam_masuk);
+                $batas_time = strtotime($tanggal . ' 08:00:00');
+                $terlambat_menit = round(($masuk_time - $batas_time) / 60);
+            }
+            
+            $terlambat = $terlambat_menit > 0 ? $terlambat_menit . ' menit' : '0 menit';
+            
+            echo json_encode([
+                'status' => true,
+                'jam_masuk' => $jam_masuk,
+                'jam_pulang' => $jam_pulang,
+                'terlambat' => $terlambat,
+                'message' => "Tercatat Masuk: $jam_masuk, Pulang: $jam_pulang (Kesiangan: $terlambat)"
+            ]);
+        } else {
+            echo json_encode([
+                'status' => false,
+                'message' => 'Tidak ada data kehadiran pada tanggal tersebut.'
+            ]);
+        }
+    }
+
+    public function submit_koreksi_absen()
+    {
+        $tanggal = $this->input->post('tanggal_absen');
+        $jam_masuk_baru = $this->input->post('jam_masuk_baru');
+        $jam_pulang_baru = $this->input->post('jam_pulang_baru');
+        $alasan = $this->input->post('alasan');
+
+        if (empty($tanggal) || empty($alasan)) {
+            $this->session->set_flashdata('error', 'Tanggal dan Alasan wajib diisi.');
+            redirect('mobile/koreksi_absen');
+        }
+
+        // Cek apakah sudah ada pengajuan pending di tanggal yang sama
+        $exist = $this->db->get_where('tbl_pengajuan_koreksi_absen', [
+            'karyawan_id' => $this->karyawan_id,
+            'tanggal_absen' => $tanggal,
+            'status' => 'Pending'
+        ])->num_rows();
+
+        if ($exist > 0) {
+            $this->session->set_flashdata('error', 'Anda sudah memiliki pengajuan koreksi yang sedang diproses untuk tanggal tersebut.');
+            redirect('mobile/koreksi_absen');
+        }
+
+        $data_insert = [
+            'karyawan_id' => $this->karyawan_id,
+            'tanggal_absen' => $tanggal,
+            'jam_masuk_baru' => !empty($jam_masuk_baru) ? $jam_masuk_baru : null,
+            'jam_pulang_baru' => !empty($jam_pulang_baru) ? $jam_pulang_baru : null,
+            'alasan' => $alasan,
+            'status' => 'Pending',
+            'created_at' => date('Y-m-d H:i:s'),
+            'updated_at' => date('Y-m-d H:i:s')
+        ];
+
+        if ($this->db->insert('tbl_pengajuan_koreksi_absen', $data_insert)) {
+            $this->session->set_flashdata('success', 'Pengajuan Koreksi Absen berhasil dikirim dan menunggu persetujuan.');
+        } else {
+            $this->session->set_flashdata('error', 'Gagal mengirim pengajuan.');
+        }
+
+        redirect('mobile/koreksi_absen');
+    }
+
     public function cuti()
     {
         $data = $this->_get_common_data('Pengajuan Cuti');
@@ -1534,14 +1646,15 @@ class Mobile extends MY_Controller
         $used_annual_pending = 0;
 
         $limits = [
-            'cuti menikah' => 7,
-            'cuti duka' => 3,
-            'cuti keluarga sakit' => 2,
-            'cuti melahirkan suami' => 3
+            'cuti menikah' => ($quota_row && isset($quota_row->menikah_awal)) ? $quota_row->menikah_awal : 7,
+            'cuti duka' => ($quota_row && isset($quota_row->duka_awal)) ? $quota_row->duka_awal : 3,
+            'cuti keluarga sakit' => ($quota_row && isset($quota_row->sakitkel_awal)) ? $quota_row->sakitkel_awal : 2,
+            'cuti melahirkan suami' => ($quota_row && isset($quota_row->melahirkansuami_awal)) ? $quota_row->melahirkansuami_awal : 3,
+            'cuti melahirkan' => ($quota_row && isset($quota_row->melahirkan_awal)) ? $quota_row->melahirkan_awal : 90
         ];
 
-        $usage_special_approved = ['cuti menikah' => 0, 'cuti duka' => 0, 'cuti keluarga sakit' => 0, 'cuti melahirkan suami' => 0];
-        $usage_special_pending = ['cuti menikah' => 0, 'cuti duka' => 0, 'cuti keluarga sakit' => 0, 'cuti melahirkan suami' => 0];
+        $usage_special_approved = ['cuti menikah' => 0, 'cuti duka' => 0, 'cuti keluarga sakit' => 0, 'cuti melahirkan suami' => 0, 'cuti melahirkan' => 0];
+        $usage_special_pending = ['cuti menikah' => 0, 'cuti duka' => 0, 'cuti keluarga sakit' => 0, 'cuti melahirkan suami' => 0, 'cuti melahirkan' => 0];
 
         foreach ($requests as $req) {
             $status_lower = strtolower($req->status);
@@ -1588,7 +1701,8 @@ class Mobile extends MY_Controller
         $menikah_used = min($limits['cuti menikah'], $usage_special_approved['cuti menikah'] + $usage_special_pending['cuti menikah']);
         $duka_used = min($limits['cuti duka'], $usage_special_approved['cuti duka'] + $usage_special_pending['cuti duka']);
         $sakitkel_used = min($limits['cuti keluarga sakit'], $usage_special_approved['cuti keluarga sakit'] + $usage_special_pending['cuti keluarga sakit']);
-        $melahirkan_used = min($limits['cuti melahirkan suami'], $usage_special_approved['cuti melahirkan suami'] + $usage_special_pending['cuti melahirkan suami']);
+        $melahirkansuami_used = min($limits['cuti melahirkan suami'], $usage_special_approved['cuti melahirkan suami'] + $usage_special_pending['cuti melahirkan suami']);
+        $melahirkan_used = min($limits['cuti melahirkan'], $usage_special_approved['cuti melahirkan'] + $usage_special_pending['cuti melahirkan']);
 
         // Update table to stay in sync
         $this->db->where(['karyawan_id' => $this->karyawan_id, 'tahun' => $year])
@@ -1602,8 +1716,10 @@ class Mobile extends MY_Controller
                 'duka_sisa' => max(0, $limits['cuti duka'] - $duka_used),
                 'sakitkel_terpakai' => $sakitkel_used,
                 'sakitkel_sisa' => max(0, $limits['cuti keluarga sakit'] - $sakitkel_used),
-                'melahirkansuami_terpakai' => $melahirkan_used,
-                'melahirkansuami_sisa' => max(0, $limits['cuti melahirkan suami'] - $melahirkan_used)
+                'melahirkansuami_terpakai' => $melahirkansuami_used,
+                'melahirkansuami_sisa' => max(0, $limits['cuti melahirkan suami'] - $melahirkansuami_used),
+                'melahirkan_terpakai' => $melahirkan_used,
+                'melahirkan_sisa' => max(0, $limits['cuti melahirkan'] - $melahirkan_used)
             ]);
 
         // Fetch History (All types for current year)
@@ -1625,7 +1741,8 @@ class Mobile extends MY_Controller
         $data['menikah_sisa'] = max(0, $limits['cuti menikah'] - $menikah_used);
         $data['duka_sisa'] = max(0, $limits['cuti duka'] - $duka_used);
         $data['sakitkel_sisa'] = max(0, $limits['cuti keluarga sakit'] - $sakitkel_used);
-        $data['melahirkansuami_sisa'] = max(0, $limits['cuti melahirkan suami'] - $melahirkan_used);
+        $data['melahirkansuami_sisa'] = max(0, $limits['cuti melahirkan suami'] - $melahirkansuami_used);
+        $data['melahirkan_sisa'] = max(0, $limits['cuti melahirkan'] - $melahirkan_used);
         $data['history'] = $history;
         $data['limits'] = $limits;
         $data['usage_special_approved'] = $usage_special_approved;
@@ -1697,8 +1814,14 @@ class Mobile extends MY_Controller
             ->where_in('status', ['Pending', 'Approved', 'Disetujui'])->get('tbl_pengajuan_izin')->result();
 
         $used_annual = 0;
-        $limits = ['cuti menikah' => 7, 'cuti duka' => 3, 'cuti keluarga sakit' => 2, 'cuti melahirkan suami' => 3];
-        $usage_special = ['cuti menikah' => 0, 'cuti duka' => 0, 'cuti keluarga sakit' => 0, 'cuti melahirkan suami' => 0];
+        $limits = [
+            'cuti menikah' => ($quota_row && isset($quota_row->menikah_awal)) ? $quota_row->menikah_awal : 7,
+            'cuti duka' => ($quota_row && isset($quota_row->duka_awal)) ? $quota_row->duka_awal : 3,
+            'cuti keluarga sakit' => ($quota_row && isset($quota_row->sakitkel_awal)) ? $quota_row->sakitkel_awal : 2,
+            'cuti melahirkan suami' => ($quota_row && isset($quota_row->melahirkansuami_awal)) ? $quota_row->melahirkansuami_awal : 3,
+            'cuti melahirkan' => ($quota_row && isset($quota_row->melahirkan_awal)) ? $quota_row->melahirkan_awal : 90
+        ];
+        $usage_special = ['cuti menikah' => 0, 'cuti duka' => 0, 'cuti keluarga sakit' => 0, 'cuti melahirkan suami' => 0, 'cuti melahirkan' => 0];
 
         foreach ($requests as $req) {
             if ($req->tipe_izin == 'cuti')
@@ -1745,9 +1868,8 @@ class Mobile extends MY_Controller
             // Ensure directory exists before loading library
             if (!is_dir($upload_path)) {
                 if (!mkdir($upload_path, 0755, true)) {
-                    $this->session->set_flashdata('error', 'Gagal membuat direktori upload.');
-                    redirect('mobile/cuti');
-                    return;
+                    // Just proceed without document
+                    $dokumen = '';
                 }
             }
 
@@ -1765,10 +1887,9 @@ class Mobile extends MY_Controller
                 $upload_data = $this->upload->data();
                 $dokumen = $upload_data['file_name'];
             } else {
-                // If upload fails, show error
-                $this->session->set_flashdata('error', 'Upload dokumen gagal: ' . $this->upload->display_errors());
-                redirect('mobile/cuti');
-                return;
+                // If upload fails, just leave dokumen empty and proceed
+                $dokumen = '';
+                // Optional: log or set flashdata warning, but don't abort
             }
         }
 
@@ -1786,6 +1907,7 @@ class Mobile extends MY_Controller
         ];
 
         if ($this->db->insert('tbl_pengajuan_izin', $data_pengajuan)) {
+            broadcast_notifikasi("Pengajuan Izin Baru", "Karyawan " . $karyawan_data->nama_lengkap . " mengajukan " . $tipe_cuti, "absensi/approval_cuti");
             /** @var CI_DB_query_builder $db */
             $db = $this->db;
             $this->log_activity($this->user_id, 'Pengajuan_Cuti', 'Karyawan', $db->insert_id());

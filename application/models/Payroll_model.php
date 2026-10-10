@@ -6,6 +6,22 @@ class Payroll_model extends CI_Model
     public function __construct()
     {
         parent::__construct();
+        $this->_check_is_izin_telat_column();
+    }
+
+    private function _check_is_izin_telat_column()
+    {
+        if (!$this->db->field_exists('is_izin_telat', 'absensi')) {
+            $this->load->dbforge();
+            $this->dbforge->add_column('absensi', [
+                'is_izin_telat' => [
+                    'type' => 'TINYINT',
+                    'constraint' => 1,
+                    'default' => 0,
+                    'null' => TRUE
+                ]
+            ]);
+        }
     }
 
     /**
@@ -30,8 +46,8 @@ class Payroll_model extends CI_Model
 
         $current_month_first_day = $bulan . '-01';
 
-        if ($start_day > $end_day) {
-            // Split across months (e.g. 26th prev to 25th curr)
+        if ($start_day >= $end_day) {
+            // Split across months (e.g. 26th prev to 25th curr, or 26th prev to 26th curr)
             $start_date = date('Y-m-', strtotime('-1 month', strtotime($current_month_first_day))) . str_pad($start_day, 2, '0', STR_PAD_LEFT);
             $end_date = $bulan . '-' . str_pad($end_day, 2, '0', STR_PAD_LEFT);
         } else {
@@ -69,7 +85,7 @@ class Payroll_model extends CI_Model
 
         if ($karyawan_id) $this->db->where('k.karyawan_id', $karyawan_id);
         if ($jabatan_id) $this->db->where('k.jabatan_id', $jabatan_id);
-        if ($perusahaan_id) $this->db->where('k.perusahaan_id', $perusahaan_id);
+        if ($perusahaan_id && $perusahaan_id != 1) $this->db->where('k.perusahaan_id', $perusahaan_id);
 
         $this->db->where('k.divisi_id !=', 8);
         $this->db->where_not_in('k.jabatan_id', [1, 2, 3]);
@@ -120,6 +136,60 @@ class Payroll_model extends CI_Model
         while ($curr <= strtotime($end_date)) {
             $period_dates[] = date('Y-m-d', $curr);
             $curr = strtotime('+1 day', $curr);
+        }
+
+        // PRE-FETCH: Jam Kerja
+        $jadwal_kerja_map = [];
+        $jadwal_kerja_db = $this->db->get('tbl_jam_kerja')->result();
+        foreach ($jadwal_kerja_db as $jk) {
+            $jadwal_kerja_map[$jk->urutan] = $jk;
+        }
+
+        // PRE-FETCH: Meal allowance
+        $this->db->select('karyawan_id, SUM(biaya_makan) as total_biaya_makan');
+        $this->db->from('tbl_lembur');
+        $this->db->where('status', 'disetujui');
+        $this->db->where('tanggal >=', $start_date);
+        $this->db->where('tanggal <=', $end_date);
+        $this->db->group_by('karyawan_id');
+        $meal_allowance_db = $this->db->get()->result();
+        $meal_allowance_map = [];
+        foreach ($meal_allowance_db as $ma) {
+            $meal_allowance_map[$ma->karyawan_id] = $ma->total_biaya_makan;
+        }
+
+        // PRE-FETCH: Manual payroll
+        $manual_pay_db = $this->db->get_where('tbl_payroll_manual', ['bulan' => $bulan.'-01'])->result();
+        $manual_pay_map = [];
+        foreach ($manual_pay_db as $mp) {
+            $manual_pay_map[$mp->karyawan_id] = (object)[
+                'reward' => $mp->reward ?? 0, 'bpjs' => $mp->bpjs ?? 0, 'tunjangan_extra' => $mp->tunjangan_extra ?? 0, 'tunjangan_kinerja_manual' => $mp->tunjangan_kinerja_manual ?? 0, 'kasbon' => $mp->kasbon ?? 0, 'pinjaman' => $mp->pinjaman ?? 0,
+                'custom_in1_nama' => $mp->custom_in1_nama ?? '', 'custom_in1_nom' => $mp->custom_in1_nom ?? 0,
+                'custom_in2_nama' => $mp->custom_in2_nama ?? '', 'custom_in2_nom' => $mp->custom_in2_nom ?? 0,
+                'custom_in3_nama' => $mp->custom_in3_nama ?? '', 'custom_in3_nom' => $mp->custom_in3_nom ?? 0,
+                'custom_out1_nama' => $mp->custom_out1_nama ?? '', 'custom_out1_nom' => $mp->custom_out1_nom ?? 0,
+                'custom_out2_nama' => $mp->custom_out2_nama ?? '', 'custom_out2_nom' => $mp->custom_out2_nom ?? 0,
+                'custom_out3_nama' => $mp->custom_out3_nama ?? '', 'custom_out3_nom' => $mp->custom_out3_nom ?? 0,
+            ];
+        }
+
+        // PRE-FETCH: Lateness penalty
+        $this->db->select('karyawan_id, SUM(nominal_potongan) as total_potongan');
+        $this->db->from('tbl_potongan_terlambat');
+        $this->db->where('tanggal >=', $start_date);
+        $this->db->where('tanggal <=', $end_date);
+        $this->db->group_by('karyawan_id');
+        $lateness_db = $this->db->get()->result();
+        $lateness_map = [];
+        foreach ($lateness_db as $ld) {
+            $lateness_map[$ld->karyawan_id] = $ld->total_potongan;
+        }
+
+        // PRE-FETCH: Gaji Manual (tbl_gaji_manual)
+        $gaji_manual_db = $this->db->get_where('tbl_gaji_manual', ['bulan' => $bulan])->result();
+        $gaji_manual_map = [];
+        foreach ($gaji_manual_db as $gm) {
+            $gaji_manual_map[$gm->karyawan_id] = $gm;
         }
 
         $salary_data = [];
@@ -215,6 +285,16 @@ class Payroll_model extends CI_Model
                     foreach ($day_spls as $spl) if ($spl->jam_selesai != '00:00:00') $out_ts = max($out_ts, strtotime("$d $spl->jam_selesai"));
                     if ($att_day && $att_day->jam_pulang != '00:00:00') $out_ts = max($out_ts, strtotime("$d $att_day->jam_pulang"));
                     if ($out_ts > 0) {
+                        // --- PENYESUAIAN PENGURANGAN TELAT UNTUK UANG MAKAN (POIN 3) ---
+                        $jadwal = $jadwal_kerja_map[$day_n] ?? null;
+                        $jadwal_masuk = $jadwal && !empty($jadwal->jam_masuk) ? strtotime("$d $jadwal->jam_masuk") : strtotime("$d 08:00:00");
+                        if ($att_day && !empty($att_day->jam_masuk) && $att_day->jam_masuk != '00:00:00') {
+                            $jam_masuk_real = strtotime("$d $att_day->jam_masuk");
+                            if ($jam_masuk_real > $jadwal_masuk) {
+                                $out_ts -= ($jam_masuk_real - $jadwal_masuk);
+                            }
+                        }
+                        // -------------------------------------------------------------
                         $out_m = date('H:i', $out_ts);
                         if ($out_m >= "23:00") $dynamic_meal_sum += $this->_get_lembur_config('makan_23_00', 25000);
                         elseif ($out_m >= "21:00") $dynamic_meal_sum += $this->_get_lembur_config('makan_21_00', 20000);
@@ -222,6 +302,47 @@ class Payroll_model extends CI_Model
                         elseif ($out_m >= "19:00") $dynamic_meal_sum += $this->_get_lembur_config('makan_19_00', 10000);
                     }
                 }
+
+                // --- PENGURANGAN LEMBUR KARENA TERLAMBAT (BLOK 1/2 JAM) ---
+                $late_deduction = 0;
+                $jadwal_l = $jadwal_kerja_map[date('N', strtotime($d))] ?? null;
+                $jadwal_masuk_l = $jadwal_l && !empty($jadwal_l->jam_masuk) ? strtotime("$d $jadwal_l->jam_masuk") : strtotime("$d 08:00:00");
+                
+                if ($att_day && !empty($att_day->jam_masuk) && $att_day->jam_masuk != '00:00:00') {
+                    $jam_masuk_real = strtotime("$d $att_day->jam_masuk");
+                    if ($jam_masuk_real > $jadwal_masuk_l) {
+                        $late_minutes = floor(($jam_masuk_real - $jadwal_masuk_l) / 60);
+                        if ($late_minutes >= 1 && $late_minutes <= 59) {
+                            $late_deduction = 1;
+                        } else if ($late_minutes >= 60) {
+                            $late_deduction = 2;
+                        }
+                    }
+                }
+                
+                if ($late_deduction > 0) {
+                    $to_deduct = $late_deduction;
+                    if ($sum_kerjaan >= $to_deduct) {
+                        $sum_kerjaan -= $to_deduct; $to_deduct = 0;
+                    } else {
+                        $to_deduct -= $sum_kerjaan; $sum_kerjaan = 0;
+                    }
+                    if ($to_deduct > 0) {
+                        if ($sum_wajib >= $to_deduct) {
+                            $sum_wajib -= $to_deduct; $to_deduct = 0;
+                        } else {
+                            $to_deduct -= $sum_wajib; $sum_wajib = 0;
+                        }
+                    }
+                    if ($to_deduct > 0) {
+                        if ($sum_pagi >= $to_deduct) {
+                            $sum_pagi -= $to_deduct; $to_deduct = 0;
+                        } else {
+                            $to_deduct -= $sum_pagi; $sum_pagi = 0;
+                        }
+                    }
+                }
+                // -------------------------------------------------------------
             }
 
             // OVERRIDE: Use synchronized data if available
@@ -254,7 +375,7 @@ class Payroll_model extends CI_Model
             $base_for_transport = ($emp->jenis_gaji == 'Harian') ? ($emp->individual_gaji * 26) : $emp->individual_gaji;
             $tunjangan_transportasi = (isset($emp->transport_aktif) && $emp->transport_aktif == 1) ? round(($base_for_transport * 0.05 / 26) * $perf->total_hadir) : 0;
 
-            $biaya_makan_stored = $this->get_meal_allowance($k_id, $bulan, $start_date, $end_date);
+            $biaya_makan_stored = $meal_allowance_map[$k_id] ?? 0;
             $biaya_makan_lembur = $biaya_makan_stored > 0 ? $biaya_makan_stored : $dynamic_meal_sum;
             
             // Override meal allowance if synchronized data is present and column exists
@@ -262,15 +383,22 @@ class Payroll_model extends CI_Model
                 $biaya_makan_lembur = (float) $sync->biaya_makan_lembur;
             }
             
-            $manual_pay = $this->get_manual_payroll($k_id, $bulan, $start_date, $end_date);
+            $manual_pay = $manual_pay_map[$k_id] ?? (object)[
+                'reward' => 0, 'bpjs' => 0, 'tunjangan_extra' => 0, 'tunjangan_kinerja_manual' => 0, 'kasbon' => 0, 'pinjaman' => 0,
+                'custom_in1_nama' => '', 'custom_in1_nom' => 0, 'custom_in2_nama' => '', 'custom_in2_nom' => 0, 'custom_in3_nama' => '', 'custom_in3_nom' => 0,
+                'custom_out1_nama' => '', 'custom_out1_nom' => 0, 'custom_out2_nama' => '', 'custom_out2_nom' => 0, 'custom_out3_nama' => '', 'custom_out3_nom' => 0,
+            ];
 
             $rate_per_jam = ($gaji_pokok / 26) / 8;
-            $pot_telat = round($rate_per_jam * (($perf->total_detik_telat ?? 0) / 3600)) + $this->get_lateness_penalty($k_id, $bulan, $start_date, $end_date);
+            $pot_telat = round($rate_per_jam * (($perf->total_detik_telat ?? 0) / 3600)) + ($lateness_map[$k_id] ?? 0);
             $pot_alpha = round(($gaji_pokok / 26) * $perf->total_alpha);
 
-            $total_gaji = $gaji_pokok + $tunjangan_jabatan + $tunjangan_transportasi + $uang_lembur + $biaya_makan_lembur + $manual_pay->reward + $manual_pay->bpjs + $manual_pay->tunjangan_extra + $manual_pay->tunjangan_kinerja_manual - $pot_alpha - $manual_pay->kasbon - $manual_pay->pinjaman - $pot_telat;
+            $total_custom_in = $manual_pay->custom_in1_nom + $manual_pay->custom_in2_nom + $manual_pay->custom_in3_nom;
+            $total_custom_out = $manual_pay->custom_out1_nom + $manual_pay->custom_out2_nom + $manual_pay->custom_out3_nom;
 
-            $manual = $this->db->get_where('tbl_gaji_manual', ['karyawan_id' => $k_id, 'bulan' => $bulan])->row();
+            $total_gaji = $gaji_pokok + $tunjangan_jabatan + $tunjangan_transportasi + $uang_lembur + $biaya_makan_lembur + $manual_pay->reward + $manual_pay->bpjs + $manual_pay->tunjangan_extra + $manual_pay->tunjangan_kinerja_manual + $total_custom_in - $pot_alpha - $manual_pay->kasbon - $manual_pay->pinjaman - $pot_telat - $total_custom_out;
+
+            $manual = $gaji_manual_map[$k_id] ?? null;
             $is_manual = false;
             if ($manual) {
                 $is_manual = true;
@@ -294,6 +422,12 @@ class Payroll_model extends CI_Model
                 ],
                 'reward' => $manual_pay->reward, 'bpjs' => $manual_pay->bpjs, 'tunjangan_extra' => $manual_pay->tunjangan_extra,
                 'tunjangan_kinerja_manual' => $manual_pay->tunjangan_kinerja_manual,
+                'custom_in1_nama' => $manual_pay->custom_in1_nama, 'custom_in1_nom' => $manual_pay->custom_in1_nom,
+                'custom_in2_nama' => $manual_pay->custom_in2_nama, 'custom_in2_nom' => $manual_pay->custom_in2_nom,
+                'custom_in3_nama' => $manual_pay->custom_in3_nama, 'custom_in3_nom' => $manual_pay->custom_in3_nom,
+                'custom_out1_nama' => $manual_pay->custom_out1_nama, 'custom_out1_nom' => $manual_pay->custom_out1_nom,
+                'custom_out2_nama' => $manual_pay->custom_out2_nama, 'custom_out2_nom' => $manual_pay->custom_out2_nom,
+                'custom_out3_nama' => $manual_pay->custom_out3_nama, 'custom_out3_nom' => $manual_pay->custom_out3_nom,
                 'potongan_alpha' => $pot_alpha, 'potongan_terlambat' => $pot_telat, 'kasbon' => $manual_pay->kasbon, 'pinjaman' => $manual_pay->pinjaman,
                 'total_gaji' => $total_gaji, 'total_hadir' => $perf->total_hadir, 'total_alpha' => $perf->total_alpha,
                 'total_telat' => $perf->total_telat ?? $perf->total_terlambat, 'total_sakit' => $perf->total_sakit, 'total_izin' => $perf->total_izin,
@@ -345,7 +479,11 @@ class Payroll_model extends CI_Model
         $end_spl   = strtotime("$tanggal $jam_selesai");
         if ($end_spl < $start_spl && $end_spl != strtotime("$tanggal 00:00")) $end_spl += 86400;
 
-        $absensi = $absensi_data ?: $this->db->get_where('absensi', ['karyawan_id' => $karyawan_id, 'tanggal' => $tanggal])->row();
+        if (func_num_args() >= 5) {
+            $absensi = $absensi_data;
+        } else {
+            $absensi = $this->db->get_where('absensi', ['karyawan_id' => $karyawan_id, 'tanggal' => $tanggal])->row();
+        }
         $jam_masuk_real = (isset($absensi->jam_masuk) && $absensi->jam_masuk != '00:00:00') ? strtotime("$tanggal $absensi->jam_masuk") : null;
         $day_num = date('N', strtotime($tanggal));
         $hari_db = ($day_num == 6) ? 'Sabtu' : 'Senin-Jumat';
@@ -508,6 +646,10 @@ class Payroll_model extends CI_Model
             }
         }
 
+        // --- PENGURANGAN LEMBUR KARENA TERLAMBAT ---
+        // PENGURANGAN SUDAH DIPINDAHKAN KE LEVEL HARIAN AGAR TIDAK DOUBLE-COUNT
+        // ----------------------------------------------------
+
         return [
             'raw_pagi'      => $breakdown['pagi'],
             'raw_wajib'     => $breakdown['wajib'],
@@ -527,11 +669,15 @@ class Payroll_model extends CI_Model
     public function get_performance_data($bulan, $k_id = '', $j_id = '', $sd = '', $ed = '')
     {
         if (empty($sd)) { $sd = $bulan.'-01'; $ed = date('Y-m-t', strtotime($sd)); }
+
+        $has_is_izin_telat = $this->db->field_exists('is_izin_telat', 'absensi');
+        $izin_filter = $has_is_izin_telat ? ' AND a.is_izin_telat = 0' : '';
+
         $this->db->select('k.karyawan_id, k.nama_lengkap, k.nik, j.nama_jabatan, o.operator_nama as divisi_nama, p.nama_perusahaan, u.user_id,
             COUNT(CASE WHEN a.status = "Hadir" THEN 1 END) as total_hadir, COUNT(CASE WHEN a.status = "Sakit" THEN 1 END) as total_sakit,
             COUNT(CASE WHEN a.status = "Izin" THEN 1 END) as total_izin, COUNT(CASE WHEN a.status LIKE "Cuti%" THEN 1 END) as total_cuti,
-            COUNT(CASE WHEN a.status = "Hadir" AND a.jam_masuk > "08:15:00" THEN 1 END) as total_telat,
-            SUM(CASE WHEN a.status = "Hadir" AND a.jam_masuk > "08:00:00" THEN TIME_TO_SEC(TIMEDIFF(a.jam_masuk, "08:00:00")) ELSE 0 END) as total_detik_telat,
+            COUNT(CASE WHEN a.status = "Hadir" AND a.jam_masuk > "08:15:00"' . $izin_filter . ' THEN 1 END) as total_telat,
+            SUM(CASE WHEN a.status = "Hadir" AND a.jam_masuk > "08:00:00"' . $izin_filter . ' THEN TIME_TO_SEC(TIMEDIFF(a.jam_masuk, "08:00:00")) ELSE 0 END) as total_detik_telat,
             COUNT(CASE WHEN a.status = "Hadir" AND a.jam_pulang != "00:00:00" AND ((DAYOFWEEK(a.tanggal) BETWEEN 2 AND 6 AND a.jam_pulang < "17:00:00") OR (DAYOFWEEK(a.tanggal) = 7 AND a.jam_pulang < "15:00:00")) THEN 1 END) as total_pulang_cepat');
         $this->db->from('tbl_karyawan k')->join('users u', 'u.karyawan_id = k.karyawan_id', 'left')->join('tbl_jabatan j', 'j.jabatan_id = k.jabatan_id', 'left')->join('tbl_operator o', 'o.operator_id = k.divisi_id', 'left')->join('tbl_perusahaan p', 'p.id_perusahaan = k.perusahaan_id', 'left')->join('absensi a', 'a.karyawan_id = k.karyawan_id AND a.tanggal >= "'.$sd.'" AND a.tanggal <= "'.$ed.'"', 'left');
         $this->db->where('k.divisi_id !=', 8);
@@ -573,10 +719,17 @@ class Payroll_model extends CI_Model
             }
         }
 
+        $config_kedisiplinan = $this->db->get('tbl_pengaturan_kedisiplinan')->row();
+        $potongan_sakit = $config_kedisiplinan ? $config_kedisiplinan->potongan_sakit : 1;
+        $potongan_izin = $config_kedisiplinan ? $config_kedisiplinan->potongan_izin : 1;
+        $potongan_alpha = $config_kedisiplinan ? $config_kedisiplinan->potongan_alpha : 5;
+        $potongan_telat = $config_kedisiplinan ? $config_kedisiplinan->potongan_telat : 1;
+        $potongan_pulang_cepat = $config_kedisiplinan ? $config_kedisiplinan->potongan_pulang_cepat : 3;
+
         foreach ($result as $row) {
             $tr = $row->total_hadir + $row->total_izin + $row->total_sakit + $row->total_cuti;
             $alpha = max(0, $wd - $tr); $row->total_alpha = $alpha;
-            $row->skor_kinerja = 100 - ($row->total_sakit*1) - ($row->total_izin*1) - ($alpha*5) - ($row->total_telat*1) - ($row->total_pulang_cepat*3);
+            $row->skor_kinerja = 100 - ($row->total_sakit * $potongan_sakit) - ($row->total_izin * $potongan_izin) - ($alpha * $potongan_alpha) - ($row->total_telat * $potongan_telat) - ($row->total_pulang_cepat * $potongan_pulang_cepat);
         }
         return $result;
     }
@@ -597,7 +750,15 @@ class Payroll_model extends CI_Model
     public function get_manual_payroll($k_id, $bulan, $sd = '', $ed = '')
     {
         $m = $this->db->get_where('tbl_payroll_manual', ['karyawan_id' => $k_id, 'bulan' => $bulan.'-01'])->row();
-        return (object)['reward' => $m->reward ?? 0, 'bpjs' => $m->bpjs ?? 0, 'tunjangan_extra' => $m->tunjangan_extra ?? 0, 'tunjangan_kinerja_manual' => $m->tunjangan_kinerja_manual ?? 0, 'kasbon' => $m->kasbon ?? 0, 'pinjaman' => $m->pinjaman ?? 0];
+        return (object)[
+            'reward' => $m->reward ?? 0, 'bpjs' => $m->bpjs ?? 0, 'tunjangan_extra' => $m->tunjangan_extra ?? 0, 'tunjangan_kinerja_manual' => $m->tunjangan_kinerja_manual ?? 0, 'kasbon' => $m->kasbon ?? 0, 'pinjaman' => $m->pinjaman ?? 0,
+            'custom_in1_nama' => $m->custom_in1_nama ?? '', 'custom_in1_nom' => $m->custom_in1_nom ?? 0,
+            'custom_in2_nama' => $m->custom_in2_nama ?? '', 'custom_in2_nom' => $m->custom_in2_nom ?? 0,
+            'custom_in3_nama' => $m->custom_in3_nama ?? '', 'custom_in3_nom' => $m->custom_in3_nom ?? 0,
+            'custom_out1_nama' => $m->custom_out1_nama ?? '', 'custom_out1_nom' => $m->custom_out1_nom ?? 0,
+            'custom_out2_nama' => $m->custom_out2_nama ?? '', 'custom_out2_nom' => $m->custom_out2_nom ?? 0,
+            'custom_out3_nama' => $m->custom_out3_nama ?? '', 'custom_out3_nom' => $m->custom_out3_nom ?? 0,
+        ];
     }
 
     public function get_meal_allowance($k_id, $bulan, $sd, $ed)

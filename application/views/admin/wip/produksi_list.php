@@ -559,8 +559,30 @@
                 return;
             }
 
-            // Jika aman, refresh halaman tanpa membuang filter yang sedang aktif
-            location.reload();
+            // Lakukan Silent Refresh (AJAX) tanpa reload halaman utuh
+            $.ajax({
+                url: window.location.href,
+                type: 'GET',
+                success: function(html) {
+                    var $parsed = $(html);
+                    
+                    // Update Tabel SPK View
+                    var newSpk = $parsed.find('#container-view-spk').html();
+                    if (newSpk !== undefined) $('#container-view-spk').html(newSpk);
+                    
+                    // Update Tabel Item View
+                    var newItem = $parsed.find('#container-view-item').html();
+                    if (newItem !== undefined) $('#container-view-item').html(newItem);
+                    
+                    // Update Badge Angka pada Tabs
+                    var newTabs = $parsed.find('.bg-white.px-4.py-3.border-bottom').html();
+                    if (newTabs !== undefined) $('.bg-white.px-4.py-3.border-bottom').html(newTabs);
+
+                    // Update Banner Need Action (SPK Siap PB, dll)
+                    var newBanners = $parsed.find('.animate__fadeInDown').html();
+                    if (newBanners !== undefined) $('.animate__fadeInDown').html(newBanners);
+                }
+            });
         }, REFRESH_TIME);
     }
 

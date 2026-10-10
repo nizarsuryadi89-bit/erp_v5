@@ -21,16 +21,14 @@ if ($waktuSekarang >= '04:59:00' && $waktuSekarang <= '11:00:00') {
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport"
-        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
-    <meta name="theme-color" content="#0f172a">
-    <title>Login | TGM Core</title>
+    <meta name="theme-color" content="#ffffff">
+    <title>Login | <?= get_app_name() ?></title>
 
     <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap"
-        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 
     <!-- Icons -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -38,118 +36,132 @@ if ($waktuSekarang >= '04:59:00' && $waktuSekarang <= '11:00:00') {
     <!-- Animate.css -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" />
 
-    <link rel="stylesheet" href="<?= base_url('assets/css/tgm-auth.css') ?>">
-    <style>
-        body {
-            background-color: var(--dark);
-            background-image: url('<?= base_url("assets/img/login_bg.png") ?>');
-            background-size: cover;
-            background-position: center;
-            background-repeat: no-repeat;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 1.5rem;
-        }
-
-        /* Overlay for background */
-        body::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: radial-gradient(circle at center, rgba(15, 23, 42, 0.4) 0%, rgba(15, 23, 42, 0.9) 100%);
-            z-index: 1;
-        }
-    </style>
+    <link rel="stylesheet" href="<?= base_url('assets/css/tgm-auth.css?v=' . time()) ?>">
 </head>
 
 <body>
-    <div class="login-wrapper animate__animated animate__fadeIn">
-        <main class="login-card">
-            <!-- Branding -->
-            <div class="brand-area">
-                <div style="margin-bottom: 1.5rem; display: inline-block;">
-                    <img src="<?= base_url('assets/images/app_icon.png') ?>" alt="TGM CORE"
-                        style="width: 80px; height: 80px; object-fit: contain; mix-blend-mode: normal;">
-                </div>
-                <h1 class="brand-name">TGM CORE</h1>
-                <p class="brand-motto">Integrated Printing & Management Core</p>
-            </div>
-
-            <!-- Greeting -->
-            <div class="greeting-badge">
-                <i class="bi <?= $icon_waktu ?>"></i>
-                Selamat <?= $waktu ?>, 👋
-            </div>
-
-            <!-- Notification/Alerts -->
-            <?php if ($this->session->flashdata('error')): ?>
-                <div class="alert-custom alert-error">
-                    <i class="bi bi-exclamation-triangle-fill"></i>
-                    <span><?= $this->session->flashdata('error') ?></span>
-                </div>
-            <?php endif; ?>
-
-            <?php if ($this->session->flashdata('success')): ?>
-                <div class="alert-custom alert-success">
-                    <i class="bi bi-check-circle-fill"></i>
-                    <span><?= $this->session->flashdata('success') ?></span>
-                </div>
-            <?php endif; ?>
-
-            <!-- Login Form -->
-            <form action="<?= base_url('auth/proses_login') ?>" method="post">
-                <div class="form-floating-custom">
-                    <label>Username</label>
-                    <div class="input-group-custom">
-                        <i class="bi bi-person-fill main-icon"></i>
-                        <input type="text" name="username" class="form-input-premium" placeholder="Username anda"
-                            required autocomplete="username">
+    <div class="split-layout">
+        <!-- LEFT PANEL (Login Form & Layanan Publik) -->
+        <div class="split-left animate__animated animate__fadeIn">
+            <div class="login-wrapper">
+                <div class="login-card">
+                    <div class="brand-header animate__animated animate__fadeInDown animate__delay-1s">
+                        <div class="brand-logo-box">
+                            <i class="bi bi-layers-half"></i>
+                        </div>
+                        <div>
+                            <h1 class="brand-title"><?= get_app_name() ?></h1>
+                            <p class="brand-subtitle">Integrated Management Core</p>
+                        </div>
                     </div>
-                </div>
 
-                <div class="form-floating-custom">
-                    <label>Password</label>
-                    <div class="input-group-custom">
-                        <i class="bi bi-shield-lock-fill main-icon"></i>
-                        <input type="password" name="password" id="password" class="form-input-premium"
-                            placeholder="Password anda" required autocomplete="current-password">
-                        <button type="button" class="password-toggle" onclick="togglePassword()">
-                            <i class="bi bi-eye-fill" id="toggleIcon"></i>
+                    <div class="greeting-area mb-4">
+                        <h2 class="greeting-title">Welcome back!</h2>
+                        <p class="greeting-subtitle">
+                            <i class="bi <?= $icon_waktu ?> text-accent"></i> Selamat <?= $waktu ?>, silakan masuk untuk melanjutkan.
+                        </p>
+                    </div>
+
+                    <!-- Notification/Alerts -->
+                    <?php if ($this->session->flashdata('error')): ?>
+                        <div class="alert-custom alert-error animate__animated animate__headShake">
+                            <i class="bi bi-exclamation-octagon-fill"></i>
+                            <span><?= $this->session->flashdata('error') ?></span>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if ($this->session->flashdata('success')): ?>
+                        <div class="alert-custom alert-success animate__animated animate__fadeIn">
+                            <i class="bi bi-check-circle-fill"></i>
+                            <span><?= $this->session->flashdata('success') ?></span>
+                        </div>
+                    <?php endif; ?>
+
+                    <!-- Login Form -->
+                    <form action="<?= base_url('auth/proses_login') ?>" method="post" class="login-form animate__animated animate__fadeInUp animate__delay-1s">
+                        <div class="form-floating-custom">
+                            <label>Username</label>
+                            <div class="input-group-custom">
+                                <i class="bi bi-person main-icon"></i>
+                                <input type="text" name="username" class="form-input-premium" placeholder="Masukkan username" required autocomplete="username">
+                                <div class="input-border"></div>
+                            </div>
+                        </div>
+
+                        <div class="form-floating-custom">
+                            <label>Password</label>
+                            <div class="input-group-custom">
+                                <i class="bi bi-lock main-icon"></i>
+                                <input type="password" name="password" id="password" class="form-input-premium" placeholder="Masukkan password" required autocomplete="current-password">
+                                <button type="button" class="password-toggle" onclick="togglePassword()">
+                                    <i class="bi bi-eye" id="toggleIcon"></i>
+                                </button>
+                                <div class="input-border"></div>
+                            </div>
+                        </div>
+
+                        <div class="flex-between">
+                            <label class="remember-me">
+                                <input type="checkbox" name="rememberme">
+                                <span class="checkmark"></span>
+                                <span class="label-text">Remember me</span>
+                            </label>
+                            <a href="#" class="forgot-link">Lupa sandi?</a>
+                        </div>
+
+                        <button type="submit" class="btn-submit">
+                            <span>Sign in to your account</span>
+                            <i class="bi bi-arrow-right"></i>
                         </button>
+
+                        <div class="owner-login">
+                            <span>Owner portal access?</span>
+                            <a href="<?= base_url('owner') ?>">Login Here</a>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Layanan Publik (Bottom of Left Panel) -->
+                <div class="layanan-publik-container animate__animated animate__fadeInUp animate__delay-2s">
+                    <h4 class="layanan-title">
+                        <span>Layanan Publik</span>
+                    </h4>
+                    <div class="key-modules">
+                        <a href="<?= base_url('katalog') ?>" class="module-btn">
+                            <div class="module-icon"><i class="bi bi-shop"></i></div>
+                            <span>Katalog</span>
+                        </a>
+                        <a href="<?= base_url('tracking') ?>" class="module-btn">
+                            <div class="module-icon"><i class="bi bi-search"></i></div>
+                            <span>Tracking</span>
+                        </a>
+                        <a href="<?= base_url('auth/daftar') ?>" class="module-btn">
+                            <div class="module-icon"><i class="bi bi-person-plus"></i></div>
+                            <span>Register</span>
+                        </a>
+                        <a href="<?= base_url('kiosk') ?>" class="module-btn">
+                            <div class="module-icon"><i class="bi bi-display"></i></div>
+                            <span>KIOSK</span>
+                        </a>
                     </div>
                 </div>
-
-                <div class="flex-between">
-                    <label class="remember-me">
-                        <input type="checkbox" name="rememberme">
-                        <span>Ingat Saya</span>
-                    </label>
-                </div>
-
-                <button type="submit" class="btn-submit" style="margin-bottom: 1rem;">
-                    MASUK SEKARANG
-                    <i class="bi bi-arrow-right-short fs-4"></i>
-                </button>
-                
-                <a href="<?= base_url('katalog') ?>" class="btn-submit" style="background: transparent; border: 2px solid rgba(255,255,255,0.2); color: #94a3b8; text-decoration: none; text-align: center; display: flex; align-items: center; justify-content: center; transition: all 0.3s;" onmouseover="this.style.borderColor='rgba(255,255,255,0.5)'; this.style.color='#ffffff';" onmouseout="this.style.borderColor='rgba(255,255,255,0.2)'; this.style.color='#94a3b8';">
-                    <i class="bi bi-bag-check-fill me-2" style="margin-right: 8px;"></i> Lihat Katalog Produk
-                </a>
-
-                <!-- Link Rahasia ke Dashboard Owner -->
-                <a href="<?= base_url('owner') ?>" style="display: block; text-align: center; margin-top: 1.5rem; color: #475569; font-size: 0.85rem; text-decoration: none; transition: color 0.2s; font-weight: 600;" onmouseover="this.style.color='#94a3b8';" onmouseout="this.style.color='#475569';">
-                    <i class="bi bi-incognito me-1"></i> Masuk sebagai Owner
-                </a>
-            </form>
-
-            <div class="login-footer">
-                <i class="bi bi-patch-check-fill text-success"></i>
-                Sistem Terenkripsi & Aman
             </div>
-        </main>
+        </div>
+
+        <!-- RIGHT PANEL (Dynamic Image & Branding) -->
+        <div class="split-right animate__animated animate__fadeInRight">
+            <div class="split-right-image" style="background-image: url('<?= base_url('assets/images/' . get_login_image()) ?>');"></div>
+            <!-- Subtly shaded overlay just to make the text pop -->
+            <div class="split-right-overlay"></div>
+            
+            <div class="split-right-content animate__animated animate__fadeInUp animate__delay-1s">
+                <div class="glass-quote">
+                    <i class="bi bi-quote quote-icon"></i>
+                    <h2 class="right-title">Building meaningful experiences together.</h2>
+                    <p class="right-subtitle">ERP Core System &bull; Next Generation Printing Management</p>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Password Toggle Script -->
@@ -157,15 +169,30 @@ if ($waktuSekarang >= '04:59:00' && $waktuSekarang <= '11:00:00') {
         function togglePassword() {
             const pwd = document.getElementById('password');
             const icon = document.getElementById('toggleIcon');
+            const wrapper = icon.closest('.password-toggle');
+            
             if (pwd.type === 'password') {
                 pwd.type = 'text';
-                icon.classList.replace('bi-eye-fill', 'bi-eye-slash-fill');
+                icon.classList.replace('bi-eye', 'bi-eye-slash');
+                wrapper.classList.add('active');
             } else {
                 pwd.type = 'password';
-                icon.classList.replace('bi-eye-slash-fill', 'bi-eye-fill');
+                icon.classList.replace('bi-eye-slash', 'bi-eye');
+                wrapper.classList.remove('active');
             }
         }
+        
+        // Add focus states to input groups
+        document.querySelectorAll('.form-input-premium').forEach(input => {
+            input.addEventListener('focus', function() {
+                this.closest('.input-group-custom').classList.add('focused');
+            });
+            input.addEventListener('blur', function() {
+                if(this.value === '') {
+                    this.closest('.input-group-custom').classList.remove('focused');
+                }
+            });
+        });
     </script>
 </body>
-
 </html>

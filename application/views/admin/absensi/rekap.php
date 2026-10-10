@@ -42,6 +42,22 @@ $daysIndo = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
         background-color: var(--tgm-primary) !important;
     }
 
+    .text-rose {
+        color: var(--tgm-rose) !important;
+    }
+
+    .bg-rose {
+        background-color: var(--tgm-rose) !important;
+    }
+
+    .text-emerald {
+        color: var(--tgm-emerald) !important;
+    }
+
+    .bg-emerald {
+        background-color: var(--tgm-emerald) !important;
+    }
+
     .btn-primary-tgm {
         background-color: var(--tgm-primary);
         color: white;
@@ -389,9 +405,9 @@ $daysIndo = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
                             $day_spls = isset($lembur_map[$date]) ? $lembur_map[$date] : [];
 
                             $calc    = isset($lembur_calc[$date]) ? $lembur_calc[$date] : ['pagi' => 0, 'wajib' => 0, 'kerjaan' => 0, 'total' => 0];
-                            $p_hours = $calc['pagi'];
-                            $w_hours = $calc['wajib'];
-                            $k_hours = $calc['kerjaan'];
+                            $p_hours = round($calc['pagi'], 2);
+                            $w_hours = round($calc['wajib'], 2);
+                            $k_hours = round($calc['kerjaan'], 2);
 
                             // Hitung total: wajib + SPL + pagi (semua dijumlah)
                             $t_hours = $p_hours + $w_hours + $k_hours;
@@ -450,7 +466,7 @@ $daysIndo = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
                                         <?php if ($att && $att->jam_masuk && $att->jam_masuk != '00:00:00'): ?>
                                             <?php
                                             $check_jk = isset($jk_map[$dayIndo]) ? $jk_map[$dayIndo]->jam_masuk : '08:00:00';
-                                            $is_late = strtotime($att->jam_masuk) > strtotime($check_jk . ' +15 minutes');
+                                            $is_late = strtotime($att->jam_masuk) > strtotime($check_jk . ' +1 minute');
                                             ?>
                                             <div class="d-flex align-items-center gap-2">
                                                 <div class="status-dot <?= $is_late ? 'bg-rose' : 'bg-emerald' ?>"
@@ -571,16 +587,16 @@ $daysIndo = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
                         <tr class="bg-primary-tgm text-white">
                             <td colspan="4" class="text-end pe-4 py-3 fw-900 text-uppercase ls-1">AKUMULASI LEMBUR :</td>
                             <td class="text-center py-3 fw-900 font-mono">
-                                <?= str_replace('.', ',', (string) $total_pagi) ?> JAM
+                                <?= str_replace('.', ',', (string) round($total_pagi, 2)) ?> JAM
                             </td>
                             <td class="text-center py-3 fw-900 font-mono">
                                 <?php if ($total_wajib > 0): ?>
-                                    <span class="d-block"><?= str_replace('.', ',', (string)$total_wajib) ?> <small class="fw-800">JAM</small></span>
+                                    <span class="d-block"><?= str_replace('.', ',', (string) round($total_wajib, 2)) ?> <small class="fw-800">JAM</small></span>
                                     <span class="badge badge-soft bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25" style="font-size:.6rem;">WAJIB</span>
                                 <?php endif; ?>
                                 <?php if ($total_kerjaan > 0): ?>
                                     <?php if ($total_wajib > 0): ?><div style="margin-top:3px;"></div><?php endif; ?>
-                                    <span class="d-block"><?= str_replace('.', ',', (string)$total_kerjaan) ?> <small class="fw-800">JAM</small></span>
+                                    <span class="d-block"><?= str_replace('.', ',', (string) round($total_kerjaan, 2)) ?> <small class="fw-800">JAM</small></span>
                                     <span class="badge badge-soft bg-white bg-opacity-10 text-white border border-white border-opacity-25" style="font-size:.6rem;">SPL</span>
                                 <?php endif; ?>
                                 <?php if ($total_wajib == 0 && $total_kerjaan == 0): ?>
@@ -588,7 +604,7 @@ $daysIndo = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
                                 <?php endif; ?>
                             </td>
                             <td class="text-center py-3 fw-900 font-mono">
-                                <?= str_replace('.', ',', (string) $total_all) ?> JAM
+                                <?= str_replace('.', ',', (string) round($total_all, 2)) ?> JAM
                             </td>
                             <td class="no-print p-2" colspan="3">
                                 <button type="button" id="btnSyncPayroll" onclick="syncToPayroll()"

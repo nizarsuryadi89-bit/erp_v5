@@ -1,8 +1,17 @@
+<style>
+    .settings-nav-scroll::-webkit-scrollbar {
+        display: none;
+    }
+    .settings-nav-scroll {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
+</style>
 <div class="row mb-3">
     <div class="col-12">
         <div class="card card-outline card-primary shadow-sm" style="border-radius: 12px;">
             <div class="card-body p-2">
-                <ul class="nav nav-pills nav-fill text-sm" style="font-weight: 500;">
+                <ul class="nav nav-pills nav-fill flex-nowrap overflow-auto text-sm settings-nav-scroll" style="font-weight: 500;">
                     <?php
                     $current_url = current_url();
                     
@@ -23,12 +32,12 @@
                         if ($tab['url'] === base_url('pengaturan')) {
                             $is_active = ($current_url == base_url('pengaturan') || $current_url == base_url('pengaturan/index')) ? 'active bg-primary' : '';
                         } else {
-                            $is_active = (strpos($current_url, $tab['url']) === 0) ? 'active bg-primary' : '';
+                            $is_active = (strpos($current_url, $tab['url']) === 0) ? 'active bg-primary text-white' : 'text-muted';
                         }
                         
                         echo '<li class="nav-item">';
-                        echo '<a class="nav-link rounded-pill px-3 py-2 ' . $is_active . '" href="' . $tab['url'] . '">';
-                        echo '<i class="bi ' . $tab['icon'] . ' me-1"></i> ' . $tab['label'];
+                        echo '<a class="nav-link rounded-pill px-3 py-2 text-nowrap ' . $is_active . '" href="' . $tab['url'] . '" title="' . $tab['label'] . '">';
+                        echo '<i class="bi ' . $tab['icon'] . ' me-lg-1"></i> <span class="d-none d-lg-inline">' . $tab['label'] . '</span>';
                         echo '</a>';
                         echo '</li>';
                     }

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TGM ERP Health Monitor</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1e293b">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: white; }
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .pulse-green { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); animation: pulse-green 2s infinite; }
+        .pulse-red { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); animation: pulse-red 2s infinite; }
+        @keyframes pulse-green {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+        }
+        @keyframes pulse-red {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4">
+
+    <div class="glass-panel w-full max-w-sm rounded-3xl p-8 flex flex-col items-center shadow-2xl relative overflow-hidden">
+        
+        <!-- Background Decoration -->
+        <div class="absolute -top-20 -right-20 w-40 h-40 bg-blue-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
+        <div class="absolute -bottom-20 -left-20 w-40 h-40 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
+
+        <h1 class="text-2xl font-bold mb-2 text-center relative z-10">TGM ERP Monitor</h1>
+        <p class="text-slate-400 text-sm mb-8 relative z-10">Server Health Check</p>
+
+        <!-- Status Indicator -->
+        <div id="statusIndicator" class="w-32 h-32 rounded-full flex items-center justify-center bg-slate-800 mb-8 relative z-10 transition-all duration-500">
+            <i id="statusIcon" class="fas fa-satellite-dish text-4xl text-slate-400"></i>
+        </div>
+
+        <!-- Metrics -->
+        <div class="w-full space-y-4 relative z-10">
+            <div class="flex justify-between items-center p-4 bg-slate-800/50 rounded-xl">
+                <div class="flex items-center gap-3">
+                    <i class="fas fa-server text-blue-400"></i>
+                    <span class="font-medium">Web Server</span>
+                </div>
+                <span id="webStatus" class="text-slate-400 font-mono text-sm">Waiting...</span>
+            </div>
+            
+            <div class="flex justify-between items-center p-4 bg-slate-800/50 rounded-xl">
+                <div class="flex items-center gap-3">
+                    <i class="fas fa-database text-purple-400"></i>
+                    <span class="font-medium">Database</span>
+                </div>
+                <span id="dbStatus" class="text-slate-400 font-mono text-sm">Waiting...</span>
+            </div>
+        </div>
+
+        <button onclick="checkHealth()" class="mt-8 w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl transition-colors relative z-10 shadow-lg shadow-blue-500/30">
+            PING SERVER
+        </button>
+
+        <p id="lastCheck" class="text-xs text-slate-500 mt-4 font-mono relative z-10">Last check: Never</p>
+    </div>
+
+    <script>
+        // Register Service Worker for PWA installation
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js')
+                .then(() => console.log('Service Worker Registered'));
+        }
+
+        async function checkHealth() {
+            const indicator = document.getElementById('statusIndicator');
+            const icon = document.getElementById('statusIcon');
+            const webText = document.getElementById('webStatus');
+            const dbText = document.getElementById('dbStatus');
+            const lastCheck = document.getElementById('lastCheck');
+
+            // Reset UI
+            indicator.className = 'w-32 h-32 rounded-full flex items-center justify-center bg-slate-800 mb-8 relative z-10';
+            icon.className = 'fas fa-circle-notch fa-spin text-4xl text-blue-400';
+            webText.textContent = 'Pinging...';
+            webText.className = 'text-blue-400 font-mono text-sm';
+            dbText.textContent = 'Pinging...';
+            dbText.className = 'text-blue-400 font-mono text-sm';
+
+            try {
+                // The API endpoint is the one we created in CI
+                const startTime = Date.now();
+                const res = await fetch('/index.php/health', { cache: 'no-store' });
+                const pingTime = Date.now() - startTime;
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    
+                    webText.textContent = pingTime + 'ms';
+                    webText.className = 'text-green-400 font-mono text-sm font-bold';
+
+                    if (data.database === 'ok') {
+                        dbText.textContent = 'CONNECTED';
+                        dbText.className = 'text-green-400 font-mono text-sm font-bold';
+                        
+                        indicator.className = 'w-32 h-32 rounded-full flex items-center justify-center bg-green-500/20 mb-8 relative z-10 pulse-green border-2 border-green-500';
+                        icon.className = 'fas fa-check text-5xl text-green-500';
+                    } else {
+                        dbText.textContent = 'ERROR';
+                        dbText.className = 'text-red-400 font-mono text-sm font-bold';
+
+                        indicator.className = 'w-32 h-32 rounded-full flex items-center justify-center bg-red-500/20 mb-8 relative z-10 pulse-red border-2 border-red-500';
+                        icon.className = 'fas fa-exclamation-triangle text-5xl text-red-500';
+                    }
+                } else {
+                    throw new Error('Server Error');
+                }
+            } catch (err) {
+                webText.textContent = 'OFFLINE';
+                webText.className = 'text-red-400 font-mono text-sm font-bold';
+                dbText.textContent = 'OFFLINE';
+                dbText.className = 'text-red-400 font-mono text-sm font-bold';
+
+                indicator.className = 'w-32 h-32 rounded-full flex items-center justify-center bg-red-500/20 mb-8 relative z-10 pulse-red border-2 border-red-500';
+                icon.className = 'fas fa-times text-5xl text-red-500';
+            }
+
+            const now = new Date();
+            lastCheck.textContent = 'Last check: ' + now.toLocaleTimeString();
+        }
+
+        // Run once on load
+        checkHealth();
+    </script>
+</body>
+</html>

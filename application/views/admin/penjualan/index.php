@@ -477,239 +477,263 @@
                     <span class="input-group-text bg-white border-0 text-muted rounded-start-pill px-3">
                         <i class="fas fa-search"></i>
                     </span>
-                    <input type="text" id="searchTableInput" class="form-control border-0 rounded-end-pill py-2 px-3" 
-                        placeholder="Cari SPK / Nama Konsumen..." onkeyup="filterSalesTable()" style="min-width: 250px;">
-                </div>
-            </div>
-        </div>
-        </div>
-        
-        <div class="card-header border-bottom px-4 pt-3 pb-0 bg-light" style="border-radius: 0;">
-            <ul class="nav nav-tabs border-bottom-0" id="salesDetailTabs" role="tablist">
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link active fw-bold px-4 pb-3" id="tab-daftar-spk" data-bs-toggle="tab" data-bs-target="#content-spk" type="button" role="tab" style="color: #475569;">
-                        <i class="fas fa-file-invoice me-2 text-primary"></i>Daftar SPK
-                    </button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link fw-bold px-4 pb-3" id="tab-rekap-konsumen" data-bs-toggle="tab" data-bs-target="#content-konsumen" type="button" role="tab" style="color: #475569;">
-                        <i class="fas fa-users me-2 text-warning"></i>Rekap Per Konsumen
-                    </button>
-                </li>
-            </ul>
-        </div>
-
-        <div class="tab-content">
-            <!-- TAB 1: DAFTAR SPK -->
-            <div class="tab-pane fade show active" id="content-spk" role="tabpanel">
-                <div class="table-responsive">
-            <table class="table premium-table" id="salesDetailTable">
-                <thead>
-                    <tr>
-                        <th class="text-center" width="5%">NO</th>
-                        <th width="15%">KODE SPK</th>
-                        <th width="18%">CABANG/PERUSAHAAN</th>
-                        <th width="22%">IDENTITAS KONSUMEN</th>
-                        <th width="15%">WAKTU TRANSAKSI</th>
-                        <th width="12%">TOTAL AKHIR</th>
-                        <th width="12%">SUBTOTAL (HISTORI)</th>
-                        <th class="text-center" width="13%">STATUS</th>
-                        <th class="text-center" width="10%">AKSI</th>
-                    </tr>
-                </thead>
-                <tbody id="salesDetailBody">
-                    <?php if (!empty($sales_data)): ?>
-                        <?php $no = 1;
-                        foreach ($sales_data as $sale): ?>
-                            <tr>
-                                <td class="text-center text-muted fw-bold"><?= $no++ ?></td>
-                                <td>
-                                    <div class="d-flex align-items-center gap-2">
-                                        <span class="spk-code"><?= $sale->nospk ?></span>
-                                        <?php if (strpos($sale->nospk, 'MAN-') === 0): ?>
-                                            <span
-                                                class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25"
-                                                style="font-size: 0.6rem; padding: 2px 6px;">MANUAL</span>
-                                        <?php endif; ?>
-                                    </div>
-                                </td>
-                                <td>
-                                    <?php
-                                    $comp_name = $sale->nama_perusahaan ?: 'N/A';
-                                    $colors = ['#2196f3', '#9c27b0', '#4caf50', '#ff9800', '#e91e63', '#8bc34a', '#009688', '#ffc107', '#673ab7', '#3f51b5'];
-                                    $hash = 0;
-                                    for ($i = 0; $i < strlen($comp_name); $i++) {
-                                        $hash = ord($comp_name[$i]) + (($hash << 5) - $hash);
-                                    }
-                                    $color = $colors[abs($hash) % count($colors)];
-                                    ?>
-                                    <div class="company-pill"
-                                        style="color: <?= $color ?>; background: rgba(0,0,0,0.03); border: 1px solid <?= $color ?>20;">
-                                        <div class="company-dot" style="background: <?= $color ?>"></div>
-                                        <?= $comp_name ?>
-                                    </div>
-                                </td>
-                                <td>
-                                    <div class="fw-800 text-dark"><?= $sale->konsumen_nama ?: 'PENGUNJUNG' ?></div>
-                                    <div class="small text-muted d-flex align-items-center gap-1">
-                                        <i class="fas fa-phone-alt fs-xsmall"></i> <?= $sale->konsumen_nohp ?: '-' ?>
-                                    </div>
-                                </td>
-                                <td>
-                                    <div class="time-badge">
-                                        <i class="far fa-clock"></i>
-                                        <?= date('H:i', strtotime($sale->jam_bayar)) ?>
-                                        <span class="text-light-muted">|</span>
-                                        <?= date('d/m/y', strtotime($sale->tgl_bayar)) ?>
-                                    </div>
-                                </td>
-                                <td class="text-center">
-                                    <div class="fw-900 text-success">
-                                        Rp <?= number_format($sale->total_bayar, 0, ',', '.') ?>
-                                    </div>
-                                </td>
-                                <td class="text-center">
-                                    <div class="fw-900 text-success">
-                                        Rp <?= number_format($sale->snapshot_subtotal, 0, ',', '.') ?>
-                                    </div>
-                                </td>
-                                <td class="text-center">
-                                    <?php
-                                    $status_map = [
-                                        '1' => ['label' => 'SUCCESS', 'class' => 'bg-success'],
-                                        '0' => ['label' => 'PENDING', 'class' => 'bg-warning text-dark'],
-                                    ];
-                                    $status = $status_map[$sale->status_lunas] ?? ['label' => 'PENDING', 'class' => 'bg-secondary'];
-                                    ?>
-                                    <span class="badge rounded-pill <?= $status['class'] ?> px-3 py-2 fw-800"
-                                        style="font-size: 0.65rem; letter-spacing: 0.5px;">
-                                        <?= $status['label'] ?>
-                                    </span>
-                                </td>
-                                <td>
-                                    <div class="d-flex justify-content-center gap-2">
-                                        <button class="btn-action-premium btn-view"
-                                            onclick="viewTransactionDetail('<?= $sale->nospk ?>')" title="Lihat Detail">
-                                            <i class="fas fa-eye"></i>
-                                        </button>
-                                        <a href="<?= base_url('cekpesanan/spk/' . urlencode(encrypt_spk($sale->nospk))) ?>"
-                                            target="_blank" class="btn-action-premium btn-globe" title="Link Invoice (Status)">
-                                            <i class="fas fa-globe"></i>
-                                        </a>
-                                        <button class="btn-action-premium btn-print"
-                                            onclick="viewTransactionDetail('<?= $sale->nospk ?>')" title="Print Invoice">
-                                            <i class="fas fa-print"></i>
-                                        </button>
-                                        <?php if ($this->session->userdata('level') == 1 || $this->session->userdata('level') == 17): ?>
-                                            <button class="btn-action-premium"
-                                                style="background: white; border-color: #e2e8f0; color: #f39c12;"
-                                                onmouseover="this.style.background='var(--warning-gradient)'; this.style.color='white';"
-                                                onmouseout="this.style.background='white'; this.style.color='#f39c12';"
-                                                onclick="rollbackTransaction('<?= $sale->nospk ?>')" title="Kembalikan (Rollback)">
-                                                <i class="fas fa-undo"></i>
-                                            </button>
-                                            <button class="btn-action-premium btn-delete"
-                                                onclick="deleteTransaction('<?= $sale->nospk ?>')" title="Hapus Permanen">
-                                                <i class="fas fa-trash-alt"></i>
-                                            </button>
-                                        <?php endif; ?>
-                                    </div>
-                                </td>
-                            </tr>
-                        <?php endforeach ?>
-                    <?php else: ?>
-                        <tr>
-                            <td colspan="8" class="text-center py-5 text-muted">
-                                <div class="mb-3"><i class="fas fa-inbox fa-3x opacity-20"></i></div>
-                                <div class="fw-bold fs-5">Tidak Ada Data Penjualan</div>
-                                <div class="small">Silakan pilih tanggal lain pada kalender</div>
-                            </td>
-                        </tr>
-                    <?php endif ?>
-                </tbody>
-            </table>
-        </div>
-            </div>
-            
-            <!-- TAB 2: REKAP KONSUMEN -->
-            <div class="tab-pane fade" id="content-konsumen" role="tabpanel">
-                <div class="table-responsive">
-                    <table class="table premium-table" id="rekapKonsumenTable">
-                        <thead>
-                            <tr>
-                                <th class="text-center" width="5%">NO</th>
-                                <th width="35%">IDENTITAS KONSUMEN</th>
-                                <th class="text-center" width="20%">JUMLAH TRANSAKSI</th>
-                                <th class="text-center" width="20%">TOTAL BELANJA</th>
-                                <th class="text-center" width="20%">DAFTAR SPK</th>
-                            </tr>
-                        </thead>
-                        <tbody id="rekapKonsumenBody">
-                            <?php if (!empty($sales_data)): ?>
-                                <?php 
-                                $konsumenMap = [];
-                                foreach($sales_data as $sale) {
-                                    $name = $sale->konsumen_nama ?: 'PENGUNJUNG';
-                                    $phone = $sale->konsumen_nohp ?: '-';
-                                    $key = $name . '||' . $phone;
-                                    
-                                    if (!isset($konsumenMap[$key])) {
-                                        $konsumenMap[$key] = [
-                                            'name' => $name,
-                                            'phone' => $phone,
-                                            'count' => 0,
-                                            'total' => 0,
-                                            'spks' => []
-                                        ];
-                                    }
-                                    $konsumenMap[$key]['count']++;
-                                    $konsumenMap[$key]['total'] += (float)$sale->total_bayar;
-                                    $konsumenMap[$key]['spks'][] = $sale->nospk;
-                                }
-                                
-                                usort($konsumenMap, function($a, $b) {
-                                    return $b['total'] <=> $a['total'];
-                                });
-                                ?>
-                                <?php $no = 1; foreach ($konsumenMap as $k): ?>
-                                    <tr>
-                                        <td class="text-center text-muted fw-bold"><?= $no++ ?></td>
-                                        <td>
-                                            <div class="fw-800 text-dark"><?= htmlspecialchars($k['name']) ?></div>
-                                            <div class="small text-muted d-flex align-items-center gap-1">
-                                                <i class="fas fa-phone-alt fs-xsmall"></i> <?= htmlspecialchars($k['phone']) ?>
-                                            </div>
-                                        </td>
-                                        <td class="text-center">
-                                            <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 rounded-pill px-3 py-2 fw-800"><?= $k['count'] ?> Transaksi</span>
-                                        </td>
-                                        <td class="text-center">
-                                            <div class="fw-900 text-success">
-                                                Rp <?= number_format($k['total'], 0, ',', '.') ?>
-                                            </div>
-                                        </td>
-                                        <td class="text-center">
-                                            <button class="btn btn-sm btn-outline-secondary rounded-pill fw-bold px-3 shadow-sm" onclick="showSpkList('<?= htmlspecialchars($k['name'], ENT_QUOTES) ?>', '<?= implode(',', $k['spks']) ?>')">
-                                                <i class="fas fa-list me-1"></i> Lihat SPK
-                                            </button>
-                                        </td>
-                                    </tr>
-                                <?php endforeach ?>
-                            <?php else: ?>
-                                <tr>
-                                    <td colspan="5" class="text-center py-5 text-muted">
-                                        <div class="mb-3"><i class="fas fa-users-slash fa-3x opacity-20"></i></div>
-                                        <div class="fw-bold fs-5">Tidak Ada Data Konsumen</div>
-                                        <div class="small">Silakan pilih tanggal lain pada kalender</div>
-                                    </td>
-                                </tr>
-                            <?php endif ?>
-                        </tbody>
-                    </table>
+                    <input type="text" id="searchTableInput" class="form-control border-0 rounded-end-pill py-2 px-3"
+                        placeholder="Cari SPK / Nama Konsumen / Produk..." onkeyup="filterSalesTable()"
+                        style="min-width: 250px;">
                 </div>
             </div>
         </div>
     </div>
+
+    <div class="card-header border-bottom px-4 pt-3 pb-0 bg-light" style="border-radius: 0;">
+        <ul class="nav nav-tabs border-bottom-0" id="salesDetailTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active fw-bold px-4 pb-3" id="tab-daftar-spk" data-bs-toggle="tab"
+                    data-bs-target="#content-spk" type="button" role="tab" style="color: #475569;">
+                    <i class="fas fa-file-invoice me-2 text-primary"></i>Daftar SPK
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link fw-bold px-4 pb-3" id="tab-rekap-konsumen" data-bs-toggle="tab"
+                    data-bs-target="#content-konsumen" type="button" role="tab" style="color: #475569;">
+                    <i class="fas fa-users me-2 text-warning"></i>Rekap Per Konsumen
+                </button>
+            </li>
+        </ul>
+    </div>
+
+    <div class="tab-content">
+        <!-- TAB 1: DAFTAR SPK -->
+        <div class="tab-pane fade show active" id="content-spk" role="tabpanel">
+            <div class="table-responsive">
+                <table class="table premium-table" id="salesDetailTable">
+                    <thead>
+                        <tr>
+                            <th class="text-center" width="5%">NO</th>
+                            <th width="15%">KODE SPK</th>
+                            <th width="18%">CABANG/PERUSAHAAN</th>
+                            <th width="22%">IDENTITAS KONSUMEN</th>
+                            <th width="15%">WAKTU TRANSAKSI</th>
+                            <th width="12%">TOTAL AKHIR</th>
+                            <th width="12%">SUBTOTAL (HISTORI)</th>
+                            <th class="text-center" width="13%">STATUS</th>
+                            <th class="text-center" width="10%">AKSI</th>
+                        </tr>
+                    </thead>
+                    <tbody id="salesDetailBody">
+                        <?php if (!empty($sales_data)): ?>
+                            <?php $no = 1;
+                            foreach ($sales_data as $sale): 
+                                $spk_products = [];
+                                if (isset($sales_detail) && is_array($sales_detail)) {
+                                    foreach ($sales_detail as $sd) {
+                                        if ($sd->nospk == $sale->nospk && !empty($sd->product_nama)) {
+                                            $spk_products[] = strtolower($sd->product_nama);
+                                        }
+                                    }
+                                }
+                                $products_str = htmlspecialchars(implode(', ', $spk_products));
+                            ?>
+                                <tr data-products="<?= $products_str ?>">
+                                    <td class="text-center text-muted fw-bold"><?= $no++ ?></td>
+                                    <td>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <span class="spk-code"><?= $sale->nospk ?></span>
+                                            <?php if (strpos($sale->nospk, 'MAN-') === 0): ?>
+                                                <span
+                                                    class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25"
+                                                    style="font-size: 0.6rem; padding: 2px 6px;">MANUAL</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <?php
+                                        $comp_name = $sale->nama_perusahaan ?: 'N/A';
+                                        $colors = ['#2196f3', '#9c27b0', '#4caf50', '#ff9800', '#e91e63', '#8bc34a', '#009688', '#ffc107', '#673ab7', '#3f51b5'];
+                                        $hash = 0;
+                                        for ($i = 0; $i < strlen($comp_name); $i++) {
+                                            $hash = ord($comp_name[$i]) + (($hash << 5) - $hash);
+                                        }
+                                        $color = $colors[abs($hash) % count($colors)];
+                                        ?>
+                                        <div class="company-pill"
+                                            style="color: <?= $color ?>; background: rgba(0,0,0,0.03); border: 1px solid <?= $color ?>20;">
+                                            <div class="company-dot" style="background: <?= $color ?>"></div>
+                                            <?= $comp_name ?>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="fw-800 text-dark"><?= $sale->konsumen_nama ?: 'PENGUNJUNG' ?></div>
+                                        <div class="small text-muted d-flex align-items-center gap-1">
+                                            <i class="fas fa-phone-alt fs-xsmall"></i> <?= $sale->konsumen_nohp ?: '-' ?>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="time-badge">
+                                            <i class="far fa-clock"></i>
+                                            <?= date('H:i', strtotime($sale->jam_bayar)) ?>
+                                            <span class="text-light-muted">|</span>
+                                            <?= date('d/m/y', strtotime($sale->tgl_bayar)) ?>
+                                        </div>
+                                    </td>
+                                    <td class="text-center">
+                                        <div class="fw-900 text-success">
+                                            Rp <?= number_format($sale->total_bayar, 0, ',', '.') ?>
+                                        </div>
+                                    </td>
+                                    <td class="text-center">
+                                        <div class="fw-900 text-success">
+                                            Rp <?= number_format($sale->snapshot_subtotal, 0, ',', '.') ?>
+                                        </div>
+                                    </td>
+                                    <td class="text-center">
+                                        <?php
+                                        $status_map = [
+                                            '1' => ['label' => 'SUCCESS', 'class' => 'bg-success'],
+                                            '0' => ['label' => 'PENDING', 'class' => 'bg-warning text-dark'],
+                                        ];
+                                        $status = $status_map[$sale->status_lunas] ?? ['label' => 'PENDING', 'class' => 'bg-secondary'];
+                                        ?>
+                                        <span class="badge rounded-pill <?= $status['class'] ?> px-3 py-2 fw-800"
+                                            style="font-size: 0.65rem; letter-spacing: 0.5px;">
+                                            <?= $status['label'] ?>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="d-flex justify-content-center gap-2">
+                                            <button class="btn-action-premium btn-view"
+                                                onclick="viewTransactionDetail('<?= $sale->nospk ?>')" title="Lihat Detail">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                            <?php
+                                            $host = parse_url(base_url(), PHP_URL_HOST);
+                                            $is_local = (in_array($host, ['localhost', '127.0.0.1', '::1']) || strpos($host, '192.168.') === 0 || strpos($host, '.test') !== false || strpos($host, '.local') !== false);
+                                            $tracking_url = $is_local ? base_url('portal_tracking_export/index.html') : 'https://tracking.tgmprint.com/';
+                                            ?>
+                                            <a href="<?= $tracking_url ?>?spk=<?= urlencode(encrypt_spk($sale->nospk)) ?>"
+                                                target="_blank" class="btn-action-premium btn-globe"
+                                                title="Link Invoice (Status)">
+                                                <i class="fas fa-globe"></i>
+                                            </a>
+                                            <button class="btn-action-premium btn-print"
+                                                onclick="viewTransactionDetail('<?= $sale->nospk ?>')" title="Print Invoice">
+                                                <i class="fas fa-print"></i>
+                                            </button>
+                                            <?php if ($this->session->userdata('level') == 1 || $this->session->userdata('level') == 17): ?>
+                                                <button class="btn-action-premium"
+                                                    style="background: white; border-color: #e2e8f0; color: #f39c12;"
+                                                    onmouseover="this.style.background='var(--warning-gradient)'; this.style.color='white';"
+                                                    onmouseout="this.style.background='white'; this.style.color='#f39c12';"
+                                                    onclick="rollbackTransaction('<?= $sale->nospk ?>')"
+                                                    title="Kembalikan (Rollback)">
+                                                    <i class="fas fa-undo"></i>
+                                                </button>
+                                                <button class="btn-action-premium btn-delete"
+                                                    onclick="deleteTransaction('<?= $sale->nospk ?>')" title="Hapus Permanen">
+                                                    <i class="fas fa-trash-alt"></i>
+                                                </button>
+                                            <?php endif; ?>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php endforeach ?>
+                        <?php else: ?>
+                            <tr>
+                                <td colspan="8" class="text-center py-5 text-muted">
+                                    <div class="mb-3"><i class="fas fa-inbox fa-3x opacity-20"></i></div>
+                                    <div class="fw-bold fs-5">Tidak Ada Data Penjualan</div>
+                                    <div class="small">Silakan pilih tanggal lain pada kalender</div>
+                                </td>
+                            </tr>
+                        <?php endif ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- TAB 2: REKAP KONSUMEN -->
+        <div class="tab-pane fade" id="content-konsumen" role="tabpanel">
+            <div class="table-responsive">
+                <table class="table premium-table" id="rekapKonsumenTable">
+                    <thead>
+                        <tr>
+                            <th class="text-center" width="5%">NO</th>
+                            <th width="35%">IDENTITAS KONSUMEN</th>
+                            <th class="text-center" width="20%">JUMLAH TRANSAKSI</th>
+                            <th class="text-center" width="20%">TOTAL BELANJA</th>
+                            <th class="text-center" width="20%">DAFTAR SPK</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rekapKonsumenBody">
+                        <?php if (!empty($sales_data)): ?>
+                            <?php
+                            $konsumenMap = [];
+                            foreach ($sales_data as $sale) {
+                                $name = $sale->konsumen_nama ?: 'PENGUNJUNG';
+                                $phone = $sale->konsumen_nohp ?: '-';
+                                $key = $name . '||' . $phone;
+
+                                if (!isset($konsumenMap[$key])) {
+                                    $konsumenMap[$key] = [
+                                        'name' => $name,
+                                        'phone' => $phone,
+                                        'count' => 0,
+                                        'total' => 0,
+                                        'spks' => []
+                                    ];
+                                }
+                                $konsumenMap[$key]['count']++;
+                                $konsumenMap[$key]['total'] += (float) $sale->total_bayar;
+                                $konsumenMap[$key]['spks'][] = $sale->nospk;
+                            }
+
+                            usort($konsumenMap, function ($a, $b) {
+                                return $b['total'] <=> $a['total'];
+                            });
+                            ?>
+                            <?php $no = 1;
+                            foreach ($konsumenMap as $k): ?>
+                                <tr>
+                                    <td class="text-center text-muted fw-bold"><?= $no++ ?></td>
+                                    <td>
+                                        <div class="fw-800 text-dark"><?= htmlspecialchars($k['name']) ?></div>
+                                        <div class="small text-muted d-flex align-items-center gap-1">
+                                            <i class="fas fa-phone-alt fs-xsmall"></i> <?= htmlspecialchars($k['phone']) ?>
+                                        </div>
+                                    </td>
+                                    <td class="text-center">
+                                        <span
+                                            class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 rounded-pill px-3 py-2 fw-800"><?= $k['count'] ?>
+                                            Transaksi</span>
+                                    </td>
+                                    <td class="text-center">
+                                        <div class="fw-900 text-success">
+                                            Rp <?= number_format($k['total'], 0, ',', '.') ?>
+                                        </div>
+                                    </td>
+                                    <td class="text-center">
+                                        <button class="btn btn-sm btn-outline-secondary rounded-pill fw-bold px-3 shadow-sm"
+                                            onclick="showSpkList('<?= htmlspecialchars($k['name'], ENT_QUOTES) ?>', '<?= implode(',', $k['spks']) ?>')">
+                                            <i class="fas fa-list me-1"></i> Lihat SPK
+                                        </button>
+                                    </td>
+                                </tr>
+                            <?php endforeach ?>
+                        <?php else: ?>
+                            <tr>
+                                <td colspan="5" class="text-center py-5 text-muted">
+                                    <div class="mb-3"><i class="fas fa-users-slash fa-3x opacity-20"></i></div>
+                                    <div class="fw-bold fs-5">Tidak Ada Data Konsumen</div>
+                                    <div class="small">Silakan pilih tanggal lain pada kalender</div>
+                                </td>
+                            </tr>
+                        <?php endif ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
 </div>
 </div>
 
@@ -784,10 +808,14 @@
             if (tr[i].getElementsByTagName("td").length > 1) {
                 const spkTd = tr[i].getElementsByTagName("td")[1];
                 const custTd = tr[i].getElementsByTagName("td")[3];
+                const productsStr = tr[i].getAttribute("data-products") || "";
+                
                 if (spkTd && custTd) {
                     const spkText = spkTd.textContent || spkTd.innerText;
                     const custText = custTd.textContent || custTd.innerText;
-                    if (spkText.toLowerCase().indexOf(filter) > -1 || custText.toLowerCase().indexOf(filter) > -1) {
+                    if (spkText.toLowerCase().indexOf(filter) > -1 || 
+                        custText.toLowerCase().indexOf(filter) > -1 ||
+                        productsStr.indexOf(filter) > -1) {
                         tr[i].style.display = "";
                     } else {
                         tr[i].style.display = "none";
@@ -795,7 +823,7 @@
                 }
             }
         }
-        
+
         // Also filter Rekap Konsumen Table
         const rekapBody = document.getElementById("rekapKonsumenBody");
         const rekapTr = rekapBody.getElementsByTagName("tr");
@@ -813,11 +841,11 @@
             }
         }
     }
-    
+
     function showSpkList(name, spkString) {
         const spks = spkString.split(',');
         const badgesHtml = spks.map(s => `<span class="badge bg-light text-dark border m-1 fs-6 px-3 py-2 shadow-sm">${s}</span>`).join('');
-        
+
         Swal.fire({
             title: '<div class="fs-5 mb-2 text-muted">Daftar SPK milik:</div><div class="fw-bold text-primary">' + name + '</div>',
             html: '<div class="d-flex flex-wrap justify-content-center mt-3">' + badgesHtml + '</div>',
@@ -924,6 +952,16 @@
         if (data.sales_data && data.sales_data.length > 0) {
             let html = '';
             data.sales_data.forEach((sale, index) => {
+                let spkProducts = [];
+                if (data.sales_detail) {
+                    data.sales_detail.forEach(detail => {
+                        if (detail.nospk === sale.nospk && detail.product_nama) {
+                            spkProducts.push(detail.product_nama.toLowerCase());
+                        }
+                    });
+                }
+                const productsStr = spkProducts.join(', ').replace(/"/g, '&quot;');
+
                 const statusMap = {
                     '1': { label: 'SUCCESS', class: 'bg-success' },
                     '0': { label: 'PENDING', class: 'bg-warning text-dark' }
@@ -933,7 +971,7 @@
 
                 const isManual = sale.nospk.startsWith('MAN-');
                 html += `
-                    <tr>
+                    <tr data-products="${productsStr}">
                         <td class="text-center text-muted fw-bold">${index + 1}</td>
                         <td>
                             <div class="d-flex align-items-center gap-2">
@@ -981,7 +1019,7 @@
                                 <button class="btn-action-premium btn-view" onclick="viewTransactionDetail('${sale.nospk}')" title="Lihat Detail">
                                     <i class="fas fa-eye"></i>
                                 </button>
-                                <a href="<?= base_url('cekpesanan/spk/') ?>${sale.nospk_encrypted}" target="_blank" class="btn-action-premium btn-globe" title="Link Invoice (Status)">
+                                <a href="https://tracking.tgmprint.com/?spk=${sale.nospk_encrypted}" target="_blank" class="btn-action-premium btn-globe" title="Link Invoice (Status)">
                                     <i class="fas fa-globe"></i>
                                 </a>
                                 <button class="btn-action-premium btn-print" onclick="viewTransactionDetail('${sale.nospk}')" title="Print Invoice">
@@ -1021,7 +1059,7 @@
                 const name = sale.konsumen_nama || 'PENGUNJUNG';
                 const phone = sale.konsumen_nohp || '-';
                 const key = name + '||' + phone;
-                
+
                 if (!konsumenMap[key]) {
                     konsumenMap[key] = {
                         name: name,
@@ -1035,10 +1073,10 @@
                 konsumenMap[key].total += parseFloat(sale.total_bayar || 0);
                 konsumenMap[key].spks.push(sale.nospk);
             });
-            
+
             // Convert to array and sort by total
             const konsumenArr = Object.values(konsumenMap).sort((a, b) => b.total - a.total);
-            
+
             let rekapHtml = '';
             konsumenArr.forEach((k, idx) => {
                 rekapHtml += `
@@ -1167,7 +1205,7 @@
 
     function viewSalesDetail() {
         // Redirect to the main sales list page
-        window.open(`<?= base_url('penjualan/daftar_penjualan') ?>`, '_blank');
+        window.open(`<?= base_url('transaksi/transaksi_sudahbayar') ?>`, '_blank');
     }
 
     function refreshData() {

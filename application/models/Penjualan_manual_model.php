@@ -122,8 +122,27 @@ class Penjualan_manual_model extends CI_Model
                     'dateline_jam' => date('H:i:s'),
                     'posisi_barang' => 1,
                     'lokasi_cetak' => 1,
-                    'approve' => 1
+                    'approve' => 1,
+                    'metadata' => json_encode([
+                        'unit_price' => $h_satuan,
+                        'subtotal' => $h_satuan * $qty,
+                        'product_name' => $product['product_name'] ?? null,
+                        'price_snapshot_at' => date('Y-m-d H:i:s')
+                    ])
                 ];
+                
+                if ($this->db->field_exists('snapshot_harga', 'tbl_pemesanan_detail')) {
+                    $data_detail['snapshot_harga'] = $h_satuan;
+                }
+                if ($this->db->field_exists('snapshot_subtotal', 'tbl_pemesanan_detail')) {
+                    $data_detail['snapshot_subtotal'] = $h_satuan * $qty;
+                }
+                if ($this->db->field_exists('unit_price', 'tbl_pemesanan_detail')) {
+                    $data_detail['unit_price'] = $h_satuan;
+                }
+                if ($this->db->field_exists('subtotal', 'tbl_pemesanan_detail')) {
+                    $data_detail['subtotal'] = $h_satuan * $qty;
+                }
                 // Insert into production queue detail
                 $this->db->insert('tbl_pemesanan_detail', $data_detail);
 

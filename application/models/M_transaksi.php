@@ -383,7 +383,7 @@ class M_transaksi extends CI_Model
         tbl_harga_product.harga_1, 
         tbl_harga_product.harga_minimal, 
         tbl_harga_product.harga_aktif, 
-        tbl_harga_product.ket_1, 
+        tbl_harga_product.ket_1, tbl_harga_product.jenisprint_id, tbl_harga_product.side_id, 
         tbl_harga_product.harga_id, 
         tbl_harga_product.detail_product, 
         tbl_harga_product.range_id, 
@@ -408,7 +408,7 @@ class M_transaksi extends CI_Model
     function tampilTmp_editspk($kode)
     {
         $user = $this->session->userdata('id');
-        $this->db->select('tbl_pemesanan_detail.*,tbl_satuan.*, tbl_harga_product.harga_1, tbl_harga_product.harga_minimal, tbl_harga_product.harga_aktif, tbl_harga_product.ket_1, tbl_harga_product.harga_id, tbl_harga_product.detail_product, tbl_harga_product.range_id, tbl_harga_product.jml_minimum, tbl_product.form_schema as product_form_schema, tbl_kategori.form_schema as category_form_schema, tbl_subkategori.form_schema as subcategory_form_schema');
+        $this->db->select('tbl_pemesanan_detail.*,tbl_satuan.*, tbl_harga_product.harga_1, tbl_harga_product.harga_minimal, tbl_harga_product.harga_aktif, tbl_harga_product.ket_1, tbl_harga_product.jenisprint_id, tbl_harga_product.side_id, tbl_harga_product.harga_id, tbl_harga_product.detail_product, tbl_harga_product.range_id, tbl_harga_product.jml_minimum, tbl_product.form_schema as product_form_schema, tbl_kategori.form_schema as category_form_schema, tbl_subkategori.form_schema as subcategory_form_schema');
         $this->db->where('nospk', $kode);
         $this->db->join('tbl_harga_product', 'tbl_harga_product.harga_id = tbl_pemesanan_detail.harga_id');
         $this->db->join('tbl_product', 'tbl_product.product_id = tbl_pemesanan_detail.product_id');
@@ -637,6 +637,92 @@ class M_transaksi extends CI_Model
         return $this->db->get('tbl_pemesanan');
     }
 
+    private function _get_datatables_query_sudahbayar($postData, $status, $perusahaan_override = null)
+    {
+        $perusahaan = $perusahaan_override ?? $this->session->userdata('perusahaan_id');
+        $user = $this->session->userdata('id');
+        $level = $this->session->userdata('level');
+
+        $this->db->from('tbl_pemesanan');
+        
+        $this->db->join('tbl_konsumen', 'tbl_konsumen.konsumen_id = tbl_pemesanan.konsumen_id');
+        $this->db->join('users', 'users.user_id = tbl_pemesanan.deskprint_id');
+        $this->db->join('tbl_karyawan', 'tbl_karyawan.karyawan_id = users.karyawan_id');
+        $this->db->join('tbl_jenis_transaksi', 'tbl_jenis_transaksi.id_jenis_transaksi = tbl_pemesanan.id_jenis_transaksi');
+        $this->db->join('tbl_marketplace', 'tbl_marketplace.marketplace_id = tbl_pemesanan.marketplace_id', 'left');
+        $this->db->join('tbl_pengiriman', 'tbl_pengiriman.id_pengiriman = tbl_pemesanan.id_pengiriman', 'left');
+        $this->db->join('tbl_pembayaran', 'tbl_pembayaran.nospk = tbl_pemesanan.nospk', 'left');
+
+        if ($perusahaan_override !== null) {
+            $this->db->where('tbl_pemesanan.perusahaan_id', $perusahaan_override);
+        } else {
+            if (!in_array((int) $level, [1, 2, 17, 21], true)) {
+                $this->db->where('tbl_pemesanan.perusahaan_id', $perusahaan);
+            }
+        }
+
+        $this->db->where('tbl_pemesanan.status_pembayaran', $status == '0' ? 'pending' : ($status == '1' ? 'paid' : $status));
+        
+        if (!in_array((int) $level, [1, 2, 17, 21], true)) {
+            $this->db->where('tbl_pembayaran.kasir_id', $user);
+        }
+        
+        $column_search = array('tbl_pemesanan.nospk', 'tbl_konsumen.konsumen_nama', 'tbl_konsumen.konsumen_nohp');
+        $i = 0;
+        foreach ($column_search as $item) {
+            if (isset($postData['search']['value']) && $postData['search']['value']) {
+                if ($i === 0) {
+                    $this->db->group_start();
+                    $this->db->like($item, $postData['search']['value']);
+                } else {
+                    $this->db->or_like($item, $postData['search']['value']);
+                }
+                if (count($column_search) - 1 == $i)
+                    $this->db->group_end();
+            }
+            $i++;
+        }
+
+        $column_order = array(null, 'tbl_pemesanan.created_at', 'tbl_konsumen.konsumen_nama', 'tbl_jenis_transaksi.nama_jenis_transaksi', null, null, null, null, null, 'tbl_karyawan.nama_lengkap');
+        
+        if (isset($postData['order'])) {
+            $this->db->order_by($column_order[$postData['order']['0']['column']], $postData['order']['0']['dir']);
+        } else {
+            $this->db->order_by('tbl_pemesanan.created_at', 'DESC');
+        }
+        
+        $this->db->group_by('tbl_pemesanan.nospk');
+    }
+
+    public function get_datatables_sudahbayar($postData, $status, $perusahaan_override = null)
+    {
+        $this->_get_datatables_query_sudahbayar($postData, $status, $perusahaan_override);
+        if (isset($postData['length']) && $postData['length'] != -1)
+            $this->db->limit($postData['length'], $postData['start']);
+        
+        $this->db->select('tbl_pemesanan.*, tbl_konsumen.konsumen_nama, tbl_konsumen.konsumen_nohp, tbl_jenis_transaksi.nama_jenis_transaksi, tbl_marketplace.marketplace_nama, tbl_pembayaran.total_bayar, tbl_karyawan.nama_lengkap AS karyawan_nama');
+        $query = $this->db->get();
+        return $query->result();
+    }
+
+    public function count_filtered_sudahbayar($postData, $status, $perusahaan_override = null)
+    {
+        $this->db->select('tbl_pemesanan.nospk');
+        $this->_get_datatables_query_sudahbayar($postData, $status, $perusahaan_override);
+        $query = $this->db->get_compiled_select();
+        $count_query = $this->db->query("SELECT COUNT(*) AS total FROM ($query) AS t");
+        return $count_query->row()->total;
+    }
+
+    public function count_all_sudahbayar($status, $perusahaan_override = null)
+    {
+        $this->db->select('tbl_pemesanan.nospk');
+        $this->_get_datatables_query_sudahbayar([], $status, $perusahaan_override);
+        $query = $this->db->get_compiled_select();
+        $count_query = $this->db->query("SELECT COUNT(*) AS total FROM ($query) AS t");
+        return $count_query->row()->total;
+    }
+
     function getpenjualanall()
     {
         $bulanini = date('Y-m');
@@ -672,7 +758,7 @@ class M_transaksi extends CI_Model
     function getDetail()
     {
         $nospk = decrypt_url($this->uri->segment(3));
-        $this->db->select('tbl_pemesanan_detail.*, tbl_product.product_nama, tbl_kategori.kategori_nama, tbl_product.kategori_id, tbl_product.satuan_id, tbl_harga_product.harga_1, tbl_harga_product.harga_aktif, tbl_harga_product.ket_1, tbl_harga_product.harga_id, tbl_harga_product.detail_product, tbl_harga_product.range_id, tbl_harga_product.jml_minimum, tbl_harga_product.jenisprint_id, tbl_harga_product.harga_minimal, tbl_product.form_schema as product_form_schema, tbl_kategori.form_schema as category_form_schema, tbl_subkategori.form_schema as subcategory_form_schema');
+        $this->db->select('tbl_pemesanan_detail.*, tbl_product.product_nama, tbl_kategori.kategori_nama, tbl_product.kategori_id, tbl_product.satuan_id, tbl_harga_product.harga_1, tbl_harga_product.harga_aktif, tbl_harga_product.ket_1, tbl_harga_product.jenisprint_id, tbl_harga_product.side_id, tbl_harga_product.harga_id, tbl_harga_product.detail_product, tbl_harga_product.range_id, tbl_harga_product.jml_minimum, tbl_harga_product.jenisprint_id, tbl_harga_product.harga_minimal, tbl_product.form_schema as product_form_schema, tbl_kategori.form_schema as category_form_schema, tbl_subkategori.form_schema as subcategory_form_schema');
         $this->db->where('nospk', $nospk);
         $this->db->join('tbl_product', 'tbl_product.product_id = tbl_pemesanan_detail.product_id');
         $this->db->join('tbl_kategori', 'tbl_kategori.kategori_id = tbl_product.kategori_id', 'left');
@@ -684,10 +770,10 @@ class M_transaksi extends CI_Model
     function getDetailPesan($nospk)
     {
         // Align selection and snapshot precedence with M_pembayaran->get_pembayaran_produk
-        $this->db->select("tbl_pemesanan_detail.*, tbl_pemesanan_detail.metadata, tbl_product.product_nama, tbl_kategori.kategori_nama, tbl_product.kategori_id, tbl_product.satuan_id,
+        $this->db->select("tbl_pemesanan_detail.*, tbl_pemesanan_detail.metadata, tbl_product.product_nama, tbl_kategori.kategori_nama, tbl_product.kategori_id, tbl_product.satuan_id, tbl_satuan.satuan_nama,
             COALESCE(pp.snapshot_harga, tbl_harga_product.harga_1) AS harga_1,
             tbl_harga_product.harga_aktif,
-            tbl_harga_product.ket_1,
+            tbl_harga_product.ket_1, tbl_harga_product.jenisprint_id, tbl_harga_product.side_id,
             tbl_harga_product.harga_id,
             COALESCE(pp.snapshot_detail_product, tbl_harga_product.detail_product) AS detail_product,
             tbl_harga_product.range_id,
@@ -704,6 +790,7 @@ class M_transaksi extends CI_Model
 
         $this->db->where('tbl_pemesanan_detail.nospk', $nospk);
         $this->db->join('tbl_product', 'tbl_product.product_id = tbl_pemesanan_detail.product_id');
+        $this->db->join('tbl_satuan', 'tbl_satuan.satuan_id = tbl_product.satuan_id', 'left');
         $this->db->join('tbl_kategori', 'tbl_kategori.kategori_id = tbl_product.kategori_id', 'left');
         $this->db->join('tbl_subkategori', 'tbl_subkategori.subkategori_id = tbl_product.subkategori_id', 'left');
         $this->db->join('tbl_harga_product', 'tbl_harga_product.harga_id = tbl_pemesanan_detail.harga_id');
@@ -829,7 +916,7 @@ class M_transaksi extends CI_Model
 
     function getcekpesanan($nospk)
     {
-        $this->db->select('tbl_pemesanan.*, tbl_pemesanan.status_pembayaran as status_bayar_trx, tbl_konsumen.*, users.username, kasir.username as kasir_name, tbl_pembayaran.tgl_bayar, tbl_pembayaran.jam_bayar, tbl_pembayaran.total_bayar, tbl_pembayaran.total_tagihan, tbl_pembayaran.nospk as bayar_nospk');
+        $this->db->select('tbl_pemesanan.*, tbl_pemesanan.status_pembayaran as status_bayar_trx, tbl_konsumen.*, users.username, kasir.username as kasir_name, tbl_pembayaran.tgl_bayar, tbl_pembayaran.jam_bayar, tbl_pembayaran.total_bayar, tbl_pembayaran.total_tagihan, tbl_pembayaran.diskon_total, tbl_pembayaran.ongkir, tbl_pembayaran.nospk as bayar_nospk');
         $this->db->from('tbl_pemesanan');
         $this->db->where('tbl_pemesanan.nospk', $nospk);
         $this->db->join('tbl_konsumen', 'tbl_konsumen.konsumen_id = tbl_pemesanan.konsumen_id', 'left');
@@ -1566,8 +1653,55 @@ class M_transaksi extends CI_Model
         return $this->db->get();
     }
 
+    function getDetailPesanByNospkArray($nospk_array)
+    {
+        if (empty($nospk_array)) return [];
+        
+        $this->db->select("tbl_pemesanan_detail.*, tbl_pemesanan_detail.metadata, tbl_product.product_nama, tbl_kategori.kategori_nama, tbl_product.kategori_id, tbl_product.satuan_id, tbl_satuan.satuan_nama,
+            COALESCE(pp.snapshot_harga, tbl_harga_product.harga_1) AS harga_1,
+            tbl_harga_product.harga_aktif,
+            tbl_harga_product.ket_1, tbl_harga_product.jenisprint_id, tbl_harga_product.side_id,
+            tbl_harga_product.harga_id,
+            COALESCE(pp.snapshot_detail_product, tbl_harga_product.detail_product) AS detail_product,
+            tbl_harga_product.range_id,
+            tbl_harga_product.jml_minimum,
+            tbl_harga_product.jenisprint_id,
+            tbl_harga_product.harga_minimal,
+            tbl_spk.konsumen_id,
+            pp.snapshot_harga,
+            pp.snapshot_subtotal AS snapshot_subtotal,
+            tbl_product.form_schema as product_form_schema,
+            tbl_kategori.form_schema as category_form_schema,
+            tbl_subkategori.form_schema as subcategory_form_schema,
+            tbl_harga_product.metadata AS product_metadata", FALSE);
 
-    function cekproduksi($id)
+        $this->db->join('tbl_product', 'tbl_product.product_id = tbl_pemesanan_detail.product_id');
+        $this->db->join('tbl_satuan', 'tbl_satuan.satuan_id = tbl_product.satuan_id', 'left');
+        $this->db->join('tbl_kategori', 'tbl_kategori.kategori_id = tbl_product.kategori_id', 'left');
+        $this->db->join('tbl_subkategori', 'tbl_subkategori.subkategori_id = tbl_product.subkategori_id', 'left');
+        $this->db->join('tbl_harga_product', 'tbl_harga_product.harga_id = tbl_pemesanan_detail.harga_id', 'left');
+        $this->db->join('tbl_spk', 'tbl_spk.nospk = tbl_pemesanan_detail.nospk', 'left');
+        
+        $nospks_str = implode(',', array_map(function($val) {
+            return $this->db->escape($val);
+        }, $nospk_array));
+
+        $sub = "(
+            SELECT ppx.* FROM tbl_pembayaran_produk ppx
+            JOIN (
+                SELECT MAX(id) AS id FROM tbl_pembayaran_produk
+                WHERE nospk IN ({$nospks_str})
+                GROUP BY nospk, product_id, harga_id, panjang, lebar
+            ) mpx ON ppx.id = mpx.id
+        ) pp";
+
+        $this->db->join($sub, 'pp.nospk = tbl_pemesanan_detail.nospk AND pp.product_id = tbl_pemesanan_detail.product_id AND pp.harga_id = tbl_pemesanan_detail.harga_id', 'left', FALSE);
+        
+        $this->db->where_in('tbl_pemesanan_detail.nospk', $nospk_array);
+        return $this->db->get('tbl_pemesanan_detail')->result();
+    }
+
+    function getDetailPesanEdit($nospk)
     {
         $this->db->where('produksi_id', $id);
         return $this->db->get('tbl_produksi');
@@ -1777,6 +1911,49 @@ class M_transaksi extends CI_Model
     }
 
     /**
+     * Rollback stock that was deducted during Production WIP
+     */
+    public function rollback_stok_by_nospk($nospk)
+    {
+        // Check if both tables exist to avoid errors
+        $has_table = function ($table) {
+            $q = $this->db->query("SHOW TABLES LIKE '$table'");
+            return ($q && $q->num_rows() > 0);
+        };
+
+        if (!$has_table('tbl_produksi') || !$has_table('tbl_stok_log') || !$has_table('tbl_stok_gudang')) {
+            return false;
+        }
+
+        $produksi_list = $this->db->select('produksi_id')->get_where('tbl_produksi', ['nospk' => $nospk])->result();
+        $user_id = $this->session->userdata('id') ?: 0;
+
+        foreach ($produksi_list as $prod) {
+            // Find stock that was deducted for this produksi_id
+            $logs = $this->db->get_where('tbl_stok_log', [
+                'trx_type' => 'Produksi', 
+                'trx_id' => $prod->produksi_id
+            ])->result();
+
+            foreach ($logs as $log) {
+                if ($log->qty_out > 0) {
+                    $this->load->model('M_gudang');
+                    $this->M_gudang->update_stock_with_log(
+                        $log->material_id,
+                        $log->gudang_id,
+                        (float)$log->qty_out,
+                        'Return',
+                        $prod->produksi_id,
+                        'Rollback Stok (Hapus/Cancel SPK: ' . $nospk . ')',
+                        $log->rak_id
+                    );
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
      * Delete SPK and all its descendants (related tables)
      */
     function delete_spk_complete($nospk)
@@ -1789,6 +1966,9 @@ class M_transaksi extends CI_Model
                 $q = $this->db->query("SHOW TABLES LIKE '$table'");
                 return ($q && $q->num_rows() > 0);
             };
+
+            // 0. Rollback Stock before production data is deleted
+            $this->rollback_stok_by_nospk($nospk);
 
             // 1. Delete detail_produksi (requires produksi_id)
             if ($has_table('tbl_produksi')) {

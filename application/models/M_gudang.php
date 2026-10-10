@@ -90,10 +90,13 @@ class M_gudang extends CI_model
 
     function getAllBahanbaku()
     {
-        $this->db->select('tbl_bahan.*, tbl_satuan.satuan_nama, (SELECT COUNT(material_id) FROM tbl_material WHERE tbl_material.bahan_id = tbl_bahan.bahan_id) as jml_varian');
+        $this->db->select('tbl_bahan.*, tbl_satuan.satuan_nama, 
+            (SELECT COUNT(material_id) FROM tbl_material WHERE tbl_material.bahan_id = tbl_bahan.bahan_id) as jml_varian,
+            (SELECT pd.harga_beli FROM tbl_pembelian_detail pd JOIN tbl_pembelian p ON pd.pembelian_id = p.pembelian_id JOIN tbl_material m ON pd.material_id = m.material_id WHERE m.bahan_id = tbl_bahan.bahan_id ORDER BY p.pembelian_tgl DESC LIMIT 1) as harga_beli,
+            (SELECT AVG(pd.harga_beli) FROM tbl_pembelian_detail pd JOIN tbl_material m ON pd.material_id = m.material_id WHERE m.bahan_id = tbl_bahan.bahan_id) as rata_rata_beli
+        ');
         $this->db->from('tbl_bahan');
         $this->db->join('tbl_satuan', 'tbl_bahan.satuan_id = tbl_satuan.satuan_id', 'left');
-        // $this->db->order_by('tbl_bahan.bahan_nama', 'ASC');
         return $this->db->get();
     }
 
@@ -188,10 +191,10 @@ class M_gudang extends CI_model
         return $this->db->get('tbl_pengambilan');
     }
 
-    function getPengambilanWithDetails()
+    function getPengambilanWithDetails($month = null, $year = null)
     {
         // Menggunakan query yang lebih eksplisit untuk memastikan perhitungan yang akurat
-        $this->db->select('tbl_pengambilan.*, tbl_karyawan.nama_lengkap, tbl_gudang.gudang_nama');
+        $this->db->select('tbl_pengambilan.*, tbl_karyawan.nama_lengkap, tbl_gudang.gudang_nama, tbl_gudang.gudang_lokasi');
 
         // Gunakan subquery untuk menghitung jumlah item
         $this->db->select('(
@@ -212,8 +215,15 @@ class M_gudang extends CI_model
         $this->db->select('0 as pending_count', FALSE);
 
         $this->db->from('tbl_pengambilan');
-        $this->db->join('tbl_karyawan', 'tbl_karyawan.karyawan_id = tbl_pengambilan.karyawan_id');
-        $this->db->join('tbl_gudang', 'tbl_gudang.gudang_id = tbl_pengambilan.gudang_id');
+        $this->db->join('tbl_karyawan', 'tbl_karyawan.karyawan_id = tbl_pengambilan.karyawan_id', 'left');
+        $this->db->join('tbl_gudang', 'tbl_gudang.gudang_id = tbl_pengambilan.gudang_id', 'left');
+
+        if ($month !== null) {
+            $this->db->where('MONTH(tbl_pengambilan.pengambilan_tgl)', $month);
+        }
+        if ($year !== null) {
+            $this->db->where('YEAR(tbl_pengambilan.pengambilan_tgl)', $year);
+        }
         $this->db->order_by('pengambilan_tgl', 'desc');
         return $this->db->get();
     }
@@ -255,11 +265,13 @@ class M_gudang extends CI_model
 
     function getdetailPengambilan($id)
     {
-        $this->db->join('tbl_pengambilan', 'tbl_pengambilan_detail.pengambilan_id = tbl_pengambilan.pengambilan_id');
-        $this->db->join('tbl_karyawan', 'tbl_pengambilan.karyawan_id = tbl_karyawan.karyawan_id');
+        $this->db->join('tbl_pengambilan', 'tbl_pengambilan_detail.pengambilan_id = tbl_pengambilan.pengambilan_id', 'left');
+        $this->db->join('tbl_karyawan', 'tbl_pengambilan.karyawan_id = tbl_karyawan.karyawan_id', 'left');
         $this->db->join('tbl_material', 'tbl_pengambilan_detail.material_id = tbl_material.material_id', 'left');
         $this->db->join('tbl_bahan', 'tbl_material.bahan_id = tbl_bahan.bahan_id', 'left');
         $this->db->join('tbl_satuan', 'tbl_bahan.satuan_id = tbl_satuan.satuan_id', 'left');
+        $this->db->join('tbl_satuan as satuan_gudang', 'tbl_material.satuan_gudang_id = satuan_gudang.satuan_id', 'left');
+        $this->db->select('tbl_pengambilan_detail.*, tbl_pengambilan.*, tbl_karyawan.nama_lengkap, tbl_karyawan.telepon, tbl_karyawan.email, tbl_material.*, tbl_bahan.*, tbl_satuan.satuan_nama as satuan_nama_dasar, satuan_gudang.satuan_nama as nama_satuan_gudang');
         $this->db->where('tbl_pengambilan_detail.pengambilan_id', $id);
         return $this->db->get('tbl_pengambilan_detail');
     }
@@ -650,7 +662,7 @@ class M_gudang extends CI_model
      * Best Practice Stock Engine
      * Updates tbl_stok_gudang and logs the transaction in tbl_stok_log
      */
-    public function update_stock_with_log($material_id, $gudang_id, $qty, $type, $trx_id, $catatan = '', $rak_id = NULL)
+    public function update_stock_with_log($material_id, $gudang_id, $qty, $type, $trx_id, $catatan = '', $rak_id = NULL, $karyawan_id = NULL)
     {
         if (empty($material_id)) {
             return false;
@@ -707,8 +719,10 @@ class M_gudang extends CI_model
             'trx_id' => $trx_id,
             'qty_in' => ($qty > 0) ? $qty : 0,  // Stored in Trans Unit for report
             'qty_out' => ($qty < 0) ? abs($qty) : 0, // Stored in Trans Unit
+            'qty_base' => abs($true_qty_change), // Stored precisely in Base Unit
             'qty_balance' => $new_qty, // Stored in Base Unit
             'user_id' => $this->session->userdata('id'),
+            'karyawan_id' => $karyawan_id,
             'catatan' => $catatan . " (Total Base: " . ($qty * $konversi) . ")",
             'created_at' => date('Y-m-d H:i:s')
         ];
@@ -733,7 +747,7 @@ class M_gudang extends CI_model
             sp.satuan_nama as satuan_produksi,
             m.konversi,
             SUM(sl.qty_out) as total_usage_gudang,
-            SUM(sl.qty_out * m.konversi) as total_usage_produksi,
+            SUM(sl.qty_base) as total_usage_produksi,
             COUNT(sl.log_id) as freq
         ');
         $this->db->from('tbl_stok_log sl');
@@ -757,13 +771,26 @@ class M_gudang extends CI_model
 
     public function get_warehouse_stock($gudang_id)
     {
-        return $this->db->select('b.bahan_nama, m.varian, s.qty as qty_base, (s.qty / IFNULL(m.konversi, 1)) as qty_stock, sat.satuan_nama as satuan_gudang, m.konversi, sp.satuan_nama as satuan_produksi')
+        return $this->db->select('m.material_id, m.barcode, b.bahan_nama, m.varian, SUM(s.qty) as qty_base, (SUM(s.qty) / IFNULL(m.konversi, 1)) as qty_stock, sat.satuan_nama as satuan_gudang, m.konversi, sp.satuan_nama as satuan_produksi')
             ->from('tbl_stok_gudang s')
             ->join('tbl_material m', 'm.material_id = s.material_id')
             ->join('tbl_bahan b', 'b.bahan_id = m.bahan_id')
             ->join('tbl_satuan sat', 'm.satuan_gudang_id = sat.satuan_id', 'left')
             ->join('tbl_satuan sp', 'b.satuan_id = sp.satuan_id', 'left')
             ->where('s.gudang_id', $gudang_id)
+            ->group_by('m.material_id')
+            ->get()->result();
+    }
+
+    public function get_all_warehouse_stock()
+    {
+        return $this->db->select('s.gudang_id, m.material_id, m.barcode, b.bahan_nama, m.varian, SUM(s.qty) as qty_base, sat.satuan_nama as satuan_gudang, m.konversi, sp.satuan_nama as satuan_produksi')
+            ->from('tbl_stok_gudang s')
+            ->join('tbl_material m', 'm.material_id = s.material_id')
+            ->join('tbl_bahan b', 'b.bahan_id = m.bahan_id')
+            ->join('tbl_satuan sat', 'm.satuan_gudang_id = sat.satuan_id', 'left')
+            ->join('tbl_satuan sp', 'b.satuan_id = sp.satuan_id', 'left')
+            ->group_by(['s.gudang_id', 'm.material_id'])
             ->get()->result();
     }
 
@@ -773,5 +800,42 @@ class M_gudang extends CI_model
         $this->db->where('material_id', $material_id);
         $result = $this->db->get('tbl_stok_gudang')->row();
         return $result ? (float) $result->qty : 0;
+    }
+
+    // ==============================================
+    // PENGAMBILAN / DISPATCH CALENDAR REPORT METHODS
+    // ==============================================
+
+    function getPengambilanCalendarData($year, $month)
+    {
+        $this->db->select('DATE(p.pengambilan_tgl) as tanggal, COUNT(DISTINCT p.pengambilan_id) as jumlah_transaksi, SUM(pd.qty) as total_qty');
+        $this->db->from('tbl_pengambilan p');
+        $this->db->join('tbl_pengambilan_detail pd', 'p.pengambilan_id = pd.pengambilan_id', 'left');
+        $this->db->where('YEAR(p.pengambilan_tgl)', $year);
+        $this->db->where('MONTH(p.pengambilan_tgl)', $month);
+        $this->db->group_by('DATE(p.pengambilan_tgl)');
+        return $this->db->get();
+    }
+
+    function getPengambilanByDate($date)
+    {
+        $this->db->select('p.*, k.nama_lengkap as karyawan_nama, g.gudang_nama');
+        $this->db->from('tbl_pengambilan p');
+        $this->db->join('tbl_karyawan k', 'p.karyawan_id = k.karyawan_id', 'left');
+        $this->db->join('tbl_gudang g', 'p.gudang_id = g.gudang_id', 'left');
+        $this->db->where('DATE(p.pengambilan_tgl)', $date);
+        return $this->db->get()->result();
+    }
+
+    function getPengambilanDetailByDate($date)
+    {
+        $this->db->select('pd.*, m.varian, b.bahan_nama, p.pengambilan_tgl, p.karyawan_id, s.satuan_nama');
+        $this->db->from('tbl_pengambilan_detail pd');
+        $this->db->join('tbl_pengambilan p', 'pd.pengambilan_id = p.pengambilan_id');
+        $this->db->join('tbl_material m', 'pd.material_id = m.material_id');
+        $this->db->join('tbl_bahan b', 'm.bahan_id = b.bahan_id');
+        $this->db->join('tbl_satuan s', 'b.satuan_id = s.satuan_id', 'left');
+        $this->db->where('DATE(p.pengambilan_tgl)', $date);
+        return $this->db->get();
     }
 }

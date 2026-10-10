@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cek Pesanan TGM</title>
+    <link id="favicon" rel="icon" type="image/png" href="">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f9;
+        }
+
+        .card-shadow {
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+        }
+
+        .dashed-line {
+            border-top: 1px dashed #e2e8f0;
+        }
+
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 100px auto;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        [v-cloak] {
+            display: none;
+        }
+    </style>
+</head>
+
+<body class="text-gray-800 antialiased pb-10">
+
+    <!-- Decorative Curved Background -->
+    <div
+        class="fixed top-[-10vh] left-1/2 -translate-x-1/2 w-[200vw] sm:w-[150vw] h-[55vh] bg-white rounded-b-[50%] -z-10 shadow-[0_10px_30px_rgba(0,0,0,0.03)] print:hidden">
+    </div>
+
+    <div id="loading" class="loader"></div>
+
+    <div id="error-msg"
+        class="hidden max-w-md mx-auto mt-10 bg-red-100 text-red-700 p-4 rounded-lg text-center font-medium">
+        Data pesanan tidak ditemukan atau SPK tidak valid.
+    </div>
+
+    <!-- Main Content Container (Hidden until loaded) -->
+    <div id="app-content" class="hidden max-w-lg mx-auto relative mt-8 px-4">
+
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <div class="flex justify-center mb-3">
+                <img id="header-logo" src="" alt="Logo Perusahaan" class="h-12 w-auto hidden object-contain">
+            </div>
+            <h1 id="header-nama" class="hidden text-2xl font-black text-gray-900 tracking-tight">TGM MERCH & PRINT</h1>
+            <p id="header-alamat" class="hidden text-sm text-gray-500 font-medium mt-1">Jl. Serma Marzuki No.50D -
+                Bekasi
+                Selatan</p>
+            <p id="header-telp" class="hidden text-sm text-gray-500 font-medium mt-1 mb-4">— 081288192057</p>
+
+            <div class="flex justify-center gap-2 print:hidden">
+                <a id="btn-cetak" href="#" target="_blank"
+                    class="bg-blue-600 text-white text-xs font-semibold px-4 py-2 rounded shadow flex items-center gap-1 hover:bg-blue-700 transition">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z">
+                        </path>
+                    </svg>
+                    Cetak
+                </a>
+                <a id="btn-telp" href="tel:081288192057"
+                    class="bg-gray-700 text-white text-xs font-semibold px-4 py-2 rounded shadow flex items-center gap-1 hover:bg-gray-800 transition">
+                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path
+                            d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z">
+                        </path>
+                    </svg>
+                    Telp
+                </a>
+                <a id="btn-wa" href="https://wa.me/6281288192057"
+                    class="bg-gray-700 text-white text-xs font-semibold px-4 py-2 rounded shadow flex items-center gap-1 hover:bg-gray-800 transition">
+                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                        <path
+                            d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z">
+                        </path>
+                    </svg>
+                    WhatsApp
+                </a>
+            </div>
+        </div>
+
+        <!-- Card 1: ID & Detail -->
+        <div class="bg-white rounded-xl card-shadow p-6 mb-4 relative overflow-hidden">
+            <!-- Decorative gradient top -->
+            <div class="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-400 to-indigo-500"></div>
+
+            <h2 class="text-center text-xl font-bold text-gray-900 mb-6" id="lbl-konsumen">-</h2>
+
+
+            <!-- SPK & Badge -->
+            <div class="text-center mb-6">
+                <p class="text-gray-500 text-sm font-medium mb-1">No Invoice</p>
+                <div id="container-copy-invoice"
+                    class="hidden items-center justify-center gap-2 mb-2 cursor-pointer group">
+                    <p class="text-gray-900 text-lg font-bold tracking-[0.1em] group-hover:text-blue-600 transition-colors"
+                        id="lbl-nospk">-</p>
+                    <div class="text-gray-400 group-hover:text-blue-500 transition">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z">
+                            </path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+
+            <div class="dashed-line my-4"></div>
+
+            <div class="flex justify-between items-start my-2">
+                <span class="text-gray-500 text-sm font-medium w-1/3">No HP :</span>
+                <span class="text-gray-900 text-sm font-bold text-right w-2/3" id="lbl-nohp">-</span>
+            </div>
+            <div class="flex justify-between items-start my-2">
+                <span class="text-gray-500 text-sm font-medium w-1/3">Email :</span>
+                <span class="text-gray-900 text-sm font-bold text-right w-2/3 break-words" id="lbl-email">-</span>
+            </div>
+            <div class="flex justify-between items-start my-2">
+                <span class="text-gray-500 text-sm font-medium w-1/3">Alamat :</span>
+                <span class="text-gray-900 text-sm font-bold text-right w-2/3 break-words" id="lbl-alamat">-</span>
+            </div>
+
+            <div class="dashed-line my-4"></div>
+
+            <div class="space-y-2 mt-2">
+                <div class="flex justify-between">
+                    <span class="text-gray-500 text-sm font-medium w-1/4">Terima:</span>
+                    <span class="text-gray-900 text-sm font-bold text-right w-3/4" id="lbl-tanggal">-</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-500 text-sm font-medium w-1/4">Dateline:</span>
+                    <span class="text-gray-900 text-sm font-bold text-right w-3/4" id="lbl-selesai">-</span>
+                </div>
+            </div>
+
+            <div class="dashed-line my-4"></div>
+
+            <div class="flex justify-between mt-2">
+                <div class="w-1/2">
+                    <span class="text-gray-500 text-xs font-medium block">Deskprint</span>
+                    <span class="text-gray-900 text-sm font-bold" id="lbl-deskprint">-</span>
+                </div>
+                <div class="w-1/2 text-right">
+                    <span class="text-gray-500 text-xs font-medium block">Kasir</span>
+                    <span class="text-gray-900 text-sm font-bold" id="lbl-kasir">-</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Card 2: Tracking Timeline -->
+        <div class="bg-white rounded-xl card-shadow p-6 mb-4" id="card-status-pesanan">
+            <div class="flex flex-col cursor-pointer" onclick="toggleTimeline()">
+                <div class="flex justify-between items-center mb-1">
+                    <h3 class="text-gray-900 font-bold text-lg">Status Pesanan</h3>
+                    <svg id="timeline-icon" class="w-5 h-5 text-gray-500 transform transition-transform duration-300"
+                        fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span id="badge-status-pesanan"
+                        class="bg-gray-300 text-white font-bold text-[10px] px-2 py-0.5 rounded tracking-wider">-</span>
+                    <span class="text-[11px] text-gray-400 italic">Sentuh untuk melihat rincian</span>
+                </div>
+            </div>
+            <div class="mt-6 hidden flex-col space-y-0" id="tracking-timeline">
+                <!-- Timeline items generated by JS -->
+            </div>
+        </div>
+
+        <!-- Card 3: Detail Pesanan & Biaya -->
+        <div class="bg-white rounded-xl card-shadow p-5 mb-4">
+            <h3 class="text-gray-900 font-bold text-lg mb-4">Detail Pesanan</h3>
+
+            <div id="item-list" class="space-y-3 mb-4">
+                <!-- Items injected here -->
+            </div>
+
+            <div class="dashed-line my-4"></div>
+
+            <div class="space-y-3 mb-6">
+                <div class="flex justify-between">
+                    <span class="text-gray-600 text-sm">Subtotal</span>
+                    <span class="text-gray-900 font-bold text-sm" id="lbl-subtotal">Rp0</span>
+                </div>
+                <div class="flex justify-between hidden" id="row-diskon">
+                    <span class="text-red-500 text-sm">Diskon</span>
+                    <span class="text-red-500 font-bold text-sm" id="lbl-diskon">- Rp0</span>
+                </div>
+                <div class="flex justify-between hidden" id="row-ongkir">
+                    <span class="text-blue-500 text-sm">Ongkir</span>
+                    <span class="text-blue-500 font-bold text-sm" id="lbl-ongkir">+ Rp0</span>
+                </div>
+                <div class="flex justify-between border-t border-gray-100 pt-2 mt-2">
+                    <span class="text-gray-800 font-bold text-sm">Total Tagihan</span>
+                    <span class="text-gray-900 font-bold text-sm" id="lbl-total-biaya">Rp0</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600 text-sm">Pembayaran</span>
+                    <span class="text-gray-900 font-bold text-sm" id="lbl-pembayaran">Rp0</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600 text-sm">Sisa Tagihan</span>
+                    <span class="text-gray-900 font-bold text-sm" id="lbl-kembalian">Rp0</span>
+                </div>
+            </div>
+
+            <div class="flex justify-between items-center mt-2 pt-4 dashed-line">
+                <div>
+                    <h3 class="text-gray-900 font-bold text-base mb-1">Status</h3>
+                    <p class="text-gray-400 text-xs italic" id="lbl-status-desc">Segera lakukan pembayaran.</p>
+                </div>
+                <div>
+                    <span
+                        class="bg-red-500 text-white font-bold text-[10px] sm:text-xs px-2.5 py-1 sm:px-4 sm:py-2 rounded shadow-sm tracking-wider"
+                        id="badge-lunas">BELUM LUNAS</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Card 4: Rekening (Only if unpaid) -->
+        <div id="bank-section" class="hidden bg-white rounded-xl card-shadow p-5 mb-4">
+            <h3 class="text-gray-900 font-bold text-base mb-3 text-center">Daftar Rekening Pembayaran</h3>
+            <div class="dashed-line mb-4"></div>
+            <div id="bank-list" class="space-y-4">
+                <!-- Banks dynamically added here -->
+            </div>
+        </div>
+
+        <!-- Footer terms -->
+        <div class="bg-gray-50 rounded-xl p-6 shadow-sm border border-gray-100 mt-8 mb-8">
+            <h4 class="font-bold text-gray-800 text-sm mb-3">Syarat & Ketentuan</h4>
+            <p class="text-xs font-bold text-gray-800 mb-2">PERHATIAN:</p>
+            <ol class="list-decimal pl-4 text-xs text-gray-700 space-y-1.5 leading-relaxed font-medium mb-6">
+                <li>Pesanan diproses setelah pembayaran Dp/Lunas.</li>
+                <li>Konsumen wajib memeriksa kembali nama, jumlah, ukuran, spesifikasi, desain, dan data pesanan.</li>
+                <li>Komplain wajib disampaikan maksimal 1 × 24 jam setelah barang diterima, dengan menyertakan Nomor
+                    Invoice dan bukti foto/video.</li>
+                <li>Pengambilan barang wajib mencantumkan Nomor Invoice/Nota. Untuk pengambilan melalui Ojek
+                    Online/Kurir, customer WAJIB memberikan Nomor Invoice/Nota kepada driver dan memastikan driver
+                    menyebutkan Nomor Invoice saat pengambilan.</li>
+                <li>TGM berhak menunda penyerahan barang apabila Nomor Invoice/Nota tidak dapat diverifikasi.</li>
+                <li>Setiap konsumen dianggap setuju dengan isi perhitungan tersebut diatas</li>
+                <li>Pengambilan barang harap disertai nota/invoice</li>
+            </ol>
+
+            <div class="border-t border-gray-200 pt-6">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 text-xs text-gray-700">
+                    <!-- Left Column -->
+                    <div class="space-y-4">
+                        <div>
+                            <h4 class="font-bold text-gray-900 mb-1 text-[13px]">Head Office</h4>
+                            <p class="leading-relaxed text-gray-500 mb-3">Jl. Letnan Marsaid - Bekasi Selatan<br>Kota
+                                Bekasi, Jawa Barat 17141</p>
+
+                            <h4 class="font-bold text-gray-900 mb-1 text-[13px]">Branch Office</h4>
+                            <p class="leading-relaxed text-gray-500">Jl. Serma Marjuki - Bekasi Selatan<br>Kota Bekasi,
+                                Jawa Barat 17141</p>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-gray-900 mb-1 text-[13px]">Help Center</h4>
+                            <p class="text-gray-500">Email: <a href="#" id="footer-email"
+                                    class="text-gray-700 hover:text-blue-600 transition">-</a></p>
+                            <p class="text-gray-500">WhatsApp: <a href="#" id="footer-wa"
+                                    class="text-gray-700 hover:text-blue-600 transition">-</a></p>
+                        </div>
+                    </div>
+
+                    <!-- Right Column -->
+                    <div>
+                        <h4 class="font-bold text-gray-900 mb-2 text-[13px]">Social Media</h4>
+                        <div class="space-y-3" id="footer-social-media">
+                            <!-- Injected by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <div class="text-center text-xs text-gray-400 mt-8">
+                    <span id="footer-nama-perusahaan">TGM Merch & Print</span> - 2026<br>
+                    Core System - Right Technology
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // KONFIGURASI API ERP
+        // ==========================================
+        let API_BASE_URL = 'https://erp.tgmprint.com';
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.startsWith('192.168.')) {
+            let pathSegments = window.location.pathname.split('/');
+            let folderName = pathSegments[1] ? '/' + pathSegments[1] : '/tgm_erp';
+            API_BASE_URL = window.location.origin + folderName;
+        }
+
+        // ==========================================
+
+        function formatRupiah(angka) {
+            return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(angka).replace('IDR', 'Rp');
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            const urlParams = new URLSearchParams(window.location.search);
+            const spk = urlParams.get('spk');
+
+            if (!spk) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error-msg').classList.remove('hidden');
+                document.getElementById('error-msg').innerText = 'Silakan masukkan parameter ?spk= di URL.';
+                return;
+            }
+
+            function loadData() {
+                fetch(`${API_BASE_URL}/api_tracking/spk?spk=${encodeURIComponent(spk)}`)
+                    .then(response => response.json())
+                .then(res => {
+                    document.getElementById('loading').style.display = 'none';
+
+                    if (res.status === 'success') {
+                        const data = res.data;
+                        document.getElementById('app-content').classList.remove('hidden');
+
+                        // Fill Basic Info
+                        document.getElementById('lbl-nospk').innerText = data.nospk;
+                        const copyContainer = document.getElementById('container-copy-invoice');
+                        copyContainer.classList.remove('hidden');
+                        copyContainer.classList.add('flex');
+                        copyContainer.setAttribute('onclick', `copyToClipboard('${data.nospk}')`);
+                        document.getElementById('lbl-konsumen').innerText = data.konsumen;
+
+                        // Link for Cetak Invoice (Local portal page)
+                        document.getElementById('btn-cetak').href = 'invoice.html?spk=' + encodeURIComponent(data.nospk || spk);
+
+                        document.getElementById('lbl-nohp').innerText = data.nohp;
+                        document.getElementById('lbl-email').innerText = data.email || '-';
+                        document.getElementById('lbl-alamat').innerText = data.alamat || '-';
+                        document.getElementById('lbl-tanggal').innerText = data.tanggal;
+                        document.getElementById('lbl-deskprint').innerText = data.deskprint || '-';
+                        document.getElementById('lbl-kasir').innerText = data.kasir || '-';
+
+                        // Populate Items
+                        const itemList = document.getElementById('item-list');
+                        itemList.innerHTML = '';
+                        if (data.items && data.items.length > 0) {
+                            data.items.forEach(item => {
+                                let badgeHtml = '';
+                                if (item.status_produksi) {
+                                    const stat = parseInt(item.status_produksi);
+                                    if (stat === 4) badgeHtml = `<span class="bg-gray-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded ml-2 align-middle">DIAMBIL</span>`;
+                                    else if (stat === 3) badgeHtml = `<span class="bg-green-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded ml-2 align-middle">SELESAI</span>`;
+                                    else if (stat === 2 || stat === 1) badgeHtml = `<span class="bg-blue-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded ml-2 align-middle">PROSES</span>`;
+                                    else badgeHtml = `<span class="bg-yellow-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded ml-2 align-middle">ANTREAN</span>`;
+                                }
+
+                                itemList.innerHTML += `
+                                    <div class="flex justify-between items-start">
+                                        <div class="flex-1 pr-3">
+                                            <h4 class="text-sm font-bold text-gray-800 flex items-center flex-wrap gap-y-1">${item.nama} ${badgeHtml}</h4>
+                                            ${item.variasi && item.variasi.length > 0 ? 
+                                                `<div class="mt-1.5 flex flex-wrap gap-1">
+                                                    ${item.variasi.map(v => `<span class="badge bg-gray-100 text-gray-700 text-[10px] border px-1.5 py-0.5 rounded shadow-sm">${v.label.toLowerCase().startsWith('ket') ? '' : v.label + ': '}<strong class="text-gray-800">${v.value}</strong></span>`).join('')}
+                                                </div>` 
+                                                : (item.keterangan ? `<p class="text-[11px] text-gray-500 mt-1 leading-tight">${item.keterangan}</p>` : '')}
+                                        </div>
+                                        <div class="text-right">
+                                            <div class="text-sm font-bold text-gray-900 bg-gray-100 rounded px-2 py-0.5 inline-block mb-0.5">${item.qty}x</div>
+                                            ${item.harga ? `<div class="text-[10px] text-gray-500 font-medium mb-1">@ ${formatRupiah(item.harga)}</div>` : ''}
+                                            <div class="text-xs font-bold text-gray-700">${formatRupiah(item.subtotal)}</div>
+                                        </div>
+                                    </div>
+                                    <div class="border-b border-gray-100 last:border-0 my-3"></div>
+                                `;
+                            });
+                        }
+
+                        // Set Store Header
+                        if (data.perusahaan) {
+                            if (data.perusahaan.logo) {
+                                const logoUrl = API_BASE_URL + '/assets/images/' + data.perusahaan.logo;
+                                const logoImg = document.getElementById('header-logo');
+                                logoImg.src = logoUrl;
+                                logoImg.classList.remove('hidden');
+
+                                // Set Favicon
+                                const favicon = document.getElementById('favicon');
+                                if (favicon) favicon.href = logoUrl;
+                            }
+
+                            document.getElementById('header-nama').innerText = data.perusahaan.nama_perusahaan || 'TGM MERCH & PRINT';
+                            document.getElementById('header-alamat').innerText = data.perusahaan.alamat_perusahaan || 'Jl. Serma Marzuki No.50D - Bekasi Selatan';
+                            document.getElementById('header-telp').innerText = '— ' + (data.perusahaan.telepon || '081288192057');
+
+                            const noTelp = data.perusahaan.telepon || '081288192057';
+                            document.getElementById('btn-telp').href = 'tel:' + noTelp;
+
+                            let rawWa = data.perusahaan.no_wa || noTelp;
+                            let waFormatted = String(rawWa).replace(/[^0-9]/g, '');
+                            if (waFormatted.startsWith('0')) waFormatted = '62' + waFormatted.substring(1);
+                            document.getElementById('btn-wa').href = 'https://wa.me/' + waFormatted;
+
+                            // Footer injection
+                            // Footer injection (Address hardcoded)
+
+                            document.getElementById('footer-email').innerText = data.perusahaan.email || '-';
+                            if (data.perusahaan.email) document.getElementById('footer-email').href = 'mailto:' + data.perusahaan.email;
+
+                            document.getElementById('footer-wa').innerText = data.perusahaan.no_wa || data.perusahaan.telepon || '-';
+                            if (data.perusahaan.no_wa || data.perusahaan.telepon) {
+                                document.getElementById('footer-wa').href = 'https://wa.me/' + waFormatted;
+                            }
+
+                            document.getElementById('footer-nama-perusahaan').innerText = data.perusahaan.nama_perusahaan || 'TGM Merch & Print';
+
+                            // Social Media Links
+                            const socialContainer = document.getElementById('footer-social-media');
+                            socialContainer.innerHTML = '';
+
+                            const socials = [
+                                { name: 'Instagram', url: 'https://www.instagram.com/tgmmerch.official/', displayUrl: 'tgmmerch.official', icon: '<svg class="w-5 h-5 text-gray-700" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M12.315 2c2.43 0 2.784.013 3.808.06 1.064.049 1.791.218 2.427.465a4.902 4.902 0 011.772 1.153 4.902 4.902 0 011.153 1.772c.247.636.416 1.363.465 2.427.048 1.067.06 1.407.06 4.123v.08c0 2.643-.012 2.987-.06 4.043-.049 1.064-.218 1.791-.465 2.427a4.902 4.902 0 01-1.153 1.772 4.902 4.902 0 01-1.772 1.153c-.636.247-1.363.416-2.427.465-1.067.048-1.407.06-4.123.06h-.08c-2.643 0-2.987-.012-4.043-.06-1.064-.049-1.791-.218-2.427-.465a4.902 4.902 0 01-1.772-1.153 4.902 4.902 0 01-1.153-1.772c-.247-.636-.416-1.363-.465-2.427-.047-1.024-.06-1.379-.06-3.808v-.63c0-2.43.013-2.784.06-3.808.049-1.064.218-1.791.465-2.427a4.902 4.902 0 011.153-1.772A4.902 4.902 0 015.45 2.525c.636-.247 1.363-.416 2.427-.465C8.901 2.013 9.256 2 11.685 2h.63zm-.081 1.802h-.468c-2.456 0-2.784.011-3.807.058-.975.045-1.504.207-1.857.344-.467.182-.8.398-1.15.748-.35.35-.566.683-.748 1.15-.137.353-.3.882-.344 1.857-.047 1.023-.058 1.351-.058 3.807v.468c0 2.456.011 2.784.058 3.807.045.975.207 1.504.344 1.857.182.466.399.8.748 1.15.35.35.683.566 1.15.748.353.137.882.3 1.857.344 1.054.048 1.37.058 4.041.058h.08c2.597 0 2.917-.01 3.96-.058.976-.045 1.505-.207 1.858-.344.466-.182.8-.398 1.15-.748.35-.35.566-.683.748-1.15.137-.353.3-.882.344-1.857.048-1.055.058-1.37.058-4.041v-.08c0-2.597-.01-2.917-.058-3.96-.045-.976-.207-1.505-.344-1.858a3.097 3.097 0 00-.748-1.15 3.098 3.098 0 00-1.15-.748c-.353-.137-.882-.3-1.857-.344-1.023-.047-1.351-.058-3.807-.058zM12 6.865a5.135 5.135 0 110 10.27 5.135 5.135 0 010-10.27zm0 1.802a3.333 3.333 0 100 6.666 3.333 3.333 0 000-6.666zm5.338-3.205a1.2 1.2 0 110 2.4 1.2 1.2 0 010-2.4z" clip-rule="evenodd" /></svg>' },
+                                { name: 'Tiktok', url: 'https://www.tiktok.com/@tgmmerch.official', displayUrl: '@tgmmerch.official', icon: '<svg class="w-5 h-5 text-gray-700" fill="currentColor" viewBox="0 0 24 24"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-5.2 1.74 2.89 2.89 0 012.31-4.64 2.93 2.93 0 01.88.13V9.4a6.84 6.84 0 00-1-.05A6.33 6.33 0 005 20.1a6.34 6.34 0 0010.86-4.43v-7a8.16 8.16 0 004.77 1.52v-3.4a4.85 4.85 0 01-1.04-.1z"/></svg>' },
+                                { name: 'Facebook', url: 'https://www.facebook.com/tgm.printing.1', displayUrl: 'tgm.printing.1', icon: '<svg class="w-5 h-5 text-gray-700" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M22 12c0-5.523-4.477-10-10-10S2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.878v-6.987h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.988C18.343 21.128 22 16.991 22 12z" clip-rule="evenodd" /></svg>' },
+                                { name: 'Website', url: 'https://tgmprint.com', displayUrl: 'tgmprint.com', icon: '<svg class="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>' }
+                            ];
+
+                            let hasSocial = false;
+                            socials.forEach(s => {
+                                if (s.url) {
+                                    hasSocial = true;
+                                    let href = s.url;
+                                    if (!href.startsWith('http')) href = 'https://' + href;
+
+                                    socialContainer.innerHTML += `
+                                        <a href="${href}" target="_blank" class="flex items-center gap-3 text-gray-700 hover:text-blue-600 transition group">
+                                            <div class="bg-gray-100 p-1.5 rounded-full group-hover:bg-blue-50">
+                                                ${s.icon}
+                                            </div>
+                                            <div>
+                                                <div class="font-bold text-[13px] text-gray-900 leading-none mb-0.5">${s.name}</div>
+                                                <div class="text-[10px] text-gray-400 truncate max-w-[150px] sm:max-w-[200px] leading-none">${s.displayUrl || s.url}</div>
+                                            </div>
+                                        </a>
+                                    `;
+                                }
+                            });
+
+                            if (!hasSocial) {
+                                socialContainer.innerHTML = '<div class="text-gray-400 italic text-[11px]">-</div>';
+                            }
+                        }
+
+                        // Calculate Grand Total from items since the ERP sometimes overrides total_tagihan
+                        let subTotalItems = 0;
+                        data.items.forEach(item => {
+                            subTotalItems += parseInt(item.subtotal) || 0;
+                        });
+
+                        const diskon = parseFloat(data.diskon || 0);
+                        const ongkir = parseFloat(data.ongkir || 0);
+
+                        // If total_tagihan from db is 0 but we have subTotalItems, use calculation
+                        const totalTagihan = data.total_tagihan > 0 ? data.total_tagihan : (subTotalItems + ongkir - diskon);
+                        const totalBayar = data.total_bayar || 0;
+                        let sisa = totalTagihan - totalBayar;
+                        if (sisa < 0) sisa = 0; // Kembalian logic
+
+                        document.getElementById('lbl-subtotal').innerText = formatRupiah(subTotalItems);
+
+                        if (diskon > 0) {
+                            document.getElementById('row-diskon').classList.remove('hidden');
+                            document.getElementById('row-diskon').classList.add('flex');
+                            document.getElementById('lbl-diskon').innerText = '- ' + formatRupiah(diskon);
+                        }
+
+                        if (ongkir > 0) {
+                            document.getElementById('row-ongkir').classList.remove('hidden');
+                            document.getElementById('row-ongkir').classList.add('flex');
+                            document.getElementById('lbl-ongkir').innerText = '+ ' + formatRupiah(ongkir);
+                        }
+
+                        document.getElementById('lbl-total-biaya').innerText = formatRupiah(totalTagihan);
+                        document.getElementById('lbl-pembayaran').innerText = formatRupiah(totalBayar);
+                        document.getElementById('lbl-kembalian').innerText = formatRupiah(sisa);
+
+
+                        // Set Payment Status Logic
+                        // Set Payment Status Logic
+                        const badgeLunas = document.getElementById('badge-lunas');
+                        const statusDesc = document.getElementById('lbl-status-desc');
+                        const labelSelesai = document.getElementById('lbl-selesai');
+
+                        // Set actual Dateline label (not hardcoded to payment status)
+                        labelSelesai.innerText = data.dateline || (data.jatuh_tempo ? 'Piutang: ' + data.jatuh_tempo : '-');
+
+                        const isLunas = (data.status_pembayaran === 'paid' || data.is_lunas) ? (sisa <= 0) : (totalTagihan > 0 && sisa <= 0 && totalBayar > 0);
+
+                        if (isLunas) {
+                            badgeLunas.innerText = 'LUNAS';
+                            badgeLunas.className = 'bg-green-500 text-white font-bold text-[10px] sm:text-xs px-2.5 py-1 sm:px-4 sm:py-2 rounded shadow-sm tracking-wider';
+                            statusDesc.innerText = 'Terima kasih atas pembayaran Anda.';
+                            document.getElementById('bank-section').classList.add('hidden');
+                        } else if (data.is_piutang || data.status_pembayaran === 'piutang') {
+                            badgeLunas.innerText = (sisa <= 0) ? 'LUNAS' : 'PIUTANG';
+                            badgeLunas.className = (sisa <= 0) ? 'bg-green-500 text-white font-bold text-[10px] sm:text-xs px-2.5 py-1 sm:px-4 sm:py-2 rounded shadow-sm tracking-wider' : 'bg-blue-600 text-white font-bold text-[10px] sm:text-xs px-2.5 py-1 sm:px-4 sm:py-2 rounded shadow-sm tracking-wider';
+                            statusDesc.innerText = (sisa <= 0) ? 'Terima kasih atas pembayaran Anda.' : ('Transaksi Piutang' + (data.jatuh_tempo ? ' (Batas waktu: ' + data.jatuh_tempo + ')' : '') + '. Sisa tagihan: ' + formatRupiah(sisa));
+
+                            // Show Bank if unpaid / piutang
+                            if (sisa > 0 && data.rekening && data.rekening.length > 0) {
+                                document.getElementById('bank-section').classList.remove('hidden');
+                                const bankList = document.getElementById('bank-list');
+                                bankList.innerHTML = '';
+                                data.rekening.forEach(bank => {
+                                    const bankNameClean = bank.nama_bank.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                    const logoUrl = `https://erp.tgmprint.com/assets/images/logo/${bankNameClean}.png`;
+
+                                    bankList.innerHTML += `
+                                        <div class="flex items-center gap-4 p-3 border border-gray-200 rounded-lg bg-gray-50">
+                                            <div class="bg-white rounded shadow-sm w-12 h-12 flex items-center justify-center font-bold text-blue-600 text-[10px] text-center leading-tight relative overflow-hidden">
+                                                <img src="${logoUrl}" alt="${bank.nama_bank}" class="object-contain w-full h-full p-1.5" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />
+                                                <span style="display:none;" class="px-1 break-words">${bank.nama_bank}</span>
+                                            </div>
+                                            <div class="flex-1">
+                                                <div class="text-lg font-bold text-gray-800 tracking-wider flex items-center gap-2">
+                                                    ${bank.no_rekening}
+                                                    <button onclick="copyToClipboard('${bank.no_rekening}')" class="text-gray-400 hover:text-blue-500 transition">
+                                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                                                    </button>
+                                                </div>
+                                                <div class="text-xs text-gray-500 font-medium uppercase">a.n ${bank.atas_nama}</div>
+                                            </div>
+                                        </div>
+                                    `;
+                                });
+                            }
+                        } else if (totalBayar > 0 && sisa > 0) {
+                            badgeLunas.innerText = 'BELUM LUNAS (DP)';
+                            badgeLunas.className = 'bg-yellow-500 text-white font-bold text-[10px] sm:text-xs px-2.5 py-1 sm:px-4 sm:py-2 rounded shadow-sm tracking-wider';
+                            statusDesc.innerText = 'Pembayaran sebagian (DP). Sisa tagihan: ' + formatRupiah(sisa);
+
+                            // Show Bank if unpaid / piutang
+                            if (data.rekening && data.rekening.length > 0) {
+                                document.getElementById('bank-section').classList.remove('hidden');
+                                const bankList = document.getElementById('bank-list');
+                                bankList.innerHTML = '';
+                                data.rekening.forEach(bank => {
+                                    const bankNameClean = bank.nama_bank.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                    const logoUrl = `https://erp.tgmprint.com/assets/images/logo/${bankNameClean}.png`;
+
+                                    bankList.innerHTML += `
+                                        <div class="flex items-center gap-4 p-3 border border-gray-200 rounded-lg bg-gray-50">
+                                            <div class="bg-white rounded shadow-sm w-12 h-12 flex items-center justify-center font-bold text-blue-600 text-[10px] text-center leading-tight relative overflow-hidden">
+                                                <img src="${logoUrl}" alt="${bank.nama_bank}" class="object-contain w-full h-full p-1.5" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />
+                                                <span style="display:none;" class="px-1 break-words">${bank.nama_bank}</span>
+                                            </div>
+                                            <div class="flex-1">
+                                                <div class="text-lg font-bold text-gray-800 tracking-wider flex items-center gap-2">
+                                                    ${bank.no_rekening}
+                                                    <button onclick="copyToClipboard('${bank.no_rekening}')" class="text-gray-400 hover:text-blue-500 transition">
+                                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                                                    </button>
+                                                </div>
+                                                <div class="text-xs text-gray-500 font-medium uppercase">a.n ${bank.atas_nama}</div>
+                                            </div>
+                                        </div>
+                                    `;
+                                });
+                            }
+                        } else {
+                            badgeLunas.innerText = 'BELUM LUNAS';
+                            badgeLunas.className = 'bg-red-500 text-white font-bold text-[10px] sm:text-xs px-2.5 py-1 sm:px-4 sm:py-2 rounded shadow-sm tracking-wider';
+                            statusDesc.innerText = 'Segera lakukan pembayaran pesanan.';
+
+                            // Show Bank if unpaid
+                            if (data.rekening && data.rekening.length > 0) {
+                                document.getElementById('bank-section').classList.remove('hidden');
+                                const bankList = document.getElementById('bank-list');
+                                bankList.innerHTML = '';
+                                data.rekening.forEach(bank => {
+                                    const bankNameClean = bank.nama_bank.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                    const logoUrl = `https://erp.tgmprint.com/assets/images/logo/${bankNameClean}.png`;
+
+                                    bankList.innerHTML += `
+                                        <div class="flex items-center gap-4 p-3 border border-gray-200 rounded-lg bg-gray-50">
+                                            <div class="bg-white rounded shadow-sm w-12 h-12 flex items-center justify-center font-bold text-blue-600 text-[10px] text-center leading-tight relative overflow-hidden">
+                                                <img src="${logoUrl}" alt="${bank.nama_bank}" class="object-contain w-full h-full p-1.5" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />
+                                                <span style="display:none;" class="px-1 break-words">${bank.nama_bank}</span>
+                                            </div>
+                                            <div class="flex-1">
+                                                <div class="text-lg font-bold text-gray-800 tracking-wider flex items-center gap-2">
+                                                    ${bank.no_rekening}
+                                                    <button onclick="copyToClipboard('${bank.no_rekening}')" class="text-gray-400 hover:text-blue-500 transition">
+                                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                                                    </button>
+                                                </div>
+                                                <div class="text-xs text-gray-500 font-medium uppercase">a.n ${bank.atas_nama}</div>
+                                            </div>
+                                        </div>
+                                    `;
+                                });
+                            }
+                        }
+
+                        // Build Timeline Tracker
+                        let currentStep = 0;
+                        if (data.status_pembayaran === 'paid' || data.is_lunas || data.is_piutang || (totalBayar > 0) || data.has_payment) {
+                            currentStep = 1;
+                            const statusProd = data.status_produksi_global || (data.flow ? data.flow.status_produksi : '');
+                            if (statusProd == '2' || statusProd == '1' || statusProd === 'proses') currentStep = 2;
+                            else if (statusProd == '3' || statusProd === 'done' || statusProd === 'on_pb') currentStep = 3;
+                            else if (statusProd == '4' || statusProd === 'on_costumer') currentStep = 4;
+                        }
+
+                        const badgeStatusPesanan = document.getElementById('badge-status-pesanan');
+                        if (currentStep === 0) {
+                            badgeStatusPesanan.innerText = 'MENUNGGU PEMBAYARAN';
+                            badgeStatusPesanan.className = 'bg-red-500 text-white font-bold text-[10px] px-2 py-0.5 rounded tracking-wider';
+                        } else if (currentStep < 3) {
+                            badgeStatusPesanan.innerText = 'PROSES PRODUKSI';
+                            badgeStatusPesanan.className = 'bg-blue-500 text-white font-bold text-[10px] px-2 py-0.5 rounded tracking-wider';
+                        } else if (currentStep === 3) {
+                            badgeStatusPesanan.innerText = 'SELESAI (SIAP DIAMBIL)';
+                            badgeStatusPesanan.className = 'bg-green-500 text-white font-bold text-[10px] px-2 py-0.5 rounded tracking-wider';
+                        } else {
+                            badgeStatusPesanan.innerText = 'SUDAH DIAMBIL';
+                            badgeStatusPesanan.className = 'bg-gray-600 text-white font-bold text-[10px] px-2 py-0.5 rounded tracking-wider';
+                        }
+
+                        const timelineContainer = document.getElementById('tracking-timeline');
+                        timelineContainer.innerHTML = '';
+
+                        const isStep1ActiveOrPassed = currentStep >= 1;
+                        const step1Time = isStep1ActiveOrPassed ? (data.timestamps?.paid || (data.is_piutang ? data.timestamps?.created : null)) : null;
+
+                        const steps = [
+                            { step: 0, title: 'Belum Bayar', desc: 'Menunggu pembayaran agar pesanan dapat diproses.', time: data.timestamps?.created },
+                            { step: 1, title: data.is_piutang ? 'Transaksi Disetujui (Piutang)' : ((data.is_paid && sisa > 0) ? 'Sudah DP (Belum Lunas)' : 'Sudah Bayar'), desc: data.is_piutang ? `Pesanan diproses dengan sistem piutang. Sisa tagihan ${formatRupiah(sisa)}.` : ((data.is_paid && sisa > 0) ? `Masih ada tagihan sebesar ${formatRupiah(sisa)}. Silakan lunasi saat pengambilan.` : 'Pembayaran berhasil dikonfirmasi. Pesanan akan segera diproduksi.'), time: step1Time },
+                            { step: 2, title: 'Sedang Produksi', desc: 'Pesanan sedang diproduksi sesuai spesifikasi yang telah disetujui.', time: data.timestamps?.produksi_mulai },
+                            { step: 3, title: 'Pesanan Selesai (Siap Diambil)', desc: 'Pesanan telah selesai diproduksi dan siap diambil di toko (di meja PB).', time: data.timestamps?.produksi_selesai || data.timestamps?.diambil },
+                            { step: 4, title: 'Sudah Diambil', desc: 'Pesanan telah berhasil diterima. Terima kasih telah berbelanja di TGM PRINT.', time: data.timestamps?.diambil }
+                        ];
+
+                        steps.forEach((s, index) => {
+                            const isPassed = s.step <= currentStep;
+                            const isActive = s.step === currentStep;
+                            const isLast = index === steps.length - 1;
+
+                            let dotColor = 'bg-gray-300 border-gray-100';
+                            let titleColor = 'text-gray-500';
+                            let descColor = 'text-gray-400';
+                            let bgColor = 'bg-white';
+
+                            if (isActive) {
+                                dotColor = 'bg-blue-500 border-blue-200';
+                                titleColor = 'text-gray-900 font-bold';
+                                descColor = 'text-gray-700 font-semibold';
+                                bgColor = 'bg-gray-100';
+                            } else if (isPassed) {
+                                dotColor = 'bg-green-500 border-green-200';
+                                titleColor = 'text-gray-800';
+                                descColor = 'text-gray-600 font-semibold';
+                                bgColor = 'bg-gray-100';
+                            }
+
+                            if (s.step === 1 && isActive && sisa > 0) {
+                                dotColor = 'bg-yellow-500 border-yellow-200';
+                                titleColor = 'text-gray-900 font-bold';
+                            }
+
+                            let timeOnly = '';
+                            if (s.time) {
+                                let parts = s.time.split(', ');
+                                if (parts.length === 2) {
+                                    timeOnly = parts[1]; // Extracted time like '17:08'
+                                } else {
+                                    timeOnly = s.time; // Fallback
+                                }
+                            }
+
+                            let itemsListHtml = '';
+                            if (isActive && s.step >= 2 && data.items && data.items.length > 0) {
+                                itemsListHtml = '<div class="mt-2.5 pt-2.5 border-t border-gray-200/60 space-y-1.5">';
+                                data.items.forEach(item => {
+                                    let badgeHtml = '';
+                                    if (item.status_produksi) {
+                                        const stat = parseInt(item.status_produksi);
+                                        if (stat === 4) badgeHtml = `<span class="text-[9px] font-bold text-gray-600 bg-gray-200 px-1 py-0.5 rounded ml-1">DIAMBIL</span>`;
+                                        else if (stat === 3) badgeHtml = `<span class="text-[9px] font-bold text-green-600 bg-green-100 px-1 py-0.5 rounded ml-1">SELESAI</span>`;
+                                        else if (stat === 2 || stat === 1) badgeHtml = `<span class="text-[9px] font-bold text-blue-600 bg-blue-100 px-1 py-0.5 rounded ml-1">PROSES</span>`;
+                                        else badgeHtml = `<span class="text-[9px] font-bold text-yellow-600 bg-yellow-100 px-1 py-0.5 rounded ml-1">ANTREAN</span>`;
+                                    }
+                                    itemsListHtml += `
+                                        <div class="text-[11px] flex items-center text-gray-700">
+                                            <svg class="w-3 h-3 text-gray-400 mr-1.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                                            <span class="truncate pr-1">${item.nama}</span> ${badgeHtml}
+                                        </div>
+                                    `;
+                                });
+                                itemsListHtml += '</div>';
+                            }
+
+                            const lineHtml = !isLast ? `<div class="absolute w-0.5 bg-gray-200" style="top: 1.25rem; bottom: -0.5rem; left: 50%; transform: translateX(-50%); z-index: 0;"></div>` : '';
+
+                            timelineContainer.innerHTML += `
+                                <div class="flex items-stretch relative mb-2">
+                                    <div class="w-11 flex-shrink-0 text-[12px] font-bold text-gray-800 pt-3 text-right pr-1">
+                                        ${timeOnly}
+                                    </div>
+                                    
+                                    <div class="relative w-6 flex-shrink-0 flex justify-center">
+                                        ${lineHtml}
+                                        <div class="w-3.5 h-3.5 rounded-full ${dotColor} border-2 border-white shadow-sm z-10 mt-3 relative"></div>
+                                    </div>
+
+                                    <div class="flex-1 ${bgColor} rounded-lg p-2.5 ml-1.5 border border-gray-100">
+                                        <h4 class="text-[13px] leading-tight ${titleColor} mb-0.5">${s.title}</h4>
+                                        <p class="text-[11px] ${descColor} leading-snug">${s.desc}</p>
+                                        ${itemsListHtml}
+                                    </div>
+                                </div>
+                            `;
+                        });
+
+                    } else {
+                        document.getElementById('error-msg').classList.remove('hidden');
+                        document.getElementById('error-msg').innerText = res.message || 'Data tidak ditemukan.';
+                    }
+                })
+                .catch(err => {
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('error-msg').classList.remove('hidden');
+                    document.getElementById('error-msg').innerText = 'Gagal menghubungi server ERP. (' + err.message + ')';
+                });
+            }
+
+            // Panggilan pertama kali
+            loadData();
+
+            // Auto-reload setiap 30 detik (30000 ms)
+            setInterval(loadData, 30000);
+        });
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                alert(text + ' berhasil disalin!');
+            }).catch(err => {
+                console.error('Gagal menyalin:', err);
+            });
+        }
+
+        function toggleTimeline() {
+            const timeline = document.getElementById('tracking-timeline');
+            const icon = document.getElementById('timeline-icon');
+            if (timeline.classList.contains('hidden')) {
+                timeline.classList.remove('hidden');
+                icon.classList.add('rotate-180');
+            } else {
+                timeline.classList.add('hidden');
+                icon.classList.remove('rotate-180');
+            }
+        }
+    </script>
+</body>
+
+</html>

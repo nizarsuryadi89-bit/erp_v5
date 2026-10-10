@@ -222,7 +222,16 @@ $print_time = date('d/m/Y H:i');
     foreach ($grouped_spk as $nospk => $spk_items):
         // Data Extraction from the first item
         $first_item = $spk_items[0];
-        $store = strtoupper($first_item->cabang_asal ?: 'TGM ERP');
+        
+        $nospk_parts = explode('-', $nospk);
+        $spk_cabang_id = isset($nospk_parts[0]) ? (int)$nospk_parts[0] : 1;
+        $store = 'TGM OFFICIAL (PUSAT)';
+        if ($spk_cabang_id == 3) {
+            $store = 'TGM MERCH (CABANG)';
+        } elseif ($spk_cabang_id > 3) {
+            $store = 'CABANG LAIN';
+        }
+        $store = strtoupper($store);
         $work_center = strtoupper($first_item->kategori_nama ?: 'LAIN-LAIN');
         $pelanggan = strtoupper($first_item->konsumen_nama);
 
@@ -281,19 +290,24 @@ $print_time = date('d/m/Y H:i');
                     <td><?= $pelanggan ?></td>
                 </tr>
                 <tr>
+                    <td style="font-weight: bold;">NO HP</td>
+                    <td style="font-weight: bold;">:</td>
+                    <td><?= isset($first_item->konsumen_nohp) && !empty($first_item->konsumen_nohp) ? $first_item->konsumen_nohp : '-' ?></td>
+                </tr>
+                <tr>
                     <td style="font-weight: bold;">Work Center</td>
                     <td style="font-weight: bold;">:</td>
                     <td><?= $work_center ?></td>
                 </tr>
                 <tr>
-                    <td style="font-weight: bold;">Lokasi</td>
+                    <td style="font-weight: bold;">LOKASI PESAN</td>
                     <td style="font-weight: bold;">:</td>
-                    <td><?= $lokasi_nama ?></td>
+                    <td><?= $store ?></td>
                 </tr>
                 <tr>
-                    <td style="font-weight: bold;">SUMBER</td>
+                    <td style="font-weight: bold;">LOKASI PRODUKSI</td>
                     <td style="font-weight: bold;">:</td>
-                    <td><?= $channel ?></td>
+                    <td><?= $lokasi_nama ?></td>
                 </tr>
                 <tr>
                     <td style="font-weight: bold;">DESKPRINT</td>
@@ -353,124 +367,169 @@ $print_time = date('d/m/Y H:i');
                     }
                 }
 
+                // [NEW] Kombinasi Metadata Cerdas (Sesuai Form Builder)
+                $combined_meta = [];
+                
+                // 1. Ambil dari tbl_harga_product
+                $harga_id = isset($item_detail->snapshot_source_harga_id) ? $item_detail->snapshot_source_harga_id : (isset($item_detail->harga_id) ? $item_detail->harga_id : 0);
+                if ($harga_id > 0) {
+                    $CI =& get_instance();
+                    $harga_row = $CI->db->get_where('tbl_harga_product', ['harga_id' => $harga_id])->row();
+                    if ($harga_row && !empty($harga_row->metadata)) {
+                        $h_meta = json_decode($harga_row->metadata, true);
+                        if (is_array($h_meta)) {
+                            $combined_meta = array_merge($combined_meta, $h_meta);
+                        }
+                    }
+                }
+
+                // 2. Ambil dari tbl_produksi metadata
                 $meta = !empty($item_detail->metadata) ? json_decode($item_detail->metadata, true) : [];
-
-                // Backward Compatibility for old items that didn't save schema correctly
-                if (!isset($meta['ket_1']) && isset($item_detail->db_ket_1) && $item_detail->db_ket_1 !== '') {
-                    $meta['ket_1'] = $item_detail->db_ket_1;
-                }
-                if (!isset($meta['jenisprint_id']) && isset($item_detail->db_jenisprint_id) && $item_detail->db_jenisprint_id !== '') {
-                    $meta['jenisprint_id'] = $item_detail->db_jenisprint_id;
-                }
-                if (!isset($meta['side_id']) && isset($item_detail->side_id) && $item_detail->side_id !== '') {
-                    $meta['side_id'] = $item_detail->side_id;
+                if (is_array($meta)) {
+                    $combined_meta = array_merge($combined_meta, $meta);
                 }
 
-                // Prepare Schema mapping for proper label display
-                $cat_sch = !empty($item_detail->kategori_schema) ? json_decode($item_detail->kategori_schema, true) : [];
-                $prd_sch = !empty($item_detail->product_schema) ? json_decode($item_detail->product_schema, true) : [];
-                $merged_schema = [];
-                if (is_array($cat_sch)) {
-                    foreach ($cat_sch as $s)
-                        if (isset($s['name']))
-                            $merged_schema[$s['name']] = $s;
+                $ik1 = !empty($item_detail->db_ket_1) ? $item_detail->db_ket_1 : (!empty($item_detail->ket_1) ? $item_detail->ket_1 : null);
+                if (!empty($ik1) && !isset($combined_meta['ket_1'])) {
+                    $combined_meta['ket_1'] = $ik1;
                 }
-                if (is_array($prd_sch)) {
-                    foreach ($prd_sch as $s)
-                        if (isset($s['name']))
-                            $merged_schema[$s['name']] = $s;
+                
+                $ijp = !empty($item_detail->db_jenisprint_id) ? $item_detail->db_jenisprint_id : (!empty($item_detail->jenisprint_id) ? $item_detail->jenisprint_id : null);
+                if (!empty($ijp) && !isset($combined_meta['jenisprint_id'])) {
+                    $combined_meta['jenisprint_id'] = $ijp;
                 }
-
-                // Clean key fallback for metadata (e.g. jenisprint instead of jenisprint_id)
-                foreach ($merged_schema as $k => $field) {
-                    if (!isset($meta[$k]) || $meta[$k] === '') {
-                        $clean_k = str_replace('_id', '', $k);
-                        if (isset($meta[$clean_k]) && $meta[$clean_k] !== '') {
-                            $meta[$k] = $meta[$clean_k];
+                
+                if (!empty($item_detail->ket_2) && !isset($combined_meta['ket_2'])) {
+                    $combined_meta['ket_2'] = $item_detail->ket_2;
+                }
+                if (!empty($item_detail->ket_3) && !isset($combined_meta['ket_3'])) {
+                    $combined_meta['ket_3'] = $item_detail->ket_3;
+                }
+                
+                if (isset($item_detail->kategori_id) && $item_detail->kategori_id == 1) {
+                    if (empty($combined_meta['ket_1'])) {
+                        if (!empty($ijp)) {
+                            $combined_meta['ket_1'] = $ijp;
+                        } elseif (!empty($combined_meta['jenisprint_id'])) {
+                            $combined_meta['ket_1'] = $combined_meta['jenisprint_id'];
                         }
                     }
                 }
 
-                $get_label = function ($key, $val) use ($merged_schema) {
-                    if (isset($merged_schema[$key]['options'][$val])) {
-                        return $merged_schema[$key]['options'][$val];
+                if (empty($combined_meta['sisi'])) {
+                    $jp = !empty($ijp) ? $ijp : (!empty($combined_meta['jenisprint_id']) ? $combined_meta['jenisprint_id'] : null);
+                    if ($jp == '1' || $jp == '2') {
+                        $combined_meta['sisi'] = $jp;
                     }
-                    return $val;
-                };
-
-                if (!empty($meta['warna'])) {
-                    $specs[] = "Warna: " . strtoupper($get_label('warna', $meta['warna']));
                 }
 
-                // Add Mesin / Proses (e.g. Indoor, Outdoor, Epson, Konica)
-                if (!empty($meta['jenisprint_id'])) {
-                    $val_label = $get_label('jenisprint_id', $meta['jenisprint_id']);
-                    // For Kategori 1/2 without schema, fallback hardcode if necessary, but DB mostly matches now
-                    // Some older data has raw values like "1" or "2"
-                    if ($val_label === '1' && $item_detail->kategori_id == 2)
-                        $val_label = 'Indoor Eco Solvent';
-                    if ($val_label === '2' && $item_detail->kategori_id == 2)
-                        $val_label = 'Outdoor';
-                    if ($val_label === '3' && $item_detail->kategori_id == 2)
-                        $val_label = 'Indoor UV';
-                    if ($val_label === '1' && $item_detail->kategori_id == 1)
-                        $val_label = 'Konica';
-                    if ($val_label === '3' && $item_detail->kategori_id == 1)
-                        $val_label = 'Fujixerox';
-                    $specs[] = strtoupper($val_label);
+                // 3. Resolve Schema Map
+                $schema_map = [];
+                $schema_arr = [];
+                
+                // Merge schemas sequentially (Category -> Subcategory -> Product) so specific overrides general
+                if (!empty($item_detail->kategori_schema)) {
+                    $sc = json_decode($item_detail->kategori_schema, true);
+                    if (is_array($sc)) $schema_arr = array_merge($schema_arr, $sc);
+                }
+                if (!empty($item_detail->subkategori_schema)) {
+                    $sc = json_decode($item_detail->subkategori_schema, true);
+                    if (is_array($sc)) $schema_arr = array_merge($schema_arr, $sc);
+                }
+                if (!empty($item_detail->product_schema)) {
+                    $sc = json_decode($item_detail->product_schema, true);
+                    if (is_array($sc)) $schema_arr = array_merge($schema_arr, $sc);
                 }
 
-                // Add Bahan / Material (except for Cat 5,9 which handle it specially below)
-                if (!empty($meta['ket_1']) && !in_array($item_detail->kategori_id, [5, 9])) {
-                    $specs[] = strtoupper($get_label('ket_1', $meta['ket_1']));
-                }
-
-                // Add Sisi / Muka
-                if (!empty($meta['sisi'])) {
-                    $specs[] = strtoupper($get_label('sisi', $meta['sisi']));
-                } elseif (!empty($meta['side_id'])) {
-                    $specs[] = strtoupper($get_label('side_id', $meta['side_id']));
-                }
-
-                // Add Finishing if exists
-                if (!empty($meta['finishing_id'])) {
-                    $specs[] = strtoupper($get_label('finishing_id', $meta['finishing_id']));
-                }
-
-                // Add LEBAR KAIN / LEBAR ROLL info from Schema if applicable (Kategori 5 / 9)
-                if (in_array($item_detail->kategori_id, [5, 9])) {
-                    $widthCode = $meta['ket_1'] ?? '0';
-
-                    if ($widthCode !== '0') {
-                        $cat_sch = !empty($item_detail->kategori_schema) ? json_decode($item_detail->kategori_schema, true) : [];
-                        $prd_sch = !empty($item_detail->product_schema) ? json_decode($item_detail->product_schema, true) : [];
-
-                        $merged = [];
-                        if (is_array($cat_sch)) {
-                            foreach ($cat_sch as $s)
-                                if (isset($s['name']))
-                                    $merged[$s['name']] = $s;
+                if (!empty($schema_arr)) {
+                    foreach ($schema_arr as $field) {
+                        if (isset($field['name'])) {
+                            $schema_map[$field['name']] = $field;
                         }
-                        if (is_array($prd_sch)) {
-                            foreach ($prd_sch as $s)
-                                if (isset($s['name']))
-                                    $merged[$s['name']] = $s;
+                    }
+                }
+
+                // 4. Print values
+                $printed_values = [];
+                foreach ($combined_meta as $key => $val) {
+                    $key_lower = strtolower($key);
+                    $is_in_schema = isset($schema_map[$key]);
+                    $label = ucwords(str_replace('_', ' ', $key));
+
+                    if ($is_in_schema) {
+                        $field = $schema_map[$key];
+                        if (!empty($field['label'])) {
+                            $label = $field['label'];
                         }
+                        if (isset($field['options']) && is_array($field['options']) && isset($field['options'][$val])) {
+                            $val = $field['options'][$val];
+                        }
+                    }
 
-                        if (isset($merged['ket_1']['options'][$widthCode])) {
-                            $wNameStr = strtoupper($merged['ket_1']['options'][$widthCode]);
+                    if (!$is_in_schema) {
+                        if (in_array($key_lower, ['unit_price', 'subtotal', 'price_snapshot_at', 'hpp', 'range_id', 'user', 'kodeproduk', 'nospk']) || substr($key_lower, -3) === '_id' || strpos($key_lower, 'subkategori') !== false) {
+                            continue;
+                        }
+                    }
 
-                            $pStr = $p . " M";
-                            $idx = array_search($pStr, $specs);
-                            if ($idx !== false) {
-                                // Combine Width and Length -> "1.2 M x 3 M"
-                                $specs[$idx] = str_replace(',', ' x', $wNameStr) . " x " . $pStr;
-                            } else {
-                                // Format the wNameStr properly
-                                $formatted_wNameStr = str_replace(',', ' x', $wNameStr);
-                                array_unshift($specs, $formatted_wNameStr);
+                    if (in_array($item_detail->kategori_id, [5, 9]) && in_array($key_lower, ['ket_1', 'lebar'])) {
+                        $widthCode = $val;
+                        $wNameStr = strtoupper($val);
+                        if ($is_in_schema && isset($schema_map[$key]['options'][$widthCode])) {
+                            $wNameStr = strtoupper($schema_map[$key]['options'][$widthCode]);
+                        }
+                        $pStr = (float)($item_detail->panjang ?? 0) . " M";
+                        $idx = array_search($pStr, $specs);
+                        if ($idx !== false) {
+                            $specs[$idx] = str_replace(',', ' x', $wNameStr) . " x " . $pStr;
+                        } else {
+                            $formatted_wNameStr = str_replace(',', ' x', $wNameStr);
+                            array_unshift($specs, $formatted_wNameStr);
+                        }
+                        continue;
+                    }
+
+                    if ($key_lower == 'sisi') {
+                        if (in_array($item_detail->kategori_id, [2, 9]) || strtolower($item_detail->kategori_nama ?? '') == 'large format') {
+                            continue;
+                        }
+                        if ($val == '1' || $val == '2') {
+                            $val = $val . ' Sisi';
+                        }
+                        $val_clean = strtolower(trim($val));
+                        if (!in_array($val_clean, $printed_values)) {
+                            $specs[] = strtoupper($val);
+                            $printed_values[] = $val_clean;
+                        }
+                        continue;
+                    }
+
+                    if (strpos($key_lower, 'ket_') === 0 && !$is_in_schema) {
+                        $val = trim($val, '[]');
+                        if (!empty($val)) {
+                            if (isset($item_detail->kategori_id) && $item_detail->kategori_id == 1 && ($val == '1' || $val == '2')) {
+                                $val = $val . ' Sisi';
+                            }
+                            
+                            // Jika setelah diformat nilainya masih murni angka (seperti ID mesin atau data kosong bernilai 1),
+                            // kita sembunyikan agar tidak tampil angka rancu seperti '1' di Jasa Desain
+                            if (is_numeric($val)) {
+                                continue;
+                            }
+
+                            $val_clean = strtolower(trim($val));
+                            if (!in_array($val_clean, $printed_values)) {
+                                $specs[] = strtoupper($val);
+                                $printed_values[] = $val_clean;
                             }
                         }
+                        continue;
+                    }
+
+                    $val_clean = strtolower(trim($val));
+                    if (!in_array($val_clean, $printed_values)) {
+                        $specs[] = strtoupper($label) . ": " . strtoupper($val);
+                        $printed_values[] = $val_clean;
                     }
                 }
 
@@ -489,11 +548,28 @@ $print_time = date('d/m/Y H:i');
                     <tr>
                         <td style="font-weight: bold;">QTY</td>
                         <td style="font-weight: bold;">:</td>
-                        <td style="font-weight: bold;"><?= $qty ?> PCS</td>
+                        <?php 
+                        $satuan_display = 'PCS';
+                        if (!empty($item_detail->satuan_nama)) {
+                            $satuan_temp = strtoupper(trim($item_detail->satuan_nama));
+                            // Jika satuannya mengandung M atau METER, paksa jadi PCS untuk label
+                            if ($satuan_temp === 'M' || strpos($satuan_temp, 'METER') !== false) {
+                                $satuan_display = 'PCS';
+                            } else {
+                                $satuan_display = $satuan_temp;
+                            }
+                        }
+                        
+                        // Force PCS untuk Large Format
+                        if (isset($item_detail->kategori_id) && $item_detail->kategori_id == 2) {
+                            $satuan_display = 'PCS';
+                        }
+                        ?>
+                        <td style="font-weight: bold;"><?= $qty ?> <?= $satuan_display ?></td>
                     </tr>
                     <?php if (!empty($spec_text)): ?>
                         <tr>
-                            <td style="font-weight: bold; vertical-align: top; font-size: 0.85em;">KET</td>s
+                            <td style="font-weight: bold; vertical-align: top; font-size: 0.85em;">KET</td>
                             <td style="font-weight: bold; vertical-align: top; font-size: 0.85em;">:</td>
                             <td style="font-size: 0.85em;"><?= $spec_text ?></td>
                         </tr>

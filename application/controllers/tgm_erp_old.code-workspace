@@ -1,0 +1,19 @@
+{
+	"folders": [
+		{
+			"path": "../.."
+		},
+		{
+			"path": "../../../../../../../Volumes/zarnizar/herd_laravel/portopolio"
+		},
+		{
+			"path": "../../../../../../../Volumes/zarnizar/herd_laravel/dewa_motekar"
+		},
+		{
+			"path": "../../../../../../../Volumes/zarnizar/herd_laravel/erp_olshop"
+		}
+	],
+	"settings": {
+		"php.version": "7.4"
+	}
+}

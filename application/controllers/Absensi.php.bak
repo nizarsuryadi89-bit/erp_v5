@@ -1,6 +1,15 @@
 <?php
 defined('BASEPATH') OR exit('No direct script access allowed');
 
+/**
+ * @property CI_DB_query_builder $db
+ * @property CI_Session $session
+ * @property CI_Input $input
+ * @property CI_User_agent $agent
+ * @property Absensi_model $Absensi_model
+ * @property M_master $M_master
+ * @property CI_Form_validation $form_validation
+ */
 class Absensi extends MY_Controller
 {
 
@@ -9,9 +18,11 @@ class Absensi extends MY_Controller
         parent::__construct();
         $this->load->model('Absensi_model');
         $this->load->model('M_master');
+        $this->load->model('Payroll_model');
         $this->load->helper('whatsapp');
         date_default_timezone_set('Asia/Jakarta');
         $this->load->library('form_validation');
+        $this->load->library('user_agent');
     }
 
     public function index()
@@ -26,9 +37,9 @@ class Absensi extends MY_Controller
         );
 
         // Get filter parameters
-        $tanggal = $this->input->get('tanggal') ? $this->input->get('tanggal') : date('Y-m-d');
-        $status = $this->input->get('status') ? $this->input->get('status') : '';
-        $karyawan_id = $this->input->get('karyawan_id') ? $this->input->get('karyawan_id') : '';
+        $tanggal = $this->input->get('tanggal', true) ? $this->input->get('tanggal', true) : date('Y-m-d');
+        $status = $this->input->get('status', true) ? $this->input->get('status', true) : '';
+        $karyawan_id = $this->input->get('karyawan_id', true) ? $this->input->get('karyawan_id', true) : '';
 
         $data = array(
             'controller' => $this->uri->segment(1),
@@ -39,7 +50,7 @@ class Absensi extends MY_Controller
             'hakakses' => $conf['hakakses']['divisi_nama'],
             'logo' => $conf['perusahaan']['logo'],
             'level' => $this->db->get_where('users', array('user_id' => $userid))->row_array(),
-            'menu' => $this->db->get('menu')->result(),
+            // 'menu' diambil otomatis dari MY_Controller
             'submenu' => $this->M_master->getmenu($controller)->result(),
             'list_bahan' => $this->M_master->getDataBahan()->result(),
             'tanggal' => $tanggal,
@@ -97,9 +108,9 @@ class Absensi extends MY_Controller
             'hakakses' => $this->db->get_where('tbl_divisi', array('divisi_id' => $this->session->userdata('level')))->row_array(),
         );
 
-        $bulan = $this->input->get('bulan');
-        $start_date = $this->input->get('start_date');
-        $end_date = $this->input->get('end_date');
+        $bulan = $this->input->get('bulan', true);
+        $start_date = $this->input->get('start_date', true);
+        $end_date = $this->input->get('end_date', true);
 
         // Logic for payroll/attendance cycle based on company settings
         if (empty($start_date) && empty($end_date)) {
@@ -112,7 +123,11 @@ class Absensi extends MY_Controller
                 $start_date = date('Y-m-' . str_pad($cutoff, 2, '0', STR_PAD_LEFT), strtotime('-1 month'));
                 $end_date = date('Y-m-' . str_pad($cutoff, 2, '0', STR_PAD_LEFT));
             }
-            $bulan = date('Y-m', strtotime($start_date));
+            $bulan = date('Y-m', strtotime($end_date));
+        }
+
+        if (empty($bulan) && !empty($end_date)) {
+            $bulan = date('Y-m', strtotime($end_date));
         }
 
         $data = array(
@@ -123,7 +138,7 @@ class Absensi extends MY_Controller
             'hakakses' => $conf['hakakses']['divisi_nama'],
             'logo' => $conf['perusahaan']['logo'],
             'level' => $this->db->get_where('users', array('user_id' => $userid))->row_array(),
-            'menu' => $this->db->get('menu')->result(),
+            // 'menu' diambil otomatis dari MY_Controller
             'submenu' => $this->M_master->getmenu($this->uri->segment(1))->result(),
             'bulan' => $bulan,
             'start_date' => $start_date,
@@ -177,7 +192,7 @@ class Absensi extends MY_Controller
                 ->get('tbl_lembur')->result();
             $lembur_map = [];
             foreach ($lembur as $l) {
-                $lembur_map[$l->tanggal] = $l;
+                $lembur_map[$l->tanggal][] = $l;
             }
             $data['lembur_map'] = $lembur_map;
 
@@ -190,6 +205,59 @@ class Absensi extends MY_Controller
                 $curr = strtotime('+1 day', $curr);
             }
             $data['dates_range'] = $all_dates;
+
+            // Pre-calculate overtime per hari memakai logika yang sama dengan modul lembur.
+            $lembur_calc = [];
+            $biaya_makan_lembur_total = 0;
+            
+            // Check manual meal allowance in tbl_lembur if exists
+            $this->db->select_sum('biaya_makan');
+            $this->db->where('karyawan_id', $karyawan_id);
+            $this->db->where('tanggal >=', $start_date);
+            $this->db->where('tanggal <=', $end_date);
+            $this->db->where('status', 'disetujui');
+            $row_makan = $this->db->get('tbl_lembur')->row();
+            $biaya_makan_stored = $row_makan ? (float)$row_makan->biaya_makan : 0;
+            
+            foreach ($all_dates as $date) {
+                $att_day = isset($att_map[$date]) ? $att_map[$date] : null;
+                $day_spls = isset($lembur_map[$date]) ? $lembur_map[$date] : [];
+                $lembur_calc[$date] = $this->_build_daily_lembur_calc($karyawan_id, $date, $att_day, $day_spls);
+                
+                // Calculate dynamic meal sum
+                if ($att_day && $att_day->jam_pulang != '00:00:00' && !empty($att_day->jam_pulang)) {
+                    $out_ts = strtotime($att_day->jam_pulang);
+                    $day_num = date('N', strtotime($date));
+                    
+                    // --- PENYESUAIAN PENGURANGAN TELAT UNTUK UANG MAKAN (POIN 3) ---
+                    $jadwal = $this->db->get_where('tbl_jam_kerja', ['urutan' => $day_num])->row();
+                    $jadwal_masuk = $jadwal && !empty($jadwal->jam_masuk) ? strtotime("$date $jadwal->jam_masuk") : strtotime("$date 08:00:00");
+                    if (!empty($att_day->jam_masuk) && $att_day->jam_masuk != '00:00:00') {
+                        $jam_masuk_real = strtotime("$date $att_day->jam_masuk");
+                        if ($jam_masuk_real > $jadwal_masuk) {
+                            $out_ts -= ($jam_masuk_real - $jadwal_masuk);
+                        }
+                    }
+                    // -------------------------------------------------------------
+                    
+                    $biaya_makan = 0;
+                    if ($day_num <= 6) {
+                        $batas_1 = strtotime('19:00:00');
+                        $batas_2 = strtotime('22:00:00');
+                        if ($out_ts >= $batas_2) $biaya_makan = 20000;
+                        elseif ($out_ts >= $batas_1) $biaya_makan = 15000;
+                    } else {
+                        $batas_minggu_1 = strtotime('14:00:00');
+                        $batas_minggu_2 = strtotime('18:00:00');
+                        if ($out_ts >= $batas_minggu_2) $biaya_makan = 35000;
+                        elseif ($out_ts >= $batas_minggu_1) $biaya_makan = 15000;
+                    }
+                    $biaya_makan_lembur_total += $biaya_makan;
+                }
+            }
+            
+            $data['biaya_makan_lembur_total'] = $biaya_makan_stored > 0 ? $biaya_makan_stored : $biaya_makan_lembur_total;
+            $data['lembur_calc'] = $lembur_calc;
 
             // Simple stats for header summary
             $stats = ['hadir' => 0, 'telat' => 0, 'alpha' => 0, 'izin' => 0, 'sakit' => 0, 'cuti' => 0];
@@ -248,13 +316,13 @@ class Absensi extends MY_Controller
 
     public function update_attendance_manual()
     {
-        $id = $this->input->post('id');
-        $karyawan_id = $this->input->post('karyawan_id');
-        $tanggal = $this->input->post('tanggal');
-        $status = $this->input->post('status');
-        $jam_masuk = $this->input->post('jam_masuk');
-        $jam_pulang = $this->input->post('jam_pulang');
-        $keterangan = $this->input->post('keterangan');
+        $id = $this->input->post('id', true);
+        $karyawan_id = $this->input->post('karyawan_id', true);
+        $tanggal = $this->input->post('tanggal', true);
+        $status = $this->input->post('status', true);
+        $jam_masuk = $this->input->post('jam_masuk', true);
+        $jam_pulang = $this->input->post('jam_pulang', true);
+        $keterangan = $this->input->post('keterangan', true);
 
         $data = [
             'karyawan_id' => $karyawan_id,
@@ -281,8 +349,8 @@ class Absensi extends MY_Controller
         if ($karyawan_id === NULL) {
             show_error('Karyawan ID diperlukan.', 400);
         }
-        $start_date = $this->input->get('start_date');
-        $end_date = $this->input->get('end_date');
+        $start_date = $this->input->get('start_date', true);
+        $end_date = $this->input->get('end_date', true);
 
         // Logic for payroll cycle if dates are empty
         if (empty($start_date) || empty($end_date)) {
@@ -336,15 +404,11 @@ class Absensi extends MY_Controller
             $holiday_map[$h->tanggal] = $h->keterangan;
         }
 
-        // Lembur data (SPL)
-        $lembur = $this->db->where('karyawan_id', $karyawan_id)
-            ->where('tanggal >=', $start_date)
-            ->where('tanggal <=', $end_date)
-            ->where('status', 'disetujui')
-            ->get('tbl_lembur')->result();
-        $lembur_map = [];
-        foreach ($lembur as $l) {
-            $lembur_map[$l->tanggal] = $l;
+        // Jam Kerja Map (needed for calculations)
+        $jam_kerja = $this->db->get('tbl_jam_kerja')->result();
+        $jk_map = [];
+        foreach ($jam_kerja as $jk) {
+            $jk_map[$jk->hari] = $jk;
         }
 
         // Generate dates range
@@ -356,11 +420,32 @@ class Absensi extends MY_Controller
             $curr = strtotime('+1 day', $curr);
         }
 
+        // Lembur data (SPL)
+        $lembur = $this->db->where('karyawan_id', $karyawan_id)
+            ->where('tanggal >=', $start_date)
+            ->where('tanggal <=', $end_date)
+            ->where('status', 'disetujui')
+            ->get('tbl_lembur')->result();
+        $lembur_map = [];
+        foreach ($lembur as $l) {
+            $lembur_map[$l->tanggal][] = $l; // Changed to array to match rekap logic
+        }
+
+        // Pre-calculate overtime per hari memakai helper yang sama dengan halaman rekap.
+        $lembur_calc = [];
+        foreach ($all_dates as $date) {
+            $att_day = isset($att_map[$date]) ? $att_map[$date] : null;
+            $day_spls = isset($lembur_map[$date]) ? $lembur_map[$date] : [];
+            $lembur_calc[$date] = $this->_build_daily_lembur_calc($karyawan_id, $date, $att_day, $day_spls);
+        }
+
         $data = [
             'karyawan' => $karyawan,
             'att_map' => $att_map,
+            'jk_map' => $jk_map,
             'holiday_map' => $holiday_map,
             'lembur_map' => $lembur_map,
+            'lembur_calc' => $lembur_calc,
             'dates_range' => $all_dates,
             'start_date' => $start_date,
             'end_date' => $end_date,
@@ -377,6 +462,12 @@ class Absensi extends MY_Controller
         $action = 'Absen_Masuk';
         $ref = '1';
 
+        // Validate session
+        if (!$this->session->userdata('logged_in')) {
+            $this->session->set_flashdata('error', 'Anda harus login terlebih dahulu!');
+            redirect('auth');
+        }
+
         // Validate input
         $this->form_validation->set_rules('karyawan_id', 'Karyawan ID', 'required');
         $this->form_validation->set_rules('tanggal', 'Tanggal', 'required');
@@ -387,9 +478,20 @@ class Absensi extends MY_Controller
             redirect('mobile');
         }
 
+        // Validate Security (IDOR Protection)
+        if ($this->input->post('karyawan_id', true) != $this->session->userdata('karyawan_id')) {
+            $this->session->set_flashdata('error', 'Akses ditolak! Anda tidak bisa mengabsen karyawan lain.');
+            redirect('mobile');
+        }
+
+        if ($this->form_validation->run() == FALSE) {
+            $this->session->set_flashdata('error', validation_errors());
+            redirect('mobile');
+        }
+
         // Cek apakah ada lembur yang belum diselesaikan (Prevent Overlap)
         $cek_lembur_aktif = $this->db->get_where('tbl_lembur', [
-            'karyawan_id' => $this->input->post('karyawan_id'),
+            'karyawan_id' => $this->input->post('karyawan_id', true),
             'tanggal' => date('Y-m-d'),
             'jam_selesai' => '00:00:00'
         ])->row();
@@ -401,7 +503,7 @@ class Absensi extends MY_Controller
 
         // Check if already attended today
         $existing = $this->Absensi_model->check_existing_attendance(
-            $this->input->post('karyawan_id'),
+            $this->input->post('karyawan_id', true),
             date('Y-m-d')
         );
 
@@ -412,19 +514,40 @@ class Absensi extends MY_Controller
 
         // Handle Selfie Photo
         $foto_path = '';
-        $foto_data = $this->input->post('foto_selfie');
+        $foto_data = $this->input->post('foto_selfie', false);
         if (!empty($foto_data)) {
-            $foto_path = $this->_upload_selfie($foto_data, $this->input->post('karyawan_id'), 'masuk');
+            $foto_path = $this->_upload_selfie($foto_data, $this->input->post('karyawan_id', true), 'masuk');
+        }
+
+        $os = $this->agent->platform();
+        if ($this->agent->is_mobile()) {
+            $device = $os . ' (' . $this->agent->mobile() . ')';
+        } else {
+            $device = 'Web (' . $this->agent->browser() . ' on ' . $os . ')';
         }
 
         $data = [
-            'karyawan_id' => $this->input->post('karyawan_id'),
+            'karyawan_id' => $this->input->post('karyawan_id', true),
             'tanggal' => date('Y-m-d'),
             'jam_masuk' => date('H:i:s'),
             'foto_masuk' => $foto_path,
-            'lokasi_absen' => $this->input->post('lokasi_absen'),
+            'lokasi_absen' => $this->input->post('lokasi_absen', true),
+            'device_type' => $device,
+            'user_agent' => $this->input->user_agent(),
             'status' => 'Hadir'
         ];
+
+        // Cek apakah karyawan memiliki Izin Keterlambatan yang sudah di-approve hari ini
+        $cek_izin_telat = $this->db->get_where('tbl_pengajuan_izin', [
+            'karyawan_id' => $data['karyawan_id'],
+            'tanggal_mulai' => $data['tanggal'],
+            'tipe_izin' => 'izin_telat',
+            'status' => 'Approved'
+        ])->row();
+
+        if ($cek_izin_telat) {
+            $data['is_izin_telat'] = 1;
+        }
 
         $result = $this->Absensi_model->insert($data);
 
@@ -432,6 +555,7 @@ class Absensi extends MY_Controller
             log_activity($userid, $action, $module, $ref);
 
             // --- KIRIM WA NOTIFIKASI ---
+            /* 
             $karyawan = $this->db->get_where('tbl_karyawan', ['karyawan_id' => $data['karyawan_id']])->row();
             if ($karyawan && !empty($karyawan->telepon)) {
                 $wa_msg = "*ABSENSI BERHASIL (MASUK)*\n\n";
@@ -473,8 +597,8 @@ class Absensi extends MY_Controller
                         }
                     }
                 }
-                // ----------------------------------------
             }
+            */
             // ---------------------------
 
             $this->session->set_flashdata('success', 'Absen masuk berhasil dicatat!');
@@ -500,7 +624,7 @@ class Absensi extends MY_Controller
 
         // Validasi input
         $this->form_validation->set_rules('karyawan_id', 'Karyawan ID', 'required|numeric');
-        $this->form_validation->set_rules('status', 'Status', 'required|in_list[izin,sakit,cuti]');
+        $this->form_validation->set_rules('status', 'Status', 'required|in_list[izin,sakit,cuti,pulang_cepat,izin_telat]');
         $this->form_validation->set_rules('durasi_tipe', 'Tipe Durasi', 'required|in_list[jam,hari]');
         $this->form_validation->set_rules('durasi_jumlah', 'Jumlah Durasi', 'required|numeric|greater_than[0]');
         $this->form_validation->set_rules('kegiatan', 'Alasan', 'max_length[500]');
@@ -511,12 +635,12 @@ class Absensi extends MY_Controller
         }
 
         // Ambil data dari form
-        $karyawan_id = $this->input->post('karyawan_id');
-        $tanggal = $this->input->post('tanggal');
-        $status = $this->input->post('status');
-        $durasi_tipe = $this->input->post('durasi_tipe');
-        $durasi_jumlah = $this->input->post('durasi_jumlah');
-        $kegiatan = $this->input->post('kegiatan');
+        $karyawan_id = $this->input->post('karyawan_id', true);
+        $tanggal = $this->input->post('tanggal', true);
+        $status = $this->input->post('status', true);
+        $durasi_tipe = $this->input->post('durasi_tipe', true);
+        $durasi_jumlah = $this->input->post('durasi_jumlah', true);
+        $kegiatan = $this->input->post('kegiatan', true);
 
         // Validasi tambahan
         if (strtotime($tanggal) < strtotime(date('Y-m-d'))) {
@@ -541,7 +665,7 @@ class Absensi extends MY_Controller
             'tanggal' => $tanggal
         ])->row();
 
-        if ($existing_absensi) {
+        if ($existing_absensi && $existing_absensi->status != 'Alpha') {
             $this->session->set_flashdata('error', 'Sudah ada absensi untuk tanggal ini!');
             redirect('mobile/sakit');
         }
@@ -583,7 +707,7 @@ class Absensi extends MY_Controller
         // Khusus Pulang Cepat
         $jam_pulang_cepat = null;
         if ($status == 'pulang_cepat') {
-            $jam_pulang_cepat = $this->input->post('jam_pulang_cepat');
+            $jam_pulang_cepat = $this->input->post('jam_pulang_cepat', true);
             if (empty($jam_pulang_cepat)) {
                 $this->session->set_flashdata('error', 'Jam rencana pulang wajib diisi untuk Pulang Cepat.');
                 redirect('mobile/sakit');
@@ -610,15 +734,31 @@ class Absensi extends MY_Controller
             $durasi_tipe = 'jam';
         }
 
-        // Handle Upload Dokumen/Surat Sakit
+        // Khusus Izin Telat
+        $jam_rencana_hadir = null;
+        if ($status == 'izin_telat') {
+            $jam_rencana_hadir = $this->input->post('jam_rencana_hadir', true);
+            if (empty($jam_rencana_hadir)) {
+                $this->session->set_flashdata('error', 'Jam rencana hadir wajib diisi untuk Izin Keterlambatan.');
+                redirect('mobile/sakit');
+            }
+            $durasi_tipe = 'jam';
+            $durasi_jumlah = 0; // Keterlambatan dihitung otomatis saat absensi aktual
+            $kegiatan = $kegiatan . " (Rencana Hadir: {$jam_rencana_hadir})";
+        }
+
+        // Handle Upload Dokumen/Surat Sakit/Bukti Telat
         $dokumen_path = '';
-        if ($status == 'sakit' && !empty($_FILES['dokumen']['name'])) {
+        if (in_array($status, ['sakit', 'izin_telat']) && !empty($_FILES['dokumen']['name'])) {
             $upload_res = $this->_upload_dokumen($karyawan_id);
             if (!$upload_res['status']) {
-                $this->session->set_flashdata('error', 'Gagal mengunggah surat sakit: ' . $upload_res['error'] . ' (Pastikan format PDF/JPG/PNG max 5MB)');
+                $this->session->set_flashdata('error', 'Gagal mengunggah dokumen: ' . $upload_res['error'] . ' (Pastikan format PDF/JPG/PNG max 5MB)');
                 redirect('mobile/sakit');
             }
             $dokumen_path = $upload_res['path'];
+        } elseif ($status == 'izin_telat' && empty($_FILES['dokumen']['name'])) {
+            $this->session->set_flashdata('error', 'Bukti foto wajib dilampirkan untuk Izin Keterlambatan.');
+            redirect('mobile/sakit');
         }
 
         // Data untuk insert ke tabel pengajuan izin (pending)
@@ -666,6 +806,12 @@ class Absensi extends MY_Controller
         $action = 'Absen_Pulang';
         $ref = '1';
 
+        // Validate session
+        if (!$this->session->userdata('logged_in')) {
+            $this->session->set_flashdata('error', 'Anda harus login terlebih dahulu!');
+            redirect('auth');
+        }
+
         $this->form_validation->set_rules('karyawan_id', 'Karyawan ID', 'required');
         $this->form_validation->set_rules('tanggal', 'Tanggal', 'required');
         $this->form_validation->set_rules('jam_pulang', 'Jam Pulang', 'required');
@@ -675,21 +821,41 @@ class Absensi extends MY_Controller
             redirect('mobile');
         }
 
+        // Validate Security (IDOR Protection)
+        if ($this->input->post('karyawan_id', true) != $this->session->userdata('karyawan_id')) {
+            $this->session->set_flashdata('error', 'Akses ditolak! Anda tidak bisa mengabsen karyawan lain.');
+            redirect('mobile');
+        }
+
+        if ($this->form_validation->run() == FALSE) {
+            $this->session->set_flashdata('error', validation_errors());
+            redirect('mobile');
+        }
+
         // Handle Selfie Photo
         $foto_path = '';
-        $foto_data = $this->input->post('foto_selfie');
+        $foto_data = $this->input->post('foto_selfie', false);
         if (!empty($foto_data)) {
-            $foto_path = $this->_upload_selfie($foto_data, $this->input->post('karyawan_id'), 'pulang');
+            $foto_path = $this->_upload_selfie($foto_data, $this->input->post('karyawan_id', true), 'pulang');
         }
 
         $where = [
-            'karyawan_id' => $this->input->post('karyawan_id'),
+            'karyawan_id' => $this->input->post('karyawan_id', true),
             'tanggal' => date('Y-m-d'),
         ];
+
+        $os = $this->agent->platform();
+        if ($this->agent->is_mobile()) {
+            $device = $os . ' (' . $this->agent->mobile() . ')';
+        } else {
+            $device = 'Web (' . $this->agent->browser() . ' on ' . $os . ')';
+        }
 
         $update = [
             'jam_pulang' => date('H:i:s'),
             'foto_pulang' => $foto_path,
+            'device_type' => $device, // Update device pada saat pulang (jika beda device)
+            'user_agent' => $this->input->user_agent(),
         ];
 
         $result = $this->Absensi_model->update($where, $update);
@@ -698,6 +864,7 @@ class Absensi extends MY_Controller
             log_activity($userid, $action, $module, $ref);
 
             // --- KIRIM WA NOTIFIKASI ---
+            /*
             $karyawan = $this->db->get_where('tbl_karyawan', ['karyawan_id' => $where['karyawan_id']])->row();
             if ($karyawan && !empty($karyawan->telepon)) {
                 $wa_msg = "*ABSENSI BERHASIL (PULANG)*\n\n";
@@ -710,6 +877,7 @@ class Absensi extends MY_Controller
 
                 send_wa_notif($karyawan->telepon, $wa_msg);
             }
+            */
             // ---------------------------
 
             $this->session->set_flashdata('success', 'Absen pulang berhasil dicatat!');
@@ -743,6 +911,68 @@ class Absensi extends MY_Controller
             $upload_data = $this->upload->data();
             return ['status' => true, 'path' => 'uploads/dokumen_sakit/' . $upload_data['file_name']];
         }
+    }
+
+    private function _build_daily_lembur_calc($karyawan_id, $date, $att_day, $day_spls = [])
+    {
+        $res_wajib = $this->Payroll_model->_hitung_jam_lembur($karyawan_id, '00:00', '00:00', $date, $att_day);
+
+        $total_pagi    = 0;
+        $total_wajib   = (float)($res_wajib['raw_wajib'] ?? 0);
+        $total_kerjaan = 0;
+
+        // FALLBACK: Jika karyawan status Hadir tapi jam_pulang tidak tercatat (00:00:00),
+        // auto-wajib tidak bisa dihitung dari jam_pulang. Sesuai aturan:
+        // "Karyawan yang hadir dianggap melakukan lembur wajib sesuai kebijakan."
+        // → Ambil langsung dari konfigurasi wajib tertinggi sesuai hari.
+        if ($total_wajib == 0
+            && $att_day
+            && isset($att_day->status) && $att_day->status === 'Hadir'
+            && (empty($att_day->jam_pulang) || $att_day->jam_pulang === '00:00:00')
+        ) {
+            $day_num = date('N', strtotime($date));
+            $hari_db = ($day_num == 6) ? 'Sabtu' : 'Senin-Jumat';
+            $wajib_cfg = $this->db
+                ->order_by('total_jam', 'DESC')
+                ->get_where('tbl_lembur_jam_config', ['hari' => $hari_db, 'is_wajib' => 1])
+                ->row();
+            if ($wajib_cfg) {
+                $total_wajib = (float)$wajib_cfg->total_jam;
+            }
+        }
+
+        foreach ($day_spls as $spl) {
+            if (($spl->status ?? '') !== 'disetujui') {
+                continue;
+            }
+
+            $res = $this->Payroll_model->_hitung_jam_lembur(
+                $karyawan_id,
+                $spl->jam_mulai,
+                $spl->jam_selesai,
+                $date,
+                $att_day
+            );
+
+            $total_pagi    += (float)($res['raw_pagi'] ?? 0);
+            $total_kerjaan += (float)($res['raw_kerjaan'] ?? 0);
+
+            if ((float)($res['raw_wajib'] ?? 0) > 0) {
+                if ($total_wajib > 0) {
+                    // Wajib sudah ada → SPL wajib masuk ke kerjaan (tidak double count)
+                    $total_kerjaan += (float)$res['raw_wajib'];
+                } else {
+                    $total_wajib = (float)$res['raw_wajib'];
+                }
+            }
+        }
+
+        return [
+            'pagi'    => $total_pagi,
+            'wajib'   => $total_wajib,
+            'kerjaan' => $total_kerjaan,
+            'total'   => $total_pagi + $total_wajib + $total_kerjaan,
+        ];
     }
 
     private function _upload_selfie($base64_image, $karyawan_id, $type)
@@ -779,7 +1009,7 @@ class Absensi extends MY_Controller
 
     public function scan()
     {
-        $nip = $this->input->post('nip_qr');
+        $nip = $this->input->post('nip_qr', true);
         $karyawan = $this->M_master->get_karyawan_by_nik($nip);
 
         if ($karyawan) {
@@ -795,14 +1025,18 @@ class Absensi extends MY_Controller
             $this->session->set_flashdata('error', 'NIK tidak ditemukan!');
         }
 
-        redirect('absensi/form');
+        if (!empty($_SERVER['HTTP_REFERER'])) {
+            redirect($_SERVER['HTTP_REFERER']);
+        } else {
+            redirect('dashboard');
+        }
     }
 
     public function export_excel()
     {
-        $tanggal = $this->input->get('tanggal') ? $this->input->get('tanggal') : date('Y-m-d');
-        $status = $this->input->get('status') ? $this->input->get('status') : '';
-        $karyawan_id = $this->input->get('karyawan_id') ? $this->input->get('karyawan_id') : '';
+        $tanggal = $this->input->get('tanggal', true) ? $this->input->get('tanggal', true) : date('Y-m-d');
+        $status = $this->input->get('status', true) ? $this->input->get('status', true) : '';
+        $karyawan_id = $this->input->get('karyawan_id', true) ? $this->input->get('karyawan_id', true) : '';
 
         $data['absensi'] = $this->Absensi_model->get_filtered_absensi($tanggal, $status, $karyawan_id);
         $data['tanggal'] = $tanggal;
@@ -812,9 +1046,9 @@ class Absensi extends MY_Controller
 
     public function export_pdf()
     {
-        $tanggal = $this->input->get('tanggal') ? $this->input->get('tanggal') : date('Y-m-d');
-        $status = $this->input->get('status') ? $this->input->get('status') : '';
-        $karyawan_id = $this->input->get('karyawan_id') ? $this->input->get('karyawan_id') : '';
+        $tanggal = $this->input->get('tanggal', true) ? $this->input->get('tanggal', true) : date('Y-m-d');
+        $status = $this->input->get('status', true) ? $this->input->get('status', true) : '';
+        $karyawan_id = $this->input->get('karyawan_id', true) ? $this->input->get('karyawan_id', true) : '';
 
         $data['absensi'] = $this->Absensi_model->get_filtered_absensi($tanggal, $status, $karyawan_id);
         $data['tanggal'] = $tanggal;
@@ -824,8 +1058,8 @@ class Absensi extends MY_Controller
 
     public function export_excel_rekap()
     {
-        $start_date = $this->input->get('start_date');
-        $end_date = $this->input->get('end_date');
+        $start_date = $this->input->get('start_date', true);
+        $end_date = $this->input->get('end_date', true);
 
         $data['rekap_data'] = $this->Absensi_model->get_rekap_all_karyawan($start_date, $end_date);
         $data['start_date'] = $start_date;
@@ -836,8 +1070,8 @@ class Absensi extends MY_Controller
 
     public function export_pdf_rekap()
     {
-        $start_date = $this->input->get('start_date');
-        $end_date = $this->input->get('end_date');
+        $start_date = $this->input->get('start_date', true);
+        $end_date = $this->input->get('end_date', true);
 
         $data['rekap_data'] = $this->Absensi_model->get_rekap_all_karyawan($start_date, $end_date);
         $data['start_date'] = $start_date;
@@ -870,9 +1104,19 @@ class Absensi extends MY_Controller
         $this->db->where_not_in('k.jabatan_id', [1, 2, 3]);
         $this->db->group_start();
         $this->db->where('u.role_id !=', 17);
-        $this->db->where('k.nama_lengkap NOT LIKE', '%Terminal%');
         $this->db->or_where('u.role_id IS NULL');
         $this->db->group_end();
+        $this->db->where("k.nama_lengkap NOT LIKE '%Terminal%'");
+        $this->db->where("k.nama_lengkap NOT LIKE '%DUMMY%'");
+        $this->db->where("k.nama_lengkap NOT LIKE 'DEPT.%'");
+        $this->db->where("k.nama_lengkap NOT LIKE 'OPERATOR %'");
+        $this->db->where("k.nik NOT LIKE 'STATION-%'");
+        $this->db->where("k.nik NOT LIKE 'TERM%'");
+
+        if ($this->session->userdata('perusahaan_id') != 1 && $this->session->userdata('level') != 21 && $this->session->userdata('level') != 1 && $this->session->userdata('level') != 17) {
+            $this->db->where('k.perusahaan_id', $this->session->userdata('perusahaan_id'));
+        }
+
         $total_employees = $this->db->count_all_results();
         $stats['total'] = $total_employees;
 
@@ -890,11 +1134,10 @@ class Absensi extends MY_Controller
                 case 'Hadir':
                     $stats['hadir']++;
 
-                    // Check arrival time
                     if ($att->jam_masuk) {
                         $arrival_time = strtotime($att->jam_masuk);
                         $standard_time = strtotime($jamMasukStandar);
-                        $tolerance_time = $standard_time + 900; // +15 menit (15 * 60)
+                        $tolerance_time = $standard_time + 59; // Maksimal 08:00:59, 08:01:00 sudah telat
 
                         if ($arrival_time > $tolerance_time) {
                             $stats['terlambat']++;
@@ -930,6 +1173,15 @@ class Absensi extends MY_Controller
                     $stats['cuti']++;
                     break;
                 case 'Alpha':
+                default:
+                    // If status is Alpha or unknown/empty, try to detect from keterangan (notes)
+                    if (stripos($att->keterangan, 'cuti') !== false) {
+                        $stats['cuti']++;
+                    } elseif (stripos($att->keterangan, 'sakit') !== false) {
+                        $stats['sakit']++;
+                    } elseif (stripos($att->keterangan, 'izin') !== false) {
+                        $stats['izin']++;
+                    }
                     break;
             }
         }
@@ -985,7 +1237,7 @@ class Absensi extends MY_Controller
             'hakakses' => $conf['hakakses']['divisi_nama'],
             'logo' => $conf['perusahaan']['logo'],
             'level' => $this->db->get_where('users', array('user_id' => $userid))->row_array(),
-            'menu' => $this->db->get('menu')->result(),
+            // 'menu' diambil otomatis dari MY_Controller
             'submenu' => $this->M_master->getmenu($this->uri->segment(1))->result(),
         );
 
@@ -1008,7 +1260,7 @@ class Absensi extends MY_Controller
         $userid = $this->session->userdata('id');
         $module = 'Karyawan';
         $action = 'Update_Absensi';
-        $ref = $this->input->post('id');
+        $ref = $this->input->post('id', true);
 
         $this->form_validation->set_rules('karyawan_id', 'Karyawan ID', 'required');
         $this->form_validation->set_rules('tanggal', 'Tanggal', 'required');
@@ -1016,27 +1268,64 @@ class Absensi extends MY_Controller
 
         if ($this->form_validation->run() == FALSE) {
             $this->session->set_flashdata('error', validation_errors());
-            redirect('absensi/edit/' . $this->input->post('id'));
+            redirect('absensi/edit/' . $this->input->post('id', true));
         }
 
         $data = [
-            'karyawan_id' => $this->input->post('karyawan_id'),
-            'tanggal' => $this->input->post('tanggal'),
-            'jam_masuk' => $this->input->post('jam_masuk'),
-            'jam_pulang' => $this->input->post('jam_pulang'),
-            'status' => $this->input->post('status'),
-            'keterangan' => $this->input->post('keterangan'),
+            'karyawan_id' => $this->input->post('karyawan_id', true),
+            'tanggal' => $this->input->post('tanggal', true),
+            'jam_masuk' => $this->input->post('jam_masuk', true),
+            'jam_pulang' => $this->input->post('jam_pulang', true),
+            'status' => $this->input->post('status', true),
+            'keterangan' => $this->input->post('keterangan', true),
         ];
 
-        $result = $this->Absensi_model->update_by_id($this->input->post('id'), $data);
+        $result = $this->Absensi_model->update_by_id($this->input->post('id', true), $data);
 
         if ($result) {
+            $status = $data['status'];
+            $karyawan_id = $data['karyawan_id'];
+            $tanggal = $data['tanggal'];
+
+            if (strpos(strtolower($status), 'cuti') !== false) {
+                // Auto insert an approved leave record if it doesn't exist
+                $exist = $this->db->get_where('tbl_pengajuan_izin', [
+                    'karyawan_id' => $karyawan_id,
+                    'tanggal_mulai' => $tanggal,
+                    'status' => 'Approved'
+                ])->row();
+
+                if (!$exist) {
+                    $this->db->insert('tbl_pengajuan_izin', [
+                        'karyawan_id' => $karyawan_id,
+                        'tipe_izin' => $status,
+                        'tanggal_mulai' => $tanggal,
+                        'durasi_jumlah' => 1,
+                        'keterangan' => 'Koreksi Data Absensi (HR)',
+                        'status' => 'Approved',
+                        'created_at' => date('Y-m-d H:i:s'),
+                        'responded_at' => date('Y-m-d H:i:s'),
+                        'responded_by' => $userid
+                    ]);
+                }
+            } else {
+                // If reverted back to Hadir/Alpha etc, remove auto-generated leave record
+                $this->db->where('karyawan_id', $karyawan_id);
+                $this->db->where('tanggal_mulai', $tanggal);
+                $this->db->where('status', 'Approved');
+                $this->db->where('keterangan', 'Koreksi Data Absensi (HR)');
+                $this->db->delete('tbl_pengajuan_izin');
+            }
+
+            // Sync the quota so the changes reflect immediately on Sisa Cuti
+            $this->_sync_quota_cuti($karyawan_id);
+
             log_activity($userid, $action, $module, $ref);
-            $this->session->set_flashdata('success', 'Data absensi berhasil diperbarui!');
+            $this->session->set_flashdata('success', 'Data absensi berhasil diperbarui dan Kuota Cuti disinkronisasi!');
             redirect('absensi');
         } else {
             $this->session->set_flashdata('error', 'Gagal memperbarui data absensi!');
-            redirect('absensi/edit/' . $this->input->post('id'));
+            redirect('absensi/edit/' . $this->input->post('id', true));
         }
     }
 
@@ -1046,9 +1335,9 @@ class Absensi extends MY_Controller
         $controller = $this->uri->segment(1);
 
         // Get filter parameters
-        $start_date = $this->input->get('start_date');
-        $end_date = $this->input->get('end_date');
-        $bulan = $this->input->get('bulan');
+        $start_date = $this->input->get('start_date', true);
+        $end_date = $this->input->get('end_date', true);
+        $bulan = $this->input->get('bulan', true);
 
         if (empty($start_date) && empty($end_date)) {
             if (empty($bulan)) {
@@ -1063,15 +1352,22 @@ class Absensi extends MY_Controller
             }
         }
 
-        $jabatan = $this->input->get('jabatan') ? $this->input->get('jabatan') : '';
-        $divisi = $this->input->get('divisi') ? $this->input->get('divisi') : '';
-        $perusahaan = $this->input->get('perusahaan') ? $this->input->get('perusahaan') : '';
+        $nama = $this->input->get('nama', true) ? $this->input->get('nama', true) : '';
+        $jabatan = $this->input->get('jabatan', true) ? $this->input->get('jabatan', true) : '';
+        $divisi = $this->input->get('divisi', true) ? $this->input->get('divisi', true) : '';
+        $perusahaan = $this->input->get('perusahaan', true) ? $this->input->get('perusahaan', true) : '';
 
         // Get monthly attendance data
-        $rekap_data = $this->Absensi_model->get_rekap_all_karyawan($start_date, $end_date);
+        $rekap_data = $this->Absensi_model->get_rekap_all_karyawan($start_date, $end_date, $nama, $jabatan, $divisi);
 
         // Add scoring and performance metrics to each entry
         foreach ($rekap_data as &$r) {
+            // Kalkulasi jam lembur bulanan (dikurangi total menit keterlambatan)
+            $total_lembur_min = isset($r->total_lembur_minutes) ? (int)$r->total_lembur_minutes : 0;
+            $total_late_min = isset($r->total_late_minutes) ? (int)$r->total_late_minutes : 0;
+            $lembur_netto_minutes = max(0, $total_lembur_min - $total_late_min);
+            $r->lembur_netto_jam = round($lembur_netto_minutes / 60, 1);
+            
             // Formula: 100 - (Telat*2) - (Alpha*5) - (Izin*1) - (Sakit*1)
             $score = 100 - ($r->total_terlambat * 2) - ($r->total_alpha * 5) - ($r->total_izin * 1) - ($r->total_sakit * 1);
             $r->point_kinerja = max(0, $score);
@@ -1115,6 +1411,7 @@ class Absensi extends MY_Controller
             'bulan' => $bulan,
             'start_date' => $start_date,
             'end_date' => $end_date,
+            'nama' => $nama,
             'jabatan' => $jabatan,
             'divisi' => $divisi,
             'perusahaan' => $perusahaan,
@@ -1132,7 +1429,7 @@ class Absensi extends MY_Controller
             ),
             'logo' => $conf['perusahaan']['logo'],
             'level' => $this->db->get_where('users', array('user_id' => $userid))->row_array(),
-            'menu' => $this->db->get('menu')->result(),
+            // 'menu' diambil otomatis dari MY_Controller
             'submenu' => $this->M_master->getmenu($controller)->result(),
         );
 
@@ -1155,7 +1452,7 @@ class Absensi extends MY_Controller
             'hakakses' => $conf['hakakses']['divisi_nama'],
             'logo' => $conf['perusahaan']['logo'],
             'level' => $this->db->get_where('users', array('user_id' => $userid))->row_array(),
-            'menu' => $this->db->get('menu')->result(),
+            // 'menu' diambil otomatis dari MY_Controller
             'submenu' => $this->M_master->getmenu($this->uri->segment(1))->result(),
         );
 
@@ -1170,7 +1467,7 @@ class Absensi extends MY_Controller
 
         header('Content-Type: application/json');
 
-        $tanggal = $this->input->get('tanggal');
+        $tanggal = $this->input->get('tanggal', true);
         if (!$tanggal)
             $tanggal = date('Y-m-d');
 
@@ -1197,7 +1494,7 @@ class Absensi extends MY_Controller
             'hakakses' => $conf['hakakses']['divisi_nama'],
             'logo' => $conf['perusahaan']['logo'],
             'level' => $this->db->get_where('users', array('user_id' => $userid))->row_array(),
-            'menu' => $this->db->get('menu')->result(),
+            // 'menu' diambil otomatis dari MY_Controller
             'submenu' => $this->M_master->getmenu($this->uri->segment(1))->result(),
         );
 
@@ -1231,7 +1528,7 @@ class Absensi extends MY_Controller
             'hakakses' => $conf['hakakses']['divisi_nama'],
             'logo' => $conf['perusahaan']['logo'],
             'level' => $this->db->get_where('users', array('user_id' => $userid))->row_array(),
-            'menu' => $this->db->get('menu')->result(),
+            // 'menu' diambil otomatis dari MY_Controller
             'submenu' => $this->M_master->getmenu($this->uri->segment(1))->result(),
         );
 
@@ -1247,11 +1544,256 @@ class Absensi extends MY_Controller
         $this->load_admin_view('admin/absensi/approval', $data);
     }
 
+    public function sisa_cuti()
+    {
+        $userid = $this->session->userdata('id');
+
+        $conf = array(
+            'perusahaan' => $this->db->get_where('tbl_perusahaan', array('id_perusahaan' => $this->session->userdata('perusahaan_id')))->row_array(),
+            'hakakses' => $this->db->get_where('tbl_divisi', array('divisi_id' => $this->session->userdata('level')))->row_array(),
+        );
+
+        $data = array(
+            'controller' => $this->uri->segment(1),
+            'function' => 'sisa_cuti',
+            'title' => 'Rekap Sisa Cuti Karyawan',
+            'perusahaan' => $conf['perusahaan']['nama_perusahaan'],
+            'hakakses' => $conf['hakakses']['divisi_nama'],
+            'logo' => $conf['perusahaan']['logo'],
+            'level' => $this->db->get_where('users', array('user_id' => $userid))->row_array(),
+            // 'menu' diambil otomatis dari MY_Controller
+            'submenu' => $this->M_master->getmenu($this->uri->segment(1))->result(),
+        );
+
+        $year = date('Y');
+
+        // --- SINKRONISASI KUOTA MASSAL SEBELUM DITAMPILKAN ---
+        // Agar HRD selalu melihat data sisa cuti yang paling akurat 100%
+        $karyawan_aktif = $this->db->select('karyawan_id')
+            ->from('tbl_karyawan')
+            ->where("nama_lengkap NOT LIKE '%Terminal%'")
+            ->where("nama_lengkap NOT LIKE '%DUMMY%'")
+            ->where("nama_lengkap NOT LIKE 'DEPT.%'")
+            ->where("nama_lengkap NOT LIKE 'OPERATOR %'")
+            ->get()->result();
+            
+        foreach ($karyawan_aktif as $k) {
+            $this->_sync_quota_cuti($k->karyawan_id);
+        }
+        // -----------------------------------------------------
+
+        $this->db->select('k.karyawan_id, k.nama_lengkap, j.nama_jabatan, q.quota_awal, q.terpakai, q.sisa, q.menikah_sisa, q.duka_sisa, q.sakitkel_sisa, q.melahirkansuami_sisa');
+        $this->db->from('tbl_karyawan k');
+        $this->db->join('tbl_quota_cuti q', "q.karyawan_id = k.karyawan_id AND q.tahun = '$year'", 'left');
+        $this->db->join('tbl_jabatan j', 'k.jabatan_id = j.jabatan_id', 'left');
+        $this->db->where("k.nama_lengkap NOT LIKE '%Terminal%'");
+        $this->db->where("k.nama_lengkap NOT LIKE '%DUMMY%'");
+        $this->db->where("k.nama_lengkap NOT LIKE 'DEPT.%'");
+        $this->db->where("k.nama_lengkap NOT LIKE 'OPERATOR %'");
+        $this->db->order_by('k.nama_lengkap', 'ASC');
+        
+        $data['kuota_cuti'] = $this->db->get()->result();
+
+        // Get Pending Cuti Requests
+        $this->db->select('p.*, k.nama_lengkap, j.nama_jabatan');
+        $this->db->from('tbl_pengajuan_izin p');
+        $this->db->join('tbl_karyawan k', 'k.karyawan_id = p.karyawan_id');
+        $this->db->join('tbl_jabatan j', 'k.jabatan_id = j.jabatan_id', 'left');
+        $this->db->where('p.status', 'Pending');
+        $this->db->where_in('p.tipe_izin', ['Cuti', 'Cuti Keluarga', 'Cuti Sakit', 'Cuti Melahirkan', 'Cuti Menikah']);
+        $this->db->order_by('p.created_at', 'DESC');
+        $data['pending_cuti'] = $this->db->get()->result();
+
+        $this->load_admin_view('admin/absensi/sisa_cuti', $data);
+    }
+
+    public function update_quota_cuti()
+    {
+        if ($this->input->server('REQUEST_METHOD') !== 'POST') {
+            redirect('absensi/sisa_cuti');
+        }
+        
+        $karyawan_id = $this->input->post('karyawan_id', true);
+        $sisa = (int)$this->input->post('sisa', true);
+        $menikah_sisa = (int)$this->input->post('menikah_sisa', true);
+        $duka_sisa = (int)$this->input->post('duka_sisa', true);
+        $sakitkel_sisa = (int)$this->input->post('sakitkel_sisa', true);
+        $melahirkansuami_sisa = (int)$this->input->post('melahirkansuami_sisa', true);
+        $tahun = date('Y');
+        
+        $row = $this->db->get_where('tbl_quota_cuti', ['karyawan_id' => $karyawan_id, 'tahun' => $tahun])->row();
+        if ($row) {
+            $data_update = [
+                'quota_awal' => $sisa + $row->terpakai,
+                'menikah_awal' => $menikah_sisa + $row->menikah_terpakai,
+                'duka_awal' => $duka_sisa + $row->duka_terpakai,
+                'sakitkel_awal' => $sakitkel_sisa + $row->sakitkel_terpakai,
+                'melahirkansuami_awal' => $melahirkansuami_sisa + $row->melahirkansuami_terpakai,
+                'updated_at' => date('Y-m-d H:i:s')
+            ];
+            
+            $this->db->where('karyawan_id', $karyawan_id);
+            $this->db->where('tahun', $tahun);
+            if ($this->db->update('tbl_quota_cuti', $data_update)) {
+                $this->_sync_quota_cuti($karyawan_id);
+                $this->session->set_flashdata('success', 'Kuota cuti berhasil diupdate.');
+            } else {
+                $this->session->set_flashdata('error', 'Gagal mengupdate kuota cuti.');
+            }
+        } else {
+             $this->session->set_flashdata('error', 'Gagal mengupdate kuota cuti. Data tidak ditemukan.');
+        }
+        
+        redirect('absensi/sisa_cuti');
+    }
+
+    public function add_riwayat_manual()
+    {
+        if ($this->input->server('REQUEST_METHOD') !== 'POST') {
+            redirect('absensi/sisa_cuti');
+        }
+
+        $karyawan_id = $this->input->post('karyawan_id', true);
+        $tipe_izin = $this->input->post('tipe_izin', true);
+        $tanggal_mulai = $this->input->post('tanggal_mulai', true);
+        $durasi_jumlah = (int)$this->input->post('durasi_jumlah', true);
+        $keterangan = $this->input->post('keterangan', true);
+
+        if (!$karyawan_id || !$tipe_izin || !$tanggal_mulai || $durasi_jumlah <= 0) {
+            $this->session->set_flashdata('error', 'Data riwayat tidak valid.');
+            redirect('absensi/sisa_cuti');
+        }
+
+        $data_insert = [
+            'karyawan_id' => $karyawan_id,
+            'tipe_izin' => $tipe_izin,
+            'tanggal_mulai' => $tanggal_mulai,
+            'durasi_tipe' => 'hari',
+            'durasi_jumlah' => $durasi_jumlah,
+            'keterangan' => $keterangan,
+            'status' => 'Approved',
+            'created_at' => date('Y-m-d H:i:s'),
+            'responded_at' => date('Y-m-d H:i:s'),
+            'responded_by' => $this->session->userdata('user_id') ? $this->session->userdata('user_id') : 1,
+            'dokumen' => ''
+        ];
+
+        if ($this->db->insert('tbl_pengajuan_izin', $data_insert)) {
+            // Sync the quota so the sisa will be reduced but quota_awal stays the same
+            $this->_sync_quota_cuti($karyawan_id);
+            $this->session->set_flashdata('success', 'Riwayat cuti manual berhasil ditambahkan dan sisa cuti telah diperbarui.');
+        } else {
+            $this->session->set_flashdata('error', 'Gagal menambahkan riwayat cuti.');
+        }
+
+        redirect('absensi/sisa_cuti');
+    }
+
+    public function get_riwayat_cuti($karyawan_id)
+    {
+        $year = date('Y');
+        $this->db->where('karyawan_id', $karyawan_id);
+        $this->db->where('YEAR(tanggal_mulai)', $year);
+        $this->db->order_by('created_at', 'DESC');
+        $riwayat = $this->db->get('tbl_pengajuan_izin')->result();
+        
+        $html = '';
+        if (empty($riwayat)) {
+            $html .= '<div class="text-center text-muted p-3">Belum ada riwayat pengajuan cuti tahun ini.</div>';
+        } else {
+            $html .= '<div class="table-responsive">';
+            $html .= '<table class="table table-bordered table-striped table-sm align-middle">';
+            $html .= '<thead class="table-light">';
+            $html .= '<tr>';
+            $html .= '<th class="text-center" width="5%">#</th>';
+            $html .= '<th width="20%">Tipe Cuti</th>';
+            $html .= '<th width="25%">Tanggal & Durasi</th>';
+            $html .= '<th width="35%">Keterangan</th>';
+            $html .= '<th class="text-center" width="15%">Status</th>';
+            $html .= '</tr>';
+            $html .= '</thead>';
+            $html .= '<tbody>';
+            
+            $no = 1;
+            foreach ($riwayat as $r) {
+                $status_badge = '';
+                if ($r->status === 'Approved') {
+                    $status_badge = '<span class="badge bg-success">Disetujui</span>';
+                } elseif ($r->status === 'Pending') {
+                    $status_badge = '<span class="badge bg-warning text-dark">Pending</span>';
+                } elseif ($r->status === 'Rejected') {
+                    $status_badge = '<span class="badge bg-danger">Ditolak</span>';
+                }
+                
+                // Fallbacks if data is empty for some reason
+                // Map Tipe Izin to Quota Label
+                $tipe_lower = strtolower($r->tipe_izin);
+                $tipe_label = ucwords($tipe_lower);
+                $potong_jatah = '';
+
+                if ($tipe_lower == 'cuti') {
+                    $tipe_label = 'Cuti Tahunan';
+                    $potong_jatah = '<div class="mt-1"><span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size:0.65rem;">Mengurangi Cuti Tahunan</span></div>';
+                } elseif ($tipe_lower == 'cuti menikah') {
+                    $potong_jatah = '<div class="mt-1"><span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size:0.65rem;">Mengurangi Cuti Menikah</span></div>';
+                } elseif ($tipe_lower == 'cuti duka') {
+                    $potong_jatah = '<div class="mt-1"><span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle" style="font-size:0.65rem;">Mengurangi Cuti Duka</span></div>';
+                } elseif ($tipe_lower == 'cuti keluarga sakit') {
+                    $potong_jatah = '<div class="mt-1"><span class="badge bg-warning-subtle text-warning border border-warning-subtle" style="font-size:0.65rem;">Mengurangi Cuti Kel. Sakit</span></div>';
+                } elseif ($tipe_lower == 'cuti melahirkan suami') {
+                    $potong_jatah = '<div class="mt-1"><span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size:0.65rem;">Mengurangi Cuti Istri Melahirkan</span></div>';
+                } else {
+                    // Sakit, Izin, etc don't use cuti quotas
+                    $potong_jatah = '<div class="mt-1"><span class="badge bg-light text-dark border border-secondary-subtle" style="font-size:0.65rem;">Tidak Memotong Kuota Cuti</span></div>';
+                }
+
+                $ket = !empty($r->keterangan) ? $r->keterangan : '-';
+
+                $delete_btn = '<button class="btn btn-sm btn-outline-danger mt-2 py-0 px-2" style="font-size: 0.7rem;" onclick="hapusRiwayat(' . $r->id . ')"><i class="bi bi-trash"></i> Hapus</button>';
+
+                $html .= '<tr>';
+                $html .= '<td class="text-center">'.$no++.'</td>';
+                $html .= '<td><div class="fw-bold text-dark">' . htmlspecialchars($tipe_label) . '</div>' . $potong_jatah . '</td>';
+                $html .= '<td><small><i class="bi bi-calendar-event me-1 text-primary"></i>' . date('d M Y', strtotime($r->tanggal_mulai)) . '<br><span class="text-muted">' . $r->durasi_jumlah . ' Hari</span></small></td>';
+                $html .= '<td><small class="text-muted">' . nl2br(htmlspecialchars($ket)) . '</small></td>';
+                $html .= '<td class="text-center">' . $status_badge . '<br>' . $delete_btn . '</td>';
+                $html .= '</tr>';
+            }
+            
+            $html .= '</tbody>';
+            $html .= '</table>';
+            $html .= '</div>';
+        }
+        
+        echo $html;
+    }
+
+    public function delete_riwayat_cuti($id)
+    {
+        // Ambil data karyawan_id sebelum dihapus untuk keperluan sinkronisasi ulang
+        $izin = $this->db->get_where('tbl_pengajuan_izin', ['id' => $id])->row();
+        if (!$izin) {
+            echo json_encode(['status' => 'error', 'message' => 'Data tidak ditemukan']);
+            return;
+        }
+
+        $this->db->where('id', $id);
+        $this->db->delete('tbl_pengajuan_izin');
+
+        if ($this->db->affected_rows() > 0) {
+            // Sinkronisasi ulang kuota cuti karena ada data yang dihapus
+            $this->_sync_quota_cuti($izin->karyawan_id);
+            echo json_encode(['status' => 'success']);
+        } else {
+            echo json_encode(['status' => 'error', 'message' => 'Gagal menghapus data']);
+        }
+    }
+
     public function riwayat_approval()
     {
         $userid = $this->session->userdata('id');
-        $start_date = $this->input->get('start_date') ?? date('Y-m-01');
-        $end_date = $this->input->get('end_date') ?? date('Y-m-t');
+        $start_date = $this->input->get('start_date', true) ?? date('Y-m-01');
+        $end_date = $this->input->get('end_date', true) ?? date('Y-m-t');
 
         $conf = array(
             'perusahaan' => $this->db->get_where('tbl_perusahaan', array('id_perusahaan' => $this->session->userdata('perusahaan_id')))->row_array(),
@@ -1266,7 +1808,7 @@ class Absensi extends MY_Controller
             'hakakses' => $conf['hakakses']['divisi_nama'],
             'logo' => $conf['perusahaan']['logo'],
             'level' => $this->db->get_where('users', array('user_id' => $userid))->row_array(),
-            'menu' => $this->db->get('menu')->result(),
+            // 'menu' diambil otomatis dari MY_Controller
             'submenu' => $this->M_master->getmenu($this->uri->segment(1))->result(),
             'start_date' => $start_date,
             'end_date' => $end_date
@@ -1287,6 +1829,121 @@ class Absensi extends MY_Controller
         $data['riwayat'] = $this->db->get()->result();
 
         $this->load_admin_view('admin/absensi/history_pengajuan', $data);
+    }
+
+    private function _sync_quota_cuti($karyawan_id)
+    {
+        $year = date('Y');
+
+        // Pastikan ada baris quota di tahun ini
+        $quota_row = $this->db->get_where('tbl_quota_cuti', [
+            'karyawan_id' => $karyawan_id,
+            'tahun' => $year
+        ])->row();
+
+        if (!$quota_row) {
+            $quota_init = [
+                'karyawan_id' => $karyawan_id,
+                'tahun' => $year,
+                'quota_awal' => 12,
+                'terpakai' => 0,
+                'sisa' => 12,
+                'menikah_awal' => 7,
+                'duka_awal' => 3,
+                'sakitkel_awal' => 2,
+                'melahirkansuami_awal' => 3
+            ];
+            $this->db->insert('tbl_quota_cuti', $quota_init);
+            $quota_total = 12;
+            $menikah_awal = 7;
+            $duka_awal = 3;
+            $sakitkel_awal = 2;
+            $melahirkansuami_awal = 3;
+        } else {
+            $quota_total = ($quota_row->quota_awal > 0) ? $quota_row->quota_awal : 12;
+            $menikah_awal = isset($quota_row->menikah_awal) ? $quota_row->menikah_awal : 7;
+            $duka_awal = isset($quota_row->duka_awal) ? $quota_row->duka_awal : 3;
+            $sakitkel_awal = isset($quota_row->sakitkel_awal) ? $quota_row->sakitkel_awal : 2;
+            $melahirkansuami_awal = isset($quota_row->melahirkansuami_awal) ? $quota_row->melahirkansuami_awal : 3;
+        }
+
+        // Ambil semua pengajuan tahun ini
+        $requests = $this->db->where('karyawan_id', $karyawan_id)
+            ->where('YEAR(tanggal_mulai)', $year)
+            ->where_in('status', ['Pending', 'Approved', 'Disetujui', 'approved', 'disetujui'])
+            ->get('tbl_pengajuan_izin')->result();
+
+        $used_annual_approved = 0;
+        $used_annual_pending = 0;
+
+        $limits = [
+            'cuti menikah' => $menikah_awal,
+            'cuti duka' => $duka_awal,
+            'cuti keluarga sakit' => $sakitkel_awal,
+            'cuti melahirkan suami' => $melahirkansuami_awal
+        ];
+
+        $usage_special_approved = ['cuti menikah' => 0, 'cuti duka' => 0, 'cuti keluarga sakit' => 0, 'cuti melahirkan suami' => 0];
+        $usage_special_pending = ['cuti menikah' => 0, 'cuti duka' => 0, 'cuti keluarga sakit' => 0, 'cuti melahirkan suami' => 0];
+
+        foreach ($requests as $req) {
+            $status_lower = strtolower($req->status);
+            $type_lower = strtolower($req->tipe_izin);
+            $is_approved = in_array($status_lower, ['approved', 'disetujui']);
+
+            if ($type_lower == 'cuti' || $type_lower == 'cuti tahunan') {
+                if ($is_approved) {
+                    $used_annual_approved += $req->durasi_jumlah;
+                } else {
+                    $used_annual_pending += $req->durasi_jumlah;
+                }
+            } elseif (array_key_exists($type_lower, $limits)) {
+                if ($is_approved) {
+                    $usage_special_approved[$type_lower] += $req->durasi_jumlah;
+                } else {
+                    $usage_special_pending[$type_lower] += $req->durasi_jumlah;
+                }
+            }
+        }
+
+        $spillover_approved = 0;
+        $spillover_pending = 0;
+
+        foreach ($limits as $type => $limit) {
+            $total_type_usage = $usage_special_approved[$type] + $usage_special_pending[$type];
+            if ($total_type_usage > $limit) {
+                $approved_usage = $usage_special_approved[$type];
+                if ($approved_usage > $limit) {
+                    $spillover_approved += ($approved_usage - $limit);
+                    $spillover_pending += $usage_special_pending[$type];
+                } else {
+                    $spillover_pending += ($total_type_usage - $limit);
+                }
+            }
+        }
+
+        $final_used_annual = $used_annual_approved + $used_annual_pending + $spillover_approved + $spillover_pending;
+        $sisa_quota = max(0, $quota_total - $final_used_annual);
+
+        $menikah_used = min($limits['cuti menikah'], $usage_special_approved['cuti menikah'] + $usage_special_pending['cuti menikah']);
+        $duka_used = min($limits['cuti duka'], $usage_special_approved['cuti duka'] + $usage_special_pending['cuti duka']);
+        $sakitkel_used = min($limits['cuti keluarga sakit'], $usage_special_approved['cuti keluarga sakit'] + $usage_special_pending['cuti keluarga sakit']);
+        $melahirkan_used = min($limits['cuti melahirkan suami'], $usage_special_approved['cuti melahirkan suami'] + $usage_special_pending['cuti melahirkan suami']);
+
+        $this->db->where(['karyawan_id' => $karyawan_id, 'tahun' => $year])
+            ->update('tbl_quota_cuti', [
+                'quota_awal' => $quota_total,
+                'terpakai' => $final_used_annual,
+                'sisa' => $sisa_quota,
+                'menikah_terpakai' => $menikah_used,
+                'menikah_sisa' => max(0, $limits['cuti menikah'] - $menikah_used),
+                'duka_terpakai' => $duka_used,
+                'duka_sisa' => max(0, $limits['cuti duka'] - $duka_used),
+                'sakitkel_terpakai' => $sakitkel_used,
+                'sakitkel_sisa' => max(0, $limits['cuti keluarga sakit'] - $sakitkel_used),
+                'melahirkansuami_terpakai' => $melahirkan_used,
+                'melahirkansuami_sisa' => max(0, $limits['cuti melahirkan suami'] - $melahirkan_used)
+            ]);
     }
 
     public function approve_action($id)
@@ -1334,12 +1991,15 @@ class Absensi extends MY_Controller
             $status_absensi = 'Izin';
         } elseif ($tipe_izin_lower == 'sakit') {
             $status_absensi = 'Sakit';
-        } elseif (in_array($tipe_izin_lower, ['cuti', 'cuti keluarga', 'cuti sakit', 'cuti melahirkan', 'cuti menikah'])) {
+        } elseif (strpos($tipe_izin_lower, 'cuti') !== false) {
             $status_map = [
                 'cuti' => 'Cuti',
                 'cuti keluarga' => 'Cuti Keluarga',
+                'cuti keluarga sakit' => 'Cuti Keluarga Sakit',
                 'cuti sakit' => 'Cuti Sakit',
+                'cuti duka' => 'Cuti Duka',
                 'cuti melahirkan' => 'Cuti Melahirkan',
+                'cuti melahirkan suami' => 'Cuti Melahirkan Suami',
                 'cuti menikah' => 'Cuti Menikah'
             ];
             $status_absensi = $status_map[$tipe_izin_lower] ?? 'Cuti';
@@ -1432,14 +2092,45 @@ class Absensi extends MY_Controller
         } else {
             $this->db->trans_commit();
             $this->session->set_flashdata('success', 'Pengajuan berhasil disetujui dan data absensi telah diperbarui.');
+
+            // --- KIRIM NOTIFIKASI FCM KE MOBILE APP ---
+            $this->db->select('fcm_token');
+            $this->db->from('tbl_karyawan');
+            $this->db->where('karyawan_id', $karyawan_id);
+            $karyawan_fcm = $this->db->get()->row();
+
+            if ($karyawan_fcm && !empty($karyawan_fcm->fcm_token)) {
+                try {
+                    $this->load->library('firebase_cloud_messaging');
+                    $title = 'Pengajuan Disetujui';
+                    $body = 'Pengajuan ' . ucfirst($tipe_izin) . ' Anda tanggal ' . date('d M Y', strtotime($tanggal_mulai)) . ' telah disetujui oleh HRD.';
+                    $this->firebase_cloud_messaging->send_notification($karyawan_fcm->fcm_token, $title, $body);
+                } catch (\Throwable $e) {
+                    log_message('error', 'Gagal kirim FCM di Approve Izin: ' . $e->getMessage());
+                }
+            }
+            // ------------------------------------------
         }
 
+        $this->_sync_quota_cuti($karyawan_id);
+
         $this->db->trans_complete();
+        
+        $ref = $this->input->get('ref');
+        if ($ref == 'sisa_cuti') {
+            redirect('absensi/sisa_cuti');
+        }
         redirect('absensi/approval');
     }
     public function reject_action($id)
     {
         $userid = $this->session->userdata('id');
+
+        $request = $this->db->get_where('tbl_pengajuan_izin', ['id' => $id])->row();
+        if (!$request) {
+            $this->session->set_flashdata('error', 'Data pengajuan tidak ditemukan!');
+            redirect('absensi/approval');
+        }
 
         $update_data = [
             'status' => 'Rejected',
@@ -1452,8 +2143,34 @@ class Absensi extends MY_Controller
 
         if ($result) {
             $this->session->set_flashdata('success', 'Pengajuan berhasil ditolak.');
+
+            // --- KIRIM NOTIFIKASI FCM KE MOBILE APP ---
+            $this->db->select('fcm_token');
+            $this->db->from('tbl_karyawan');
+            $this->db->where('karyawan_id', $request->karyawan_id);
+            $karyawan_fcm = $this->db->get()->row();
+
+            if ($karyawan_fcm && !empty($karyawan_fcm->fcm_token)) {
+                try {
+                    $this->load->library('firebase_cloud_messaging');
+                    $title = 'Pengajuan Ditolak';
+                    $body = 'Maaf, pengajuan ' . ucfirst($request->tipe_izin) . ' Anda tanggal ' . date('d M Y', strtotime($request->tanggal_mulai)) . ' tidak disetujui.';
+                    $this->firebase_cloud_messaging->send_notification($karyawan_fcm->fcm_token, $title, $body);
+                } catch (\Throwable $e) {
+                    log_message('error', 'Gagal kirim FCM di Reject Izin: ' . $e->getMessage());
+                }
+            }
+            // ------------------------------------------
+
+            $this->_sync_quota_cuti($request->karyawan_id);
+
         } else {
             $this->session->set_flashdata('error', 'Gagal menolak pengajuan.');
+        }
+
+        $ref = $this->input->get('ref');
+        if ($ref == 'sisa_cuti') {
+            redirect('absensi/sisa_cuti');
         }
         redirect('absensi/approval');
     }
@@ -1463,8 +2180,8 @@ class Absensi extends MY_Controller
         if (!$this->input->is_ajax_request())
             exit('No direct script access allowed');
 
-        $tanggal = $this->input->post('tanggal');
-        $attendance = $this->input->post('attendance'); // Array of data
+        $tanggal = $this->input->post('tanggal', true);
+        $attendance = $this->input->post('attendance', true); // Array of data
 
         if (empty($tanggal) || empty($attendance)) {
             echo json_encode(['status' => false, 'message' => 'Data tidak lengkap']);
@@ -1521,8 +2238,8 @@ class Absensi extends MY_Controller
         $controller = $this->uri->segment(1);
 
         // Get filter parameters
-        $start_date = $this->input->get('start_date');
-        $end_date = $this->input->get('end_date');
+        $start_date = $this->input->get('start_date', true);
+        $end_date = $this->input->get('end_date', true);
 
         if (empty($start_date)) {
             $start_date = date('Y-m-01');
@@ -1531,8 +2248,8 @@ class Absensi extends MY_Controller
             $end_date = date('Y-m-t', strtotime($start_date));
         }
 
-        $jabatan = $this->input->get('jabatan') ? $this->input->get('jabatan') : '';
-        $divisi = $this->input->get('divisi') ? $this->input->get('divisi') : '';
+        $jabatan = $this->input->get('jabatan', true) ? $this->input->get('jabatan', true) : '';
+        $divisi = $this->input->get('divisi', true) ? $this->input->get('divisi', true) : '';
 
         // Get all active employees
         $this->db->select('k.karyawan_id, k.nama_lengkap, k.nik, j.nama_jabatan as jabatan, d.divisi_nama as divisi');
@@ -1597,7 +2314,7 @@ class Absensi extends MY_Controller
             'divisi_list' => $divisi_list,
             'logo' => $conf['perusahaan']['logo'],
             'level' => $this->db->get_where('users', array('user_id' => $userid))->row_array(),
-            'menu' => $this->db->get('menu')->result(),
+            // 'menu' diambil otomatis dari MY_Controller
             'submenu' => $this->M_master->getmenu($controller)->result(),
         );
 
@@ -1606,9 +2323,7 @@ class Absensi extends MY_Controller
 
     function log_activity($user_id, $action, $module, $reference_id = null)
     {
-        $CI =& get_instance();
-        $CI->load->database();
-        $CI->db->insert('user_activity_log', [
+        $this->db->insert('user_activity_log', [
             'user_id' => $user_id,
             'action' => $action,
             'module' => $module,
@@ -1637,5 +2352,94 @@ class Absensi extends MY_Controller
             cos($latFrom) * cos($latTo) * pow(sin($lonDelta / 2), 2)));
 
         return round($angle * $earthRadius);
+    }
+    public function sync_to_payroll()
+    {
+        if (!$this->input->is_ajax_request()) {
+            exit('No direct script access allowed');
+        }
+
+        $karyawan_id = $this->input->post('karyawan_id', true);
+        $bulan = $this->input->post('bulan', true);
+        $start_date = $this->input->post('start_date', true);
+        $end_date = $this->input->post('end_date', true);
+
+        if (empty($bulan) && !empty($end_date)) {
+            $bulan = date('Y-m', strtotime($end_date));
+        }
+
+        $data = [
+            'karyawan_id' => $karyawan_id,
+            'bulan' => $bulan,
+            'start_date' => $start_date,
+            'end_date' => $end_date,
+            'total_hadir' => $this->input->post('total_hadir', true),
+            'total_izin' => $this->input->post('total_izin', true),
+            'total_sakit' => $this->input->post('total_sakit', true),
+            'total_alpha' => $this->input->post('total_alpha', true),
+            'total_terlambat' => $this->input->post('total_terlambat', true),
+            'lembur_pagi' => $this->input->post('total_pagi', true),
+            'lembur_wajib_tambahan' => $this->input->post('total_wajib', true),
+            'lembur_kerjaan' => $this->input->post('total_kerjaan', true),
+            'total_lembur' => $this->input->post('total_lembur', true),
+            'biaya_makan_lembur' => $this->input->post('biaya_makan', true) ?: 0,
+            'sync_at' => date('Y-m-d H:i:s')
+        ];
+
+        // Disable DB debug temporarily to prevent 500 error on migration failure
+        $db_debug_original = $this->db->db_debug;
+        $this->db->db_debug = false;
+
+        // Ensure table exists
+        $this->db->query("CREATE TABLE IF NOT EXISTS tbl_absensi_rekap_karyawan (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            karyawan_id INT,
+            bulan VARCHAR(10),
+            start_date DATE,
+            end_date DATE,
+            total_hadir INT,
+            total_izin INT,
+            total_sakit INT,
+            total_alpha INT,
+            total_terlambat INT,
+            lembur_pagi FLOAT,
+            lembur_wajib_tambahan FLOAT,
+            lembur_kerjaan FLOAT,
+            total_lembur FLOAT,
+            biaya_makan_lembur INT DEFAULT 0,
+            sync_at DATETIME,
+            UNIQUE KEY unique_sync (karyawan_id, bulan)
+        )");
+
+        // Dynamic Migration: Add lembur_kerjaan if it doesn't exist (for live server update)
+        if (!$this->db->field_exists('lembur_kerjaan', 'tbl_absensi_rekap_karyawan')) {
+            $this->db->query("ALTER TABLE tbl_absensi_rekap_karyawan ADD COLUMN lembur_kerjaan FLOAT NULL DEFAULT 0 AFTER lembur_wajib_tambahan");
+        }
+        
+        // Dynamic Migration: Add biaya_makan_lembur if it doesn't exist
+        if (!$this->db->field_exists('biaya_makan_lembur', 'tbl_absensi_rekap_karyawan')) {
+            $this->db->query("ALTER TABLE tbl_absensi_rekap_karyawan ADD COLUMN biaya_makan_lembur INT NULL DEFAULT 0 AFTER total_lembur");
+        }
+
+        // Restore DB debug
+        $this->db->db_debug = $db_debug_original;
+
+        // UPSERT logic
+        $this->db->where('karyawan_id', $karyawan_id);
+        $this->db->where('bulan', $bulan);
+        $existing = $this->db->get('tbl_absensi_rekap_karyawan')->row();
+
+        if ($existing) {
+            $this->db->where('id', $existing->id);
+            $res = $this->db->update('tbl_absensi_rekap_karyawan', $data);
+        } else {
+            $res = $this->db->insert('tbl_absensi_rekap_karyawan', $data);
+        }
+
+        if ($res) {
+            echo json_encode(['success' => true]);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Gagal menyimpan data ke database rekap payroll.']);
+        }
     }
 }

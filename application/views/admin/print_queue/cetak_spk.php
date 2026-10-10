@@ -351,31 +351,90 @@
 
                                 <!-- Render Metadata Dinamis -->
                                 <?php
+                                // [NEW] Merge and resolve schema for SPK
+                                $schema_map = [];
+                                $schema_arr = [];
+                                
+                                if (!empty($item->category_form_schema)) {
+                                    $sc = json_decode($item->category_form_schema, true);
+                                    if (is_array($sc)) $schema_arr = array_merge($schema_arr, $sc);
+                                }
+                                if (!empty($item->subcategory_form_schema)) {
+                                    $sc = json_decode($item->subcategory_form_schema, true);
+                                    if (is_array($sc)) $schema_arr = array_merge($schema_arr, $sc);
+                                }
+                                if (!empty($item->product_form_schema)) {
+                                    $sc = json_decode($item->product_form_schema, true);
+                                    if (is_array($sc)) $schema_arr = array_merge($schema_arr, $sc);
+                                }
+
+                                if (!empty($schema_arr)) {
+                                    foreach ($schema_arr as $field) {
+                                        if (isset($field['name'])) {
+                                            $schema_map[$field['name']] = $field;
+                                        }
+                                    }
+                                }
+
                                 $meta_str = '';
                                 if (!empty($item->metadata)) {
                                     $meta_json = json_decode($item->metadata, true);
                                     if (is_array($meta_json)) {
                                         foreach ($meta_json as $key => $val) {
-                                            // Format the key
+                                            $key_lower = strtolower($key);
+                                            $is_in_schema = isset($schema_map[$key]);
+                                            
+                                            // Format the label
                                             $label = ucwords(str_replace('_', ' ', $key));
+                                            
+                                            if ($is_in_schema) {
+                                                $field = $schema_map[$key];
+                                                if (!empty($field['label'])) {
+                                                    $label = $field['label'];
+                                                }
+                                                if (isset($field['options']) && is_array($field['options']) && isset($field['options'][$val])) {
+                                                    $val = $field['options'][$val];
+                                                }
+                                            }
                                             
                                             // Skip some technical keys like unit_price/subtotal from showing on SPK 
                                             // because operators don't need price info, just specs
-                                            if (in_array($key, ['unit_price', 'subtotal', 'price_snapshot_at', 'hpp', 'range_id', 'user', 'kodeproduk', 'nospk']) || substr($key, -3) === '_id') {
-                                                continue;
+                                            if (!$is_in_schema) {
+                                                if (in_array($key_lower, ['unit_price', 'subtotal', 'price_snapshot_at', 'hpp', 'range_id', 'user', 'kodeproduk', 'nospk']) || substr($key_lower, -3) === '_id' || substr($key_lower, -6) === '_label' || strpos($key_lower, 'subkategori') !== false) {
+                                                    continue;
+                                                }
                                             }
                                             
-                                            if ($key === 'jenisprint') $label = 'Mesin';
+                                            if ($key_lower === 'jenisprint') $label = 'Mesin';
                                             
-                                            if ($key == 'sisi') {
-                                                if (in_array($item->kategori_id, [2, 9]) || strtolower($item->kategori_nama ?? '') == 'large format') {
+                                            if ($key_lower == 'sisi') {
+                                                if (isset($item->kategori_id) && in_array($item->kategori_id, [2, 9]) || strtolower($item->kategori_nama ?? '') == 'large format') {
                                                     continue;
                                                 }
                                                 if ($val == '1' || $val == '2') {
                                                     $val = $val . ' Sisi';
+                                                } elseif (strtolower(trim($val)) == '1 side') {
+                                                    $val = '1 Sisi';
+                                                } elseif (strtolower(trim($val)) == '2 side') {
+                                                    $val = '2 Sisi';
+                                                } elseif ($val == '3' || stripos($val, 'Tidak Ada') !== false) {
+                                                    continue;
                                                 }
                                             }
-                                            $meta_str .= "<span><strong>$label:</strong> $val</span> &bull; ";
+
+                                            if (strpos($key_lower, 'ket_') === 0 && !$is_in_schema) {
+                                                $val = trim($val, '[]');
+                                                if (empty($val)) continue;
+                                                // For old ket_x we might just output the value without label
+                                                $meta_str .= "<span>{$val}</span> &bull; ";
+                                                continue;
+                                            }
+
+                                            if ($is_in_schema && !empty($label)) {
+                                                $meta_str .= "<span><strong>$label:</strong> $val</span> &bull; ";
+                                            } else {
+                                                $meta_str .= "<span><strong>$label:</strong> $val</span> &bull; ";
+                                            }
                                         }
                                     }
                                 }

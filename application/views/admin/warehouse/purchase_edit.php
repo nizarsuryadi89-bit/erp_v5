@@ -661,6 +661,47 @@
             calculateTotalAll();
         });
 
+        // Add confirmation warning before update
+        $('#formUpdatePurchase').on('submit', function (e) {
+            e.preventDefault();
+            const form = this;
+            
+            let htmlWarning = `<div class="text-start mb-3 text-sm">
+                <b>Perhatian!</b> Melakukan update pada transaksi ini akan berdampak pada:
+                <ul class="text-danger mt-2 text-sm" style="list-style: disc; padding-left: 20px;">
+                    <li><b>Stok Lama:</b> Seluruh material pada transaksi ini sebelumnya akan <b>dikurangi/dibatalkan</b> terlebih dahulu.</li>
+                    <li><b>Stok Baru:</b> Data material yang baru Anda atur di halaman ini akan <b>ditambahkan kembali</b> ke gudang.</li>
+                    <li><b>Keuangan & Hutang:</b> Log Pengeluaran Kas/Bank atau sisa tagihan Hutang akan otomatis disesuaikan.</li>
+                </ul>
+                <p class="mb-0 mt-3 fw-bold text-dark text-center">Apakah Anda yakin data baru ini sudah benar?</p>
+            </div>`;
+
+            Swal.fire({
+                title: 'Konfirmasi Update Data',
+                html: htmlWarning,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#059669',
+                cancelButtonColor: '#64748b',
+                confirmButtonText: '<i class="fa fa-save me-2"></i>Ya, Lanjutkan Update!',
+                cancelButtonText: 'Batal',
+                width: '600px'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    Swal.fire({
+                        title: 'Memproses Update...',
+                        text: 'Mohon tunggu sebentar...',
+                        allowOutsideClick: false,
+                        showConfirmButton: false,
+                        didOpen: () => {
+                            Swal.showLoading()
+                        }
+                    });
+                    form.submit();
+                }
+            });
+        });
+
         $('#formTempAddItem').on('submit', function(e) {
             e.preventDefault();
             const materialId = $('select[name="material_id"]').val();

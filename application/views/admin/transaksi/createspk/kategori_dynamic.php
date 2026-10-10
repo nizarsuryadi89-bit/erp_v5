@@ -252,14 +252,14 @@ $json_error = ($raw_schema && (!is_array($schema) || empty($schema))) ? json_las
                         <div class="blueprint-input-box">
                             <span>P</span>
                             <input type="number" class="form-control blueprint-input" name="<?= $name ?>" placeholder="P"
-                                value="<?= $defaultValue ?>" step="0.01">
+                                value="<?= $defaultValue ?>" step="0.01" required>
                         </div>
                         <span class="fw-bold fs-4 text-muted">×</span>
                         <div class="blueprint-input-box">
                             <span>L</span>
                             <input type="number" class="form-control blueprint-input" name="<?= $next_field['name'] ?>"
                                 placeholder="L" value="<?= $product[$next_field['name']] ?? ($next_field['default'] ?? '') ?>"
-                                step="0.01">
+                                step="0.01" required>
                         </div>
                         <span class="fw-bold text-muted small">MTR</span>
                     </div>
@@ -289,7 +289,7 @@ $json_error = ($raw_schema && (!is_array($schema) || empty($schema))) ? json_las
                             <?php foreach ($normalizedOptions as $opt): ?>
                                 <div class="premium-segment-item">
                                     <input type="radio" name="<?= $name ?>" id="<?= $name ?>_<?= $opt['value'] ?>"
-                                        value="<?= $opt['value'] ?>" <?= ($defaultValue == $opt['value'] || (empty($defaultValue) && $opt['value'] == '0')) ? 'checked' : '' ?> tabindex="0">
+                                        value="<?= $opt['value'] ?>" <?= ($defaultValue == $opt['value'] || (empty($defaultValue) && $opt['value'] == '0')) ? 'checked' : '' ?> tabindex="0" required>
                                     <label for="<?= $name ?>_<?= $opt['value'] ?>"><?= strtoupper($opt['label']) ?></label>
                                 </div>
                             <?php endforeach; ?>
@@ -298,15 +298,15 @@ $json_error = ($raw_schema && (!is_array($schema) || empty($schema))) ? json_las
                     <?php elseif ($type == 'dimension' || $type == 'dimensions'): ?>
                         <div class="blueprint-group">
                             <div class="blueprint-input-box"><span>P</span><input type="number" class="form-control blueprint-input"
-                                    name="panjang" placeholder="P" value="<?= $product['panjang'] ?? '' ?>" step="0.01"></div>
+                                    name="panjang" placeholder="P" value="<?= $product['panjang'] ?? '' ?>" step="0.01" required></div>
                             <span class="fw-bold fs-4 text-muted">×</span>
                             <div class="blueprint-input-box"><span>L</span><input type="number" class="form-control blueprint-input"
-                                    name="lebar" placeholder="L" value="<?= $product['lebar'] ?? '' ?>" step="0.01"></div>
+                                    name="lebar" placeholder="L" value="<?= $product['lebar'] ?? '' ?>" step="0.01" required></div>
                         </div>
 
                     <?php elseif ($type == 'textarea'): ?>
                         <textarea name="<?= $name ?>" class="form-control form-control-sm rounded-3" rows="<?= $field['rows'] ?? 2 ?>"
-                            placeholder="<?= $placeholder ?>"><?= $defaultValue ?></textarea>
+                            placeholder="<?= $placeholder ?>" required><?= $defaultValue ?></textarea>
 
                     <?php elseif ($type == 'hidden'): ?>
                         <input type="hidden" name="<?= $name ?>" value="<?= $defaultValue ?>">
@@ -314,7 +314,7 @@ $json_error = ($raw_schema && (!is_array($schema) || empty($schema))) ? json_las
                     <?php else: ?>
                         <input type="<?= ($type == 'meter_lari' || $type == 'number') ? 'number' : 'text' ?>" name="<?= $name ?>"
                             class="form-control form-control-sm fw-bold rounded-3" placeholder="<?= $placeholder ?>"
-                            value="<?= $defaultValue ?>" step="any">
+                            value="<?= $defaultValue ?>" step="any" required>
                     <?php endif; ?>
                 </div>
             <?php endif; ?>

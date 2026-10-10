@@ -201,7 +201,7 @@ const ProductionApp = {
                             actStep = it.routing.find(r => r.status_produksi == '1');
                         }
 
-                        let bomQty = (actStep && actStep.quantity) ? parseFloat(actStep.quantity) : (it.bom ? parseFloat(it.bom.bom_qty) : 0);
+                        let bomQty = (actStep && actStep.quantity) ? parseFloat(actStep.quantity) : (it.bom ? parseFloat(it.bom.quantity || it.bom.bom_qty) : 0);
                         let estQty = (bomQty > 0) ? (bomQty * parseFloat(it.qty)) : parseFloat(it.qty);
                         let bomMatId = (actStep && actStep.routing_material_id) ? actStep.routing_material_id : 0;
                         let satuanStep = (actStep && actStep.routing_material_satuan) ? actStep.routing_material_satuan : (it.satuan_nama || 'Unit');
@@ -333,10 +333,14 @@ const ProductionApp = {
         const nospk = modal.data('nospk');
         const cat = modal.data('cat');
         const pin = $('#selesaiSpkPin').val();
+        const btnSubmit = $('#btnSubmitSelesaiSpk'); // The submit button id from v_modals_produksi.php
 
         if (!pin || pin.length < 4) {
             return Swal.fire('Error', 'Masukkan PIN Operator untuk verifikasi!', 'error');
         }
+
+        // Disable button to prevent double-click race condition
+        btnSubmit.prop('disabled', true);
 
         Swal.fire({
             title: 'Memproses...',
@@ -353,8 +357,12 @@ const ProductionApp = {
                 Swal.fire('Berhasil', res.message, 'success').then(() => location.reload());
             } else {
                 Swal.fire('Gagal', res.message, 'error');
+                btnSubmit.prop('disabled', false); // Re-enable if failed
             }
-        }, 'json').fail(() => Swal.fire('Error', 'Koneksi Server Gagal', 'error'));
+        }, 'json').fail(() => {
+            Swal.fire('Error', 'Koneksi Server Gagal', 'error');
+            btnSubmit.prop('disabled', false); // Re-enable if failed
+        });
     },
 
     /** Batch Operation */
@@ -547,7 +555,7 @@ const ProductionApp = {
 
             // If maxShorter is 0, it means we used 1D BOM quantity directly, so totalArea is already the linear meter!
             if (maxShorter === 0) {
-                $('#nestLinear').text(totalArea.toFixed(2));
+                $('#nestLinear').text(parseFloat(totalArea.toFixed(2)));
             } else {
                 let totalLinear = 0;
                 checked.each((i, el) => {
@@ -565,7 +573,7 @@ const ProductionApp = {
                         totalLinear += ProductionApp.estimateLinearMeter(ep, el_l, eqty, roll);
                     }
                 });
-                $('#nestLinear').text(totalLinear.toFixed(2));
+                $('#nestLinear').text(parseFloat(totalLinear.toFixed(2)));
             }
 
             $('#visualizeNestingBtn').removeClass('d-none');
@@ -789,7 +797,7 @@ openCompletionModal() {
             }
         });
         if (useCalculated) {
-            est = totalLinearUsage.toFixed(2);
+            est = parseFloat(totalLinearUsage.toFixed(2));
         }
     }
 
@@ -827,12 +835,16 @@ openCompletionModal() {
             $('.lf-only-stat').addClass('d-none');
             $('#labelActualUsage').text('Total Lembar Cetak (Termasuk Rusak / Test Print)');
             $('#textActualUsage').text(satuanBahan !== 'UNIT' ? satuanBahan : 'LEMBAR');
-            $('#compActualUsage').prop('required', true).val(totalQty > 0 ? totalQty : checked.length);
+            let sLower = satuanBahan.toLowerCase();
+            let roundedTotal = (sLower === 'lbr' || sLower === 'lembar' || sLower === 'pcs' || sLower === 'set') ? Math.ceil(totalQty) : totalQty;
+            $('#compActualUsage').prop('required', true).val(roundedTotal > 0 ? parseFloat(roundedTotal.toFixed(2)) : checked.length);
         } else {
             $('.lf-only-stat').addClass('d-none');
-            $('#labelActualUsage').text('Jumlah Unit Produksi (Aktual)');
+            $('#labelActualUsage').text('Pemakaian Bahan Terpilih (Total)');
             $('#textActualUsage').text(satuanBahan);
-            $('#compActualUsage').prop('required', true).val(totalQty > 0 ? totalQty : checked.length);
+            let sLower = satuanBahan.toLowerCase();
+            let roundedTotal = (sLower === 'lbr' || sLower === 'lembar' || sLower === 'pcs' || sLower === 'set') ? Math.ceil(totalQty) : totalQty;
+            $('#compActualUsage').prop('required', true).val(roundedTotal > 0 ? parseFloat(roundedTotal.toFixed(2)) : checked.length);
         }
     }
 
@@ -875,7 +887,7 @@ openCompletionModal() {
         let l = parseFloat($(el).data('lebar')) || 0;
         let qty = parseFloat($(el).data('qty')) || 0;
         let bomQty = parseFloat($(el).data('bom-qty')) || 1;
-        let totalItemQty = qty * bomQty;
+        let totalItemQty = parseFloat((qty * bomQty).toFixed(2));
         let satuan = $(el).data('satuan') || 'UNIT';
         let stepNameStr = $(el).data('step-name') || 'PRODUKSI';
         let konsumsiHtml = '';
@@ -893,10 +905,15 @@ openCompletionModal() {
         }
 
         let bomLines = $(el).data('bom-lines') || [];
+        let currentBomLineId = $(el).data('current-bom-line-id');
+        if (currentBomLineId) {
+            let filtered = bomLines.filter(b => b.bom_line_id == currentBomLineId);
+            if(filtered.length > 0) bomLines = filtered;
+        }
         let bomHtml = '';
         if (bomLines.length > 0) {
             let bomInputs = bomLines.map(bom => {
-                let bq = parseFloat(bom.bom_qty) || 1;
+                let bq = parseFloat(bom.quantity || bom.bom_qty) || 1;
                 let bomReq = (bq * qty);
                 let sn = (bom.satuan_nama || '').toLowerCase();
 
@@ -912,6 +929,10 @@ openCompletionModal() {
                     }
                 } else {
                     bomReq = bq * qty;
+                }
+
+                if (sn === 'lbr' || sn === 'lembar' || sn === 'pcs' || sn === 'set') {
+                    bomReq = Math.ceil(bomReq);
                 }
 
                 return `
@@ -934,7 +955,7 @@ openCompletionModal() {
                 <div class="p-3 border-bottom outcome-row bg-white" data-id="${pid}">
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <div>
-                            <span class="fw-bold text-dark">${tr.find('.fw-800').text()}</span>
+                            <span class="fw-bold text-dark" style="font-size: 0.85rem;">${$(el).data('item-title') || tr.find('.fw-800').text()}</span>
                             <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 ms-2" style="font-size: 0.65rem;">${stepNameStr}</span>
                             ${konsumsiHtml}
                         </div>
@@ -959,10 +980,10 @@ openCompletionModal() {
     let recRoll = finalRecRollText.replace('Roll', '').trim().toLowerCase();
     let isJasaProduksi = String(checked.first().data('tipe-id')) !== '1';
 
-    if (isJasaProduksi) {
+    if (isJasaProduksi || isFinishingOnly) {
         $('#bomWarningMessage').addClass('d-none');
         $('#sectionSearchBahan').hide();
-        $('#labelPilihStokGudang').text('Barang Jasa (Tanpa Stok Bahan)');
+        $('#labelPilihStokGudang').text(isFinishingOnly ? 'Proses Finishing (Tanpa Potong Stok Utama)' : 'Barang Jasa (Tanpa Stok Bahan)');
         $('#compMaterialId').empty().append('<option value="none">-- Tidak Memerlukan Stok --</option>');
         $('#compMaterialId').prop('required', false);
     } else if (bahanId && bahanId > 0) {
@@ -1018,7 +1039,7 @@ loadVariants(bahanId, recRoll = '', bomMaterialId = null) {
             } else if (bomMaterialId && m.material_id == bomMaterialId) {
                 isRec = ' [🎯 SESUAI BOM]';
             }
-            sel.append(`<option value="${m.material_id}">${m.varian}${isRec} (Sisa: ${sisaGudang} / ${sisaBase})</option>`);
+            sel.append(`<option value="${m.material_id}" data-stok-gudang="${sisaGudang}" data-stok-base="${sisaBase}">${m.varian}${isRec} (Sisa: ${sisaGudang} / ${sisaBase})</option>`);
         });
 
         // Auto select first match based on recommendation
@@ -1036,6 +1057,40 @@ loadVariants(bahanId, recRoll = '', bomMaterialId = null) {
             // If there is only 1 variant in the whole list, just auto-select it
             sel.val(variants[0].material_id);
         }
+        
+        sel.off('change').on('change', function() {
+            let opt = $(this).find('option:selected');
+            if (opt.val()) {
+                let materialId = opt.val();
+                let sg = opt.data('stok-gudang') || '0';
+                let sb = opt.data('stok-base') || '0';
+                $('#helpPilihStokGudang').html(`<span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 py-1 px-2"><i class="fas fa-boxes me-1"></i> Stok Gudang: <b>${sg}</b></span> <span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25 py-1 px-2 ms-1"><i class="fas fa-layer-group me-1"></i> Base: <b>${sb}</b></span>`);
+                
+                // [FIX] Auto-adjust Actual Usage label and value if the selected material is in the BOM
+                if (activeCat !== '2' && activeCat !== '5' && activeCat !== '9' && activeCat !== '1') {
+                    let unitStr = sb.replace(/[0-9.-]/g, '').trim().toUpperCase();
+                    if (unitStr) {
+                        $('#labelActualUsage').text('Pemakaian Bahan Terpilih (Total)');
+                        $('#textActualUsage').text(unitStr);
+                    }
+                    
+                    let bomSum = 0;
+                    let foundInBom = false;
+                    $(`input[data-bom-id="${materialId}"]`).each(function() {
+                        bomSum += parseFloat($(this).val()) || 0;
+                        foundInBom = true;
+                    });
+                    
+                    if (foundInBom) {
+                        $('#compActualUsage').val(parseFloat(bomSum.toFixed(2)));
+                    }
+                }
+            } else {
+                $('#helpPilihStokGudang').text('Pilih fisik stok gudang.');
+            }
+        });
+        
+        sel.trigger('change');
     }, 'json');
 },
 
@@ -1081,39 +1136,73 @@ submitCompletion(sendToPb = false) {
     let postData = Object.assign({}, data);
     postData.outcomes = JSON.stringify(data.outcomes);
 
-    Swal.fire({ title: 'Simpan?', icon: 'warning', showCancelButton: true }).then(r => {
-        if (r.isConfirmed) {
-            $.post(this.config.baseUrl + 'batch_selesai_dan_stok', this.getAuthData(postData), (res) => {
-                if (res.success) {
-                    // Clear roll preferences for completed ids
-                    data.ids.forEach(id => localStorage.removeItem('roll_pref_' + id));
-                    
-                    // [NEW] Auto Print TAG for Large Format (Cat 2)
-                    // Use string comparison to be safe with data-attributes
-                    if (String(activeCat) === '2' || String(activeCat) === '5') {
-                        let tagUrl = this.config.baseUrl + 'print_tag_ids?ids=' + data.ids.join(',');
-                        let iframe = document.getElementById('hiddenPrintFrame');
-                        if (!iframe) {
-                            iframe = document.createElement('iframe');
-                            iframe.id = 'hiddenPrintFrame';
-                            iframe.style.display = 'none';
-                            document.body.appendChild(iframe);
-                        }
-                        iframe.src = tagUrl;
-                        iframe.onload = function () {
-                            iframe.contentWindow.focus();
-                            iframe.contentWindow.print();
-                            location.reload();
-                        };
-                    } else {
-                        location.reload();
+    // Disable submit buttons to prevent double-submission
+    let submitBtn = $('#modalSelesaiBatch .btn-success, #modalStok .btn-success');
+    let originalText = submitBtn.html() || '<i class="fas fa-check-circle me-1"></i> Simpan';
+    submitBtn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i> Memproses...');
+
+    const performBatchSubmit = (submitData, supervisorPin = '') => {
+        let payload = this.getAuthData(submitData);
+        payload.supervisor_pin = supervisorPin;
+        $.post(this.config.baseUrl + 'batch_selesai_dan_stok', payload, (res) => {
+            if (res.success) {
+                // Clear roll preferences for completed ids
+                submitData.ids.forEach(id => localStorage.removeItem('roll_pref_' + id));
+                
+                // [NEW] Auto Print TAG for Large Format (Cat 2)
+                if (String(activeCat) === '2' || String(activeCat) === '5') {
+                    let tagUrl = this.config.baseUrl + 'print_tag_ids?ids=' + submitData.ids.join(',');
+                    let iframe = document.getElementById('hiddenPrintFrame');
+                    if (!iframe) {
+                        iframe = document.createElement('iframe');
+                        iframe.id = 'hiddenPrintFrame';
+                        iframe.style.display = 'none';
+                        document.body.appendChild(iframe);
                     }
+                    iframe.src = tagUrl;
+                    iframe.onload = function () {
+                        iframe.contentWindow.focus();
+                        iframe.contentWindow.print();
+                        location.reload();
+                    };
                 } else {
-                    Swal.fire('Error', res.message, 'error');
+                    location.reload();
                 }
-            }, 'json');
-        }
-    });
+            } else if (res.require_pin_override) {
+                submitBtn.prop('disabled', false).html(originalText);
+                Swal.fire({
+                    title: 'Otorisasi Dibutuhkan',
+                    text: res.message,
+                    icon: 'warning',
+                    input: 'password',
+                    inputPlaceholder: 'Masukkan PIN Supervisor/Otorisasi',
+                    showCancelButton: true,
+                    confirmButtonText: 'Bypass & Lanjut',
+                    cancelButtonText: 'Batal',
+                    preConfirm: (pin) => {
+                        if (!pin) {
+                            Swal.showValidationMessage('PIN wajib diisi!');
+                            return false;
+                        }
+                        return pin;
+                    }
+                }).then((result) => {
+                    if (result.isConfirmed && result.value) {
+                        submitBtn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i> Memproses...');
+                        performBatchSubmit(submitData, result.value);
+                    }
+                });
+            } else {
+                submitBtn.prop('disabled', false).html(originalText);
+                Swal.fire('Error', res.message, 'error');
+            }
+        }, 'json').fail(() => {
+            submitBtn.prop('disabled', false).html(originalText);
+            Swal.fire('Error', 'Gagal menghubungi server.', 'error');
+        });
+    };
+
+    performBatchSubmit(postData);
 },
 printGroupTag(groupKey) {
     let ids = [];
@@ -1216,10 +1305,15 @@ openFinishingModal() {
         }
 
         let bomLines = $(el).data('bom-lines') || [];
+        let currentBomLineId = $(el).data('current-bom-line-id');
+        if (currentBomLineId) {
+            let filtered = bomLines.filter(b => b.bom_line_id == currentBomLineId);
+            if(filtered.length > 0) bomLines = filtered;
+        }
         let bomHtml = '';
         if (bomLines.length > 0) {
             let bomInputs = bomLines.map(bom => {
-                let bq = parseFloat(bom.bom_qty) || 1;
+                let bq = parseFloat(bom.quantity || bom.bom_qty) || 1;
                 let bomReq = (bq * qty);
                 let sn = (bom.satuan_nama || '').toLowerCase();
 
@@ -1235,6 +1329,10 @@ openFinishingModal() {
                     }
                 } else {
                     bomReq = bq * qty;
+                }
+
+                if (sn === 'lbr' || sn === 'lembar' || sn === 'pcs' || sn === 'set') {
+                    bomReq = Math.ceil(bomReq);
                 }
 
                 return `
@@ -1956,7 +2054,7 @@ advanceStep(id, type, stepName = 'Step Ini', estQty = 0, bomMaterialId = 0, prev
     }
 },
 
-_postAdvance(id, type, data, catId = 1) {
+_postAdvance(id, type, data, catId = 1, supervisorPin = '') {
     // MODULAR ROUTING: If Category 2 (LF), use dedicated LF endpoint. 
     // Otherwise use standard/legacy A3+ endpoint.
     const endpoint = (parseInt(catId) === 2) ? 'advance_step_lf_ajax' : 'advance_step_ajax';
@@ -1969,10 +2067,33 @@ _postAdvance(id, type, data, catId = 1) {
         qty_rusak: data.qty_rusak,
         bahan_id: data.bahan_id,
         mesin_id: data.mesin_id,
-        lokasi_proses: data.lokasi_proses
+        lokasi_proses: data.lokasi_proses,
+        supervisor_pin: supervisorPin
     }), (res) => {
         if (res && res.success) {
             location.reload();
+        } else if (res && res.require_pin_override) {
+            Swal.fire({
+                title: 'Otorisasi Dibutuhkan',
+                text: res.message,
+                icon: 'warning',
+                input: 'password',
+                inputPlaceholder: 'Masukkan PIN Supervisor/Otorisasi',
+                showCancelButton: true,
+                confirmButtonText: 'Bypass & Lanjut',
+                cancelButtonText: 'Batal',
+                preConfirm: (pin) => {
+                    if (!pin) {
+                        Swal.showValidationMessage('PIN wajib diisi!');
+                        return false;
+                    }
+                    return pin;
+                }
+            }).then((result) => {
+                if (result.isConfirmed && result.value) {
+                    this._postAdvance(id, type, data, catId, result.value);
+                }
+            });
         } else {
             Swal.fire('Error', (res ? res.message : 'Gagal update status'), 'error');
         }

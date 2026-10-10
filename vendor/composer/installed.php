@@ -1,9 +1,9 @@
 <?php return array(
     'root' => array(
         'name' => 'a990/tgm_erp',
-        'pretty_version' => '1.0.0+no-version-set',
-        'version' => '1.0.0.0',
-        'reference' => null,
+        'pretty_version' => 'dev-master',
+        'version' => 'dev-master',
+        'reference' => '3835c361ebb6b2411a6306765d5c624e67666876',
         'type' => 'library',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -11,9 +11,9 @@
     ),
     'versions' => array(
         'a990/tgm_erp' => array(
-            'pretty_version' => '1.0.0+no-version-set',
-            'version' => '1.0.0.0',
-            'reference' => null,
+            'pretty_version' => 'dev-master',
+            'version' => 'dev-master',
+            'reference' => '3835c361ebb6b2411a6306765d5c624e67666876',
             'type' => 'library',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),

@@ -42,6 +42,27 @@ if (!function_exists('format_durasi_lembur')) {
         return $h . " J " . $m . " M";
     }
 }
+
+// Haversine Distance Helper
+if (!function_exists('hitung_jarak')) {
+    function hitung_jarak($lat1, $lon1, $lat2, $lon2) {
+        $earth_radius = 6371000; // in meters
+        
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLon = deg2rad($lon2 - $lon1);
+        
+        $a = sin($dLat/2) * sin($dLat/2) + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLon/2) * sin($dLon/2);
+        $c = 2 * asin(sqrt($a));
+        $d = $earth_radius * $c;
+        
+        return $d;
+    }
+}
+
+$CI =& get_instance();
+$comp = $CI->db->get_where('tbl_perusahaan', ['id_perusahaan' => 1])->row();
+$comp_lat = $comp ? $comp->latitude : -6.23674577;
+$comp_lon = $comp ? $comp->longitude : 106.99821922;
 ?>
 
 <!-- <link rel="stylesheet" href="<?= base_url('assets/css/costume-tgm.css') ?>"> -->
@@ -305,8 +326,9 @@ if (!function_exists('format_durasi_lembur')) {
                             <th>Lembur Tambahan</th>
                             <th class="text-center">Total</th>
                             <th class="text-end">NOMINAL</th>
-                            <th class="text-end" style="color: #f97316;">UANG MAKAN</th>
+                            <th class="text-center" style="color: #f97316;">UANG MAKAN</th>
                             <th>KEGIATAN / TUGAS</th>
+                            <th class="text-center">LOKASI</th>
                             <th class="text-center">BUKTI</th>
                             <th>STATUS</th>
                             <th class="text-center pe-4 no-print">AKSI</th>
@@ -326,7 +348,7 @@ if (!function_exists('format_durasi_lembur')) {
 
                             $initials = substr($row->nama_lengkap, 0, 1) . substr(explode(' ', $row->nama_lengkap)[count(explode(' ', $row->nama_lengkap)) - 1], 0, 1);
                             ?>
-                            <tr>
+                            <tr class="<?= in_array($row->status, ['menunggu', 'disetujui', 'ditolak']) ? 'table-warning' : '' ?>">
                                 <td class="ps-4">
                                     <div class="employee-info-group">
                                         <div class="avatar-mini">
@@ -478,6 +500,27 @@ if (!function_exists('format_durasi_lembur')) {
                                     <div class="text-wrap small text-muted" style="max-width: 250px;">
                                         <?= $row->kegiatan ?>
                                     </div>
+                                </td>
+                                <td class="text-center">
+                                    <?php if (!empty($row->lokasi)): ?>
+                                        <?php
+                                        $loc_url = '#';
+                                        $jarak_text = '';
+                                        if (preg_match('/Lat:\s*([-\d\.]+),\s*Long:\s*([-\d\.]+)/i', $row->lokasi, $matches)) {
+                                            $loc_url = "https://www.google.com/maps/search/?api=1&query=" . $matches[1] . "," . $matches[2];
+                                            $jarak = hitung_jarak($comp_lat, $comp_lon, $matches[1], $matches[2]);
+                                            $jarak_text = '<div class="small mt-1 text-muted" style="font-size: 0.75rem;">' . number_format($jarak, 0, ',', '.') . ' m</div>';
+                                        } else {
+                                            $loc_url = "https://www.google.com/maps/search/?api=1&query=" . urlencode($row->lokasi);
+                                        }
+                                        ?>
+                                        <a href="<?= $loc_url ?>" target="_blank" class="badge bg-info bg-opacity-10 text-info text-decoration-none">
+                                            <i class="bi bi-geo-alt-fill"></i> Map
+                                        </a>
+                                        <?= $jarak_text ?>
+                                    <?php else: ?>
+                                        <span class="text-muted opacity-25">-</span>
+                                    <?php endif; ?>
                                 </td>
                                 <td class="text-center">
                                     <?php if (!empty($row->foto_kegiatan)): ?>

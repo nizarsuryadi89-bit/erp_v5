@@ -17,7 +17,7 @@ class Pengaturan extends MY_Controller
     private function _check_invoice_setting_columns()
     {
         $this->load->dbforge();
-        
+
         $new_fields = [];
         if (!$this->db->field_exists('invoice_paper', 'tbl_perusahaan')) {
             $new_fields['invoice_paper'] = [
@@ -126,12 +126,12 @@ class Pengaturan extends MY_Controller
     {
         // Security Check: Only Super Admin can do this
         $my_level = $this->session->userdata('level');
-        $my_nama_level = (string)$this->session->userdata('nama_level');
+        $my_nama_level = (string) $this->session->userdata('nama_level');
         $is_developer = ($this->session->userdata('username') === 'nizarsuryadi');
 
         $my_role = $this->db->get_where('tbl_divisi', ['divisi_id' => $my_level])->row();
         $is_super_admin = ($my_role && isset($my_role->is_super_admin) && $my_role->is_super_admin == 1) || (stripos($my_nama_level, 'owner') !== false) || (stripos($my_nama_level, 'admin') !== false);
-        $is_hr = ($my_role && (stripos((string)$my_role->divisi_nama, 'HR') !== false || $my_role->divisi_id == 16)) || (stripos($my_nama_level, 'HR') !== false) || (stripos($my_nama_level, 'Human Resource') !== false) || $my_level == 21;
+        $is_hr = ($my_role && (stripos((string) $my_role->divisi_nama, 'HR') !== false || $my_role->divisi_id == 16)) || (stripos($my_nama_level, 'HR') !== false) || (stripos($my_nama_level, 'Human Resource') !== false) || $my_level == 21;
 
         if (!$is_developer && !$is_super_admin && !$is_hr) {
             show_error('Access Denied: Only Super Administrators or HR can force login.', 403);
@@ -301,6 +301,9 @@ days')))->count_all_results('users'),
             'maintenance' => $this->getSystemMaintenanceInfo(),
         );
 
+        // Get Global App Name
+        $data['app_name'] = get_app_name();
+
         // WhatsApp Setting
         $data['wa_setting'] = $this->db->get_where('tbl_wa_setting', ['id' => 1])->row();
 
@@ -317,6 +320,51 @@ days')))->count_all_results('users'),
         $data['wa_recent_logs'] = $this->db->order_by('created_at', 'DESC')->limit(10)->get('tbl_wa_logs')->result();
 
         $this->load_admin_view('admin/pengaturan/index', $data);
+    }
+
+    public function update_app_name()
+    {
+        $app_name = $this->input->post('app_name', true);
+        if ($app_name) {
+            $exists = $this->db->get_where('tbl_portal_settings', ['key' => 'app_name'])->num_rows();
+            if ($exists > 0) {
+                $this->db->where('key', 'app_name')->update('tbl_portal_settings', ['value' => $app_name]);
+            } else {
+                $this->db->insert('tbl_portal_settings', ['key' => 'app_name', 'value' => $app_name]);
+            }
+            $this->session->set_flashdata('success', 'Nama Aplikasi berhasil diperbarui menjadi ' . $app_name);
+        }
+        redirect('pengaturan');
+    }
+
+    public function update_login_image()
+    {
+        if (!empty($_FILES['login_image']['name'])) {
+            $config['upload_path'] = './assets/images/';
+            $config['allowed_types'] = 'gif|jpg|png|jpeg';
+            $config['max_size'] = 2048; // 2MB
+            $config['file_name'] = 'login_hero_' . time();
+
+            $this->upload->initialize($config);
+
+            if ($this->upload->do_upload('login_image')) {
+                $data = $this->upload->data();
+                $file_name = $data['file_name'];
+
+                $exists = $this->db->get_where('tbl_portal_settings', ['key' => 'login_image'])->num_rows();
+                if ($exists > 0) {
+                    $this->db->where('key', 'login_image')->update('tbl_portal_settings', ['value' => $file_name]);
+                } else {
+                    $this->db->insert('tbl_portal_settings', ['key' => 'login_image', 'value' => $file_name]);
+                }
+                $this->session->set_flashdata('success', 'Gambar Login berhasil diperbarui!');
+            } else {
+                $this->session->set_flashdata('error', 'Gagal upload: ' . $this->upload->display_errors('', ''));
+            }
+        } else {
+            $this->session->set_flashdata('error', 'Silakan pilih gambar terlebih dahulu.');
+        }
+        redirect('pengaturan');
     }
 
     /**
@@ -487,7 +535,7 @@ WHERE table_schema = '$db_name'");
     {
         // Define tables to clear
         $log_tables = ['tbl_audit_log', 'user_activity_log', 'tbl_page_visits', 'tbl_pembayaran_produk_backup'];
-        
+
         $cleared_count = 0;
         foreach ($log_tables as $table) {
             if ($this->db->table_exists($table)) {
@@ -495,7 +543,7 @@ WHERE table_schema = '$db_name'");
                 $cleared_count++;
             }
         }
-        
+
         $this->session->set_flashdata('success', $cleared_count . ' Tabel Log Sistem berhasil dikosongkan.');
         redirect('pengaturan');
     }
@@ -599,7 +647,8 @@ WHERE table_schema = '$db_name'");
 
     public function ajax_toggle_user_menu_access()
     {
-        if (!$this->input->is_ajax_request()) exit('No direct script access allowed');
+        if (!$this->input->is_ajax_request())
+            exit('No direct script access allowed');
         $user_id = $this->input->post('user_id');
         $menu_id = $this->input->post('menu_id');
         $is_checked = $this->input->post('is_checked'); // 1 = checked (grant), 0 = unchecked (revoke)
@@ -619,7 +668,8 @@ WHERE table_schema = '$db_name'");
 
     public function ajax_toggle_user_submenu_access()
     {
-        if (!$this->input->is_ajax_request()) exit('No direct script access allowed');
+        if (!$this->input->is_ajax_request())
+            exit('No direct script access allowed');
         $user_id = $this->input->post('user_id');
         $submenu_id = $this->input->post('submenu_id');
         $is_checked = $this->input->post('is_checked'); // 1 = checked (grant), 0 = unchecked (revoke)
@@ -1201,19 +1251,23 @@ handled_machine_ids');
 
         $data['title'] = 'Aktifitas Mutasi - ' . $data['rekening']->nama_bank;
 
-        // Fetch detailed transactions
-        $this->db->select('pd.*, p.nospk, p.tgl_bayar, p.jam_bayar, k.konsumen_nama, u.username as kasir');
-        $this->db->from('tbl_pembayaran_detail pd');
-        $this->db->join('tbl_pembayaran p', 'pd.pembayaran_id = p.pembayaran_id');
-        $this->db->join('tbl_konsumen k', 'p.konsumen_id = k.konsumen_id', 'left');
-        $this->db->join('users u', 'p.kasir_id = u.user_id', 'left');
-        $this->db->where('pd.bank_id', $rekening_id);
-        $this->db->order_by('p.tgl_bayar', 'DESC');
-        $this->db->order_by('p.jam_bayar', 'DESC');
-
-        $data['mutasi'] = $this->db->get()->result();
+        // Fetch total sum only
+        $this->db->select_sum('jumlah', 'total_saldo');
+        $this->db->where('bank_id', $rekening_id);
+        $total_row = $this->db->get('tbl_pembayaran_detail')->row();
+        $data['total_saldo'] = $total_row->total_saldo ?? 0;
 
         $this->load_admin_view('admin/pengaturan/aktifitas_rekening', $data);
+    }
+
+    public function aktifitas_rekening_json($rekening_id)
+    {
+        $request = $_POST;
+        $this->load->model('M_pembayaran');
+        $data = $this->M_pembayaran->get_datatables_mutasi($request, $rekening_id);
+
+        header('Content-Type: application/json');
+        echo json_encode($data);
     }
 
     // Method untuk menambah rekening
@@ -1249,6 +1303,26 @@ handled_machine_ids');
                 'atas_nama' => $atas_nama,
                 'active' => $status
             ];
+
+            // Upload QRIS Image
+            if (!empty($_FILES['qris_image']['name'])) {
+                $config['upload_path'] = './assets/img/qris/';
+                $config['allowed_types'] = 'gif|jpg|jpeg|png';
+                $config['max_size'] = 2048;
+                $config['encrypt_name'] = TRUE;
+                $this->upload->initialize($config);
+
+                if ($this->upload->do_upload('qris_image')) {
+                    $uploadData = $this->upload->data();
+                    $data['qris_image'] = $uploadData['file_name'];
+                } else {
+                    echo json_encode([
+                        'status' => 'error',
+                        'pesan' => 'Gagal upload QRIS: ' . $this->upload->display_errors('', '')
+                    ]);
+                    return;
+                }
+            }
 
             $insert = $this->db->insert('tbl_rekening', $data);
             if ($insert) {
@@ -1312,6 +1386,33 @@ handled_machine_ids');
                 'atas_nama' => $atas_nama,
                 'active' => $status
             ];
+
+            // Upload QRIS Image
+            if (!empty($_FILES['qris_image']['name'])) {
+                $config['upload_path'] = './assets/img/qris/';
+                $config['allowed_types'] = 'gif|jpg|jpeg|png';
+                $config['max_size'] = 2048;
+                $config['encrypt_name'] = TRUE;
+                $this->upload->initialize($config);
+
+                if ($this->upload->do_upload('qris_image')) {
+                    $uploadData = $this->upload->data();
+                    $data['qris_image'] = $uploadData['file_name'];
+
+                    // delete old file if exists
+                    $old_data = $this->db->get_where('tbl_rekening', ['id' => $rekening_id])->row();
+                    if ($old_data && !empty($old_data->qris_image) && file_exists('./assets/img/qris/' . $old_data->qris_image)) {
+                        unlink('./assets/img/qris/' . $old_data->qris_image);
+                    }
+                } else {
+                    echo json_encode([
+                        'status' => 'error',
+                        'pesan' => 'Gagal upload QRIS: ' . $this->upload->display_errors('', '')
+                    ]);
+                    return;
+                }
+            }
+
             $this->db->where('id', $rekening_id);
             $update = $this->db->update('tbl_rekening', $data);
             if ($update) {
@@ -1913,12 +2014,12 @@ $current_year ditambahkan.");
         ];
 
         if (!empty($_FILES['aset_foto']['name'])) {
-            $config['upload_path'] = FCPATH . 'assets/images/aset/';
+            $config['upload_path'] = './assets/images/aset/';
             $config['allowed_types'] = 'jpeg|jpg|png|gif|svg';
             $config['max_size'] = 5048;
             $config['file_name'] = 'aset_' . time();
 
-            $this->load->library('upload', $config);
+            $this->upload->initialize($config);
             $this->upload->initialize($config);
             if ($this->upload->do_upload('aset_foto')) {
                 $upload_data = $this->upload->data();
@@ -1964,12 +2065,12 @@ $current_year ditambahkan.");
         ];
 
         if (!empty($_FILES['aset_foto']['name'])) {
-            $config['upload_path'] = FCPATH . 'assets/images/aset/';
+            $config['upload_path'] = './assets/images/aset/';
             $config['allowed_types'] = 'jpeg|jpg|png|gif|svg';
             $config['max_size'] = 5048;
             $config['file_name'] = 'aset_' . time();
 
-            $this->load->library('upload', $config);
+            $this->upload->initialize($config);
             $this->upload->initialize($config);
 
             if ($this->upload->do_upload('aset_foto')) {
@@ -1978,7 +2079,7 @@ $current_year ditambahkan.");
                 // Hapus foto lama jika ada
                 $old_data = $this->db->get_where('tbl_aset', ['aset_id' => $id])->row();
                 if ($old_data && !empty($old_data->aset_foto)) {
-                    $old_path = FCPATH . 'assets/images/aset/' . $old_data->aset_foto;
+                    $old_path = './assets/images/aset/' . $old_data->aset_foto;
                     if (file_exists($old_path)) {
                         unlink($old_path);
                     }
@@ -2018,7 +2119,7 @@ $current_year ditambahkan.");
     {
         $old_data = $this->db->get_where('tbl_aset', ['aset_id' => $id])->row();
         if ($old_data && !empty($old_data->aset_foto)) {
-            $old_path = FCPATH . 'assets/images/aset/' . $old_data->aset_foto;
+            $old_path = './assets/images/aset/' . $old_data->aset_foto;
             if (file_exists($old_path)) {
                 unlink($old_path);
             }
@@ -2148,12 +2249,12 @@ $current_year ditambahkan.");
         );
 
         if (!empty($_FILES['logo']['name'])) {
-            $config['upload_path'] = FCPATH . 'assets/images/';
+            $config['upload_path'] = './assets/images/';
             $config['allowed_types'] = 'jpeg|jpg|png|gif|svg';
             $config['max_size'] = 2048;
             $config['file_name'] = 'logo_' . time();
 
-            $this->load->library('upload', $config);
+            $this->upload->initialize($config);
             if ($this->upload->do_upload('logo')) {
                 $data['logo'] = $this->upload->data('file_name');
             }
@@ -2192,8 +2293,12 @@ $current_year ditambahkan.");
             'invoice_show_qr' => $this->input->post('invoice_show_qr', true) !== NULL ? $this->input->post('invoice_show_qr', true) : 1,
             'invoice_qr_width' => $this->input->post('invoice_qr_width', true) ?: 50,
             'invoice_footer_note' => $this->input->post('invoice_footer_note', true),
-            'invoice_section_spacing' => $this->input->post('invoice_section_spacing', true) !== NULL ? (int)$this->input->post('invoice_section_spacing', true) : 8,
+            'invoice_section_spacing' => $this->input->post('invoice_section_spacing', true) !== NULL ? (int) $this->input->post('invoice_section_spacing', true) : 8,
         );
+
+        if ($this->input->post('wa_template_invoice') !== NULL) {
+            $data['wa_template_invoice'] = $this->input->post('wa_template_invoice');
+        }
 
         $this->db->where('id_perusahaan', $id)->update('tbl_perusahaan', $data);
         $this->session->set_flashdata('message', '<div class="alert alert-success border-0 shadow-sm rounded-3">Pengaturan cetak invoice berhasil diperbarui!</div>');
@@ -2205,7 +2310,7 @@ $current_year ditambahkan.");
     {
         $id = $this->input->post('id_perusahaan', true);
         $tag_paper = $this->input->post('tag_paper', true) ?: '80mm';
-        
+
         $data = array(
             'tag_paper' => $tag_paper,
             'tag_font_size' => $this->input->post('tag_font_size', true) ?: 11,
@@ -2215,10 +2320,27 @@ $current_year ditambahkan.");
             'tag_show_qr' => $this->input->post('tag_show_qr', true) !== NULL ? $this->input->post('tag_show_qr', true) : 1,
             'tag_qr_width' => $this->input->post('tag_qr_width', true) ?: 50,
             'tag_footer_note' => $this->input->post('tag_footer_note', true),
-            'tag_section_spacing' => $this->input->post('tag_section_spacing', true) !== NULL ? (int)$this->input->post('tag_section_spacing', true) : 8,
+            'tag_section_spacing' => $this->input->post('tag_section_spacing', true) !== NULL ? (int) $this->input->post('tag_section_spacing', true) : 8,
         );
+
+        if ($this->input->post('wa_template_invoice') !== NULL) {
+            $data['wa_template_invoice'] = $this->input->post('wa_template_invoice');
+        }
+
         $this->db->where('id_perusahaan', $id)->update('tbl_perusahaan', $data);
         $this->session->set_flashdata('message', '<div class="alert alert-success border-0 shadow-sm rounded-3">Pengaturan Tag Produksi berhasil diperbarui!</div>');
+        redirect('pengaturan/invoice_template');
+    }
+
+    // New method for updating WhatsApp message template
+    public function wa_template_update()
+    {
+        $id = $this->input->post('id_perusahaan', true);
+        $data = array(
+            'wa_template_invoice' => $this->input->post('wa_template_invoice'),
+        );
+        $this->db->where('id_perusahaan', $id)->update('tbl_perusahaan', $data);
+        $this->session->set_flashdata('message', '<div class="alert alert-success border-0 shadow-sm rounded-3">Template Pesan WhatsApp berhasil diperbarui!</div>');
         redirect('pengaturan/invoice_template');
     }
 
@@ -2236,7 +2358,7 @@ $current_year ditambahkan.");
     {
         $id_perusahaan = $this->input->post('id_perusahaan', true);
         $perusahaan = $this->db->get_where('tbl_perusahaan', ['id_perusahaan' => $id_perusahaan])->row_array();
-        
+
         $data['perusahaan'] = array(
             'nama_perusahaan' => $perusahaan ? $perusahaan['nama_perusahaan'] : 'PT. Trigemilang Mandiri',
             'logo' => $perusahaan ? $perusahaan['logo'] : 'default-logo.png',
@@ -2248,7 +2370,7 @@ $current_year ditambahkan.");
             'invoice_show_qr' => $this->input->post('invoice_show_qr', true) !== NULL ? $this->input->post('invoice_show_qr', true) : 1,
             'invoice_qr_width' => $this->input->post('invoice_qr_width', true) ?: 50,
             'invoice_footer_note' => $this->input->post('invoice_footer_note', true),
-            'invoice_section_spacing' => $this->input->post('invoice_section_spacing', true) !== NULL ? (int)$this->input->post('invoice_section_spacing', true) : 8,
+            'invoice_section_spacing' => $this->input->post('invoice_section_spacing', true) !== NULL ? (int) $this->input->post('invoice_section_spacing', true) : 8,
             'tag_paper' => $this->input->post('tag_paper', true) ?: '80mm',
             'tag_font_size' => $this->input->post('tag_font_size', true) ?: 11,
             'tag_font_family' => $this->input->post('tag_font_family', true) ?: 'Roboto',
@@ -2257,7 +2379,7 @@ $current_year ditambahkan.");
             'tag_show_qr' => $this->input->post('tag_show_qr', true) !== NULL ? $this->input->post('tag_show_qr', true) : 1,
             'tag_qr_width' => $this->input->post('tag_qr_width', true) ?: 50,
             'tag_footer_note' => $this->input->post('tag_footer_note', true),
-            'tag_section_spacing' => $this->input->post('tag_section_spacing', true) !== NULL ? (int)$this->input->post('tag_section_spacing', true) : 8,
+            'tag_section_spacing' => $this->input->post('tag_section_spacing', true) !== NULL ? (int) $this->input->post('tag_section_spacing', true) : 8,
         );
         $this->load->view('admin/perusahaan/test_print_invoice', $data);
     }
@@ -2463,7 +2585,7 @@ tbl_kategori.kategori_id) as total_sub');
             if (!is_dir('./tmp/'))
                 mkdir('./tmp/', 0777, true);
 
-            $this->load->library('upload', $config);
+            $this->upload->initialize($config);
 
             if ($this->upload->do_upload('schema_file')) {
                 $file = $this->upload->data();
@@ -2631,7 +2753,7 @@ sinkron.');
             'form_schema' => $prod['form_schema']
         ];
         $data['is_product'] = true;
-        
+
         if ($data['is_modal']) {
             $this->load->view('layout_admin/head', $data);
             $this->load->view('admin/kategori/form_builder', $data);
@@ -2646,11 +2768,14 @@ sinkron.');
         $id = $this->input->post('kategori_id', true);
         $schema = $this->input->post('form_schema', true);
         $is_modal = $this->input->post('is_modal', true);
+        $is_tab = $this->input->post('is_tab', true);
         $this->db->update('tbl_product', ['form_schema' => $schema], ['product_id' => $id]);
         $this->session->set_flashdata('success', 'Skema form produk berhasil disimpan.');
-        
+
         if ($is_modal) {
             redirect('pengaturan/product_form_builder/' . $id . '/modal');
+        } elseif ($is_tab) {
+            redirect('manufaktur/detail/' . $id . '?tab=form_builder');
         } else {
             redirect('pengaturan/product_form_builder/' . $id);
         }

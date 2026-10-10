@@ -57,6 +57,9 @@
     <div class="section-header">
         <h5><i class="fas fa-boxes"></i> Monitoring Stok Gudang Utama</h5>
         <div class="d-flex gap-2">
+            <button onclick="resetStokGudang()" class="btn btn-sm btn-danger rounded-pill px-3 fw-bold">
+                <i class="fas fa-trash me-1"></i> Reset Stok & Log
+            </button>
             <button onclick="location.reload()" class="btn btn-sm btn-light rounded-pill px-3 fw-bold">
                 <i class="fas fa-sync-alt me-1"></i> Refresh
             </button>
@@ -132,6 +135,23 @@
 </div>
 
 <script>
+    function resetStokGudang() {
+        Swal.fire({
+            title: 'Apakah Anda yakin?',
+            text: "Ini akan mereset semua stok dan log penggunaan pada gudang ini menjadi 0!",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'Ya, Reset!',
+            cancelButtonText: 'Batal'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                window.location.href = "<?= base_url('warehouse/reset_stock_gudang/' . $selected_gudang) ?>";
+            }
+        });
+    }
+
     $(document).ready(function () {
         const critical = <?= $critical ?>;
         const total = <?= count($tampilData) ?>;

@@ -32,6 +32,7 @@
         transition: all 0.2s ease;
     }
 
+    ]\
     .clean-card:hover {
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     }
@@ -222,19 +223,19 @@
     <div class="container-fluid pt-4">
 
         <!-- Minimalist Header -->
-        <div class="d-flex justify-content-between align-items-center mb-5">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-5">
             <div>
                 <h3 class="fw-bold mb-1 text-primary-emphasis">RINGKASAN HR</h3>
                 <p class="text-muted small mb-0 fw-medium"><?= $this->session->userdata('nama_perusahaan') ?> •
                     <?= date('d F Y') ?>
                 </p>
             </div>
-            <div class="d-flex gap-3 align-items-center">
+            <div class="d-flex flex-wrap gap-3 align-items-center">
                 <button type="button" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" data-bs-toggle="modal"
                     data-bs-target="#modalGuideHR">
                     <i class="fas fa-book-open me-2"></i> PANDUAN PENGGUNAAN
                 </button>
-                <div class="text-end border-start ps-3">
+                <div class="text-start text-md-end border-start ps-3">
                     <div class="h4 fw-bold mb-0"><?= date('H:i') ?></div>
                     <div class="small text-muted fw-bold text-uppercase"
                         style="font-size: 0.65rem; letter-spacing: 1px;">Waktu Operasional</div>
@@ -242,11 +243,64 @@
             </div>
         </div>
 
+        <!-- Notifikasi Koreksi Absen -->
+        <?php if (isset($pending_koreksi_count) && $pending_koreksi_count > 0): ?>
+            <div class="alert alert-warning d-flex align-items-center mb-4" role="alert" style="border-radius: 12px; border-left: 5px solid #f59e0b; background-color: #fffbeb;">
+                <i class="bi bi-bell-fill fs-3 text-warning me-3"></i>
+                <div>
+                    <h6 class="fw-bold mb-1" style="color: #b45309;">Ada <?= $pending_koreksi_count ?> Pengajuan Koreksi Absen Baru!</h6>
+                    <p class="mb-0 small" style="color: #92400e;">
+                        Karyawan mengajukan koreksi jam kehadiran. Silakan periksa dan berikan persetujuan. 
+                        <a href="<?= base_url('absensi/koreksi_absen') ?>" class="fw-bold text-decoration-underline" style="color: #b45309;">Lihat Detail &rarr;</a>
+                    </p>
+                </div>
+            </div>
+        <?php endif; ?>
+
+        <!-- Status Kehadiran Hari Ini (Absen/Sakit/Izin) -->
+        <div class="clean-card p-4 mb-5" style="<?= empty($absen_hari_ini) ? 'background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white;' : 'background: linear-gradient(to right, #fffbeb, #ffffff); border-left: 4px solid #f59e0b;' ?> border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);">
+            <?php if (empty($absen_hari_ini)): ?>
+                <div class="d-flex align-items-center gap-3">
+                    <i class="bi bi-check-circle-fill fs-1 text-white"></i>
+                    <div>
+                        <h6 class="fw-bold mb-1 text-white" style="font-size: 1.1rem;">Kehadiran Sempurna!</h6>
+                        <p class="mb-0 text-white-50" style="font-size: 0.85rem;">
+                            Semua rekan kerja tercatat hadir atau belum ada laporan absen/sakit/izin hari ini.
+                        </p>
+                    </div>
+                </div>
+            <?php else: ?>
+                <div class="d-flex align-items-center gap-2 mb-3">
+                    <i class="bi bi-info-circle-fill text-warning fs-5"></i>
+                    <h6 class="fw-bold mb-0 text-dark" style="font-size: 1rem;">Info Tidak Hadir Hari Ini</h6>
+                </div>
+                <div class="row g-3">
+                    <?php foreach ($absen_hari_ini as $u): ?>
+                        <div class="col-md-4 col-lg-3">
+                            <div class="d-flex align-items-center gap-3 p-2 rounded border border-warning-subtle h-100" style="background: white;">
+                                <img src="<?= !empty($u->foto) && file_exists('assets/images/karyawan/' . $u->foto) ? base_url('assets/images/karyawan/' . $u->foto) : base_url('assets/images/karyawan/default.png') ?>" 
+                                     onerror="this.onerror=null; this.src='<?= base_url('assets/images/karyawan/default.png') ?>'" 
+                                     class="rounded-circle shadow-sm" 
+                                     style="width: 42px; height: 42px; object-fit: cover;">
+                                <div class="flex-grow-1" style="min-width: 0;">
+                                    <div class="fw-bold text-dark text-truncate" style="font-size: 0.85rem;"><?= htmlspecialchars($u->nama_lengkap) ?></div>
+                                    <div class="text-muted text-truncate" style="font-size: 0.75rem; font-weight: 600;">
+                                        <span class="text-<?= $u->status == 'Sakit' ? 'danger' : ($u->status == 'Izin' ? 'warning' : 'secondary') ?> text-uppercase"><?= $u->status ?></span>
+                                        <?= !empty($u->keterangan) ? ' - ' . htmlspecialchars($u->keterangan) : '' ?>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+
         <!-- HR Shortcuts: The core of utility -->
         <div class="mb-5">
             <span class="section-label">Shortcut Utama HR</span>
             <div class="row g-3">
-                <div class="col-md-3">
+                <div class="col-12 col-sm-6 col-md-3">
                     <a href="<?= site_url('absensi') ?>" class="hr-shortcut-box">
                         <div class="hr-shortcut-icon text-primary"><i class="fas fa-user-check"></i></div>
                         <div>
@@ -255,7 +309,7 @@
                         </div>
                     </a>
                 </div>
-                <div class="col-md-3">
+                <div class="col-12 col-sm-6 col-md-3">
                     <a href="<?= site_url('absensi/rekap_absen_bulanan') ?>" class="hr-shortcut-box">
                         <div class="hr-shortcut-icon text-indigo" style="color: #6366f1;"><i
                                 class="fas fa-calendar-alt"></i></div>
@@ -265,7 +319,7 @@
                         </div>
                     </a>
                 </div>
-                <div class="col-md-3">
+                <div class="col-12 col-sm-6 col-md-3">
                     <a href="<?= site_url('karyawan/penggajian') ?>" class="hr-shortcut-box">
                         <div class="hr-shortcut-icon text-success"><i class="fas fa-money-check-alt"></i></div>
                         <div>
@@ -274,7 +328,7 @@
                         </div>
                     </a>
                 </div>
-                <div class="col-md-3">
+                <div class="col-12 col-sm-6 col-md-3">
                     <a href="<?= site_url('karyawan') ?>" class="hr-shortcut-box">
                         <div class="hr-shortcut-icon text-info"><i class="fas fa-users-cog"></i></div>
                         <div>
@@ -284,7 +338,7 @@
                     </a>
                 </div>
                 <!-- Row 2 -->
-                <div class="col-md-3">
+                <div class="col-12 col-sm-6 col-md-3">
                     <a href="<?= site_url('karyawan/rekap_lembur') ?>" class="hr-shortcut-box">
                         <div class="hr-shortcut-icon text-warning"><i class="fas fa-history"></i></div>
                         <div>
@@ -293,7 +347,7 @@
                         </div>
                     </a>
                 </div>
-                <div class="col-md-3">
+                <div class="col-12 col-sm-6 col-md-3">
                     <a href="<?= site_url('absensi/approval_cuti') ?>" class="hr-shortcut-box">
                         <div class="hr-shortcut-icon text-rose" style="color: #e11d48;"><i
                                 class="fas fa-umbrella-beach"></i></div>
@@ -303,7 +357,7 @@
                         </div>
                     </a>
                 </div>
-                <div class="col-md-3">
+                <div class="col-12 col-sm-6 col-md-3">
                     <a href="<?= site_url('karyawan/pengaturan_lembur') ?>" class="hr-shortcut-box">
                         <div class="hr-shortcut-icon text-dark"><i class="fas fa-cogs"></i></div>
                         <div>
@@ -312,7 +366,7 @@
                         </div>
                     </a>
                 </div>
-                <div class="col-md-3">
+                <div class="col-12 col-sm-6 col-md-3">
                     <a href="<?= site_url('karyawan/laporan_payroll_bulanan') ?>" class="hr-shortcut-box">
                         <div class="hr-shortcut-icon text-purple" style="color: #a855f7;"><i
                                 class="fas fa-file-invoice-dollar"></i></div>
@@ -322,7 +376,7 @@
                         </div>
                     </a>
                 </div>
-                <div class="col-md-3">
+                <div class="col-12 col-sm-6 col-md-3">
                     <a href="<?= site_url('karyawan/leger_hrd') ?>" class="hr-shortcut-box"
                         style="border: 1px solid #fbbf24; background: #fffbeb;">
                         <div class="hr-shortcut-icon" style="color: #d97706;"><i class="fas fa-star"></i></div>
@@ -332,7 +386,7 @@
                         </div>
                     </a>
                 </div>
-                <div class="col-md-3">
+                <div class="col-12 col-sm-6 col-md-3">
                     <a href="<?= site_url('karyawan/logs') ?>" class="hr-shortcut-box">
                         <div class="hr-shortcut-icon text-secondary"><i class="fas fa-shield-alt"></i></div>
                         <div>
@@ -341,7 +395,7 @@
                         </div>
                     </a>
                 </div>
-                <div class="col-md-3">
+                <div class="col-12 col-sm-6 col-md-3">
                     <a href="<?= site_url('pengaturan/user_account') ?>" class="hr-shortcut-box position-relative">
                         <div class="position-absolute top-0 start-100 translate-middle">
                             <span class="badge rounded-pill bg-danger pulse-blue"
@@ -355,7 +409,7 @@
                         </div>
                     </a>
                 </div>
-                <div class="col-md-3">
+                <div class="col-12 col-sm-6 col-md-3">
                     <a href="<?= site_url('absensi/sisa_cuti') ?>" class="hr-shortcut-box">
                         <div class="hr-shortcut-icon" style="color: #0d9488;"><i class="fas fa-chart-pie"></i></div>
                         <div>
@@ -371,7 +425,7 @@
         <div class="mb-5">
             <span class="section-label">Modul Keuangan </span>
             <div class="row g-3">
-                <div class="col-md-4">
+                <div class="col-12 col-md-4">
                     <div class="clean-card p-4 h-100 border-start border-4 border-success">
                         <span class="stat-badge success mb-3"><i class="fas fa-arrow-down me-1"></i>Pemasukan</span>
                         <div class="d-flex flex-column gap-3">
@@ -392,7 +446,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-4">
+                <div class="col-12 col-md-4">
                     <div class="clean-card p-4 h-100 border-start border-4 border-danger">
                         <span class="stat-badge danger mb-3"><i class="fas fa-arrow-up me-1"></i>Pengeluaran</span>
                         <div class="d-flex flex-column gap-3">
@@ -413,7 +467,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-4">
+                <div class="col-12 col-md-4">
                     <div class="clean-card p-4 h-100 border-start border-4 border-warning d-flex flex-column">
                         <div class="d-flex justify-content-between align-items-center mb-3">
                             <span class="stat-badge warning m-0"><i
@@ -446,7 +500,7 @@
             <span class="section-label">Pusat Persetujuan & Tugas Payroll</span>
             <div class="row g-3">
                 <!-- NEW: Pending Payroll Sync (Integration Alert) -->
-                <div class="col-md-3">
+                <div class="col-12 col-sm-6 col-md-3">
                     <div
                         class="clean-card p-3 d-flex align-items-center justify-content-between h-100 border-start border-4 border-primary">
                         <div class="d-flex align-items-center gap-3">
@@ -472,7 +526,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-3">
+                <div class="col-12 col-sm-6 col-md-3">
                     <div class="clean-card p-3 d-flex align-items-center justify-content-between h-100">
                         <div class="d-flex align-items-center gap-3">
                             <div class="hr-shortcut-icon"
@@ -497,7 +551,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-3">
+                <div class="col-12 col-sm-6 col-md-3">
                     <div class="clean-card p-3 d-flex align-items-center justify-content-between h-100">
                         <div class="d-flex align-items-center gap-3">
                             <div class="hr-shortcut-icon"
@@ -522,7 +576,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-3">
+                <div class="col-12 col-sm-6 col-md-3">
                     <div
                         class="clean-card p-3 d-flex align-items-center justify-content-between h-100 <?= ($pending_kontrak_count > 0) ? 'border-start border-4 border-success pulse-blue' : '' ?>">
                         <div class="d-flex align-items-center gap-3">
@@ -579,17 +633,19 @@
                         }
                     }
                 </style>
-                <div class="d-flex align-items-center gap-3">
-                    <div class="bg-danger text-white rounded-circle d-flex align-items-center justify-content-center"
-                        style="width: 40px; height: 40px;">
-                        <i class="fas fa-exclamation-octagon"></i>
+                <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3">
+                    <div class="d-flex align-items-center gap-3 w-100">
+                        <div class="bg-danger text-white rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+                            style="width: 40px; height: 40px;">
+                            <i class="fas fa-exclamation-octagon"></i>
+                        </div>
+                        <div>
+                            <h6 class="fw-bold mb-1 text-danger">KONTRAK KEDALUWARSA!</h6>
+                            <p class="small mb-0 text-muted">Terdapat <b><?= count($overdue_contracts) ?> karyawan</b> yang masa
+                                kontraknya <b>sudah lewat</b> dan belum ada keputusan perpanjangan.</p>
+                        </div>
                     </div>
-                    <div>
-                        <h6 class="fw-bold mb-1 text-danger">KONTRAK KEDALUWARSA!</h6>
-                        <p class="small mb-0 text-muted">Terdapat <b><?= count($overdue_contracts) ?> karyawan</b> yang masa
-                            kontraknya <b>sudah lewat</b> dan belum ada keputusan perpanjangan.</p>
-                    </div>
-                    <a href="#expiring_contracts_table" class="btn btn-sm btn-danger ms-auto fw-bold"
+                    <a href="#expiring_contracts_table" class="btn btn-sm btn-danger ms-md-auto fw-bold w-100 w-md-auto mt-2 mt-md-0 text-nowrap"
                         onclick="document.getElementById('expiring_contracts_table').scrollIntoView({behavior: 'smooth'})">
                         TINDAK LANJUTI
                     </a>
@@ -600,17 +656,19 @@
         <!-- Late Employees Alert: Dynamic warning -->
         <?php if (!empty($late_employees_today)): ?>
             <div class="clean-card p-3 mb-5 border-warning" style="background: #fffbeb; border-left: 5px solid #f59e0b;">
-                <div class="d-flex align-items-center gap-3">
-                    <div class="bg-warning text-white rounded-circle d-flex align-items-center justify-content-center"
-                        style="width: 40px; height: 40px;">
-                        <i class="fas fa-exclamation-triangle"></i>
+                <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3">
+                    <div class="d-flex align-items-center gap-3 w-100">
+                        <div class="bg-warning text-white rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+                            style="width: 40px; height: 40px;">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div>
+                            <h6 class="fw-bold mb-1 text-warning-emphasis">KARYAWAN KESIANGAN HARI INI</h6>
+                            <p class="small mb-0 text-muted">Terdapat <b><?= count($late_employees_today) ?> karyawan</b> yang
+                                terlambat masuk melebihi batas toleransi 15 menit.</p>
+                        </div>
                     </div>
-                    <div>
-                        <h6 class="fw-bold mb-1 text-warning-emphasis">KARYAWAN KESIANGAN HARI INI</h6>
-                        <p class="small mb-0 text-muted">Terdapat <b><?= count($late_employees_today) ?> karyawan</b> yang
-                            terlambat masuk melebihi batas toleransi 15 menit.</p>
-                    </div>
-                    <button class="btn btn-sm btn-warning ms-auto fw-bold" type="button" data-bs-toggle="collapse"
+                    <button class="btn btn-sm btn-warning ms-md-auto fw-bold w-100 w-md-auto mt-2 mt-md-0 text-nowrap" type="button" data-bs-toggle="collapse"
                         data-bs-target="#lateList">
                         LIHAT DATA
                     </button>
@@ -618,7 +676,7 @@
                 <div class="collapse" id="lateList">
                     <div class="row g-2 mt-3">
                         <?php foreach ($late_employees_today as $le): ?>
-                            <div class="col-md-3">
+                            <div class="col-12 col-sm-6 col-md-3">
                                 <div class="d-flex align-items-center p-2 bg-white rounded border border-warning-subtle">
                                     <img src="<?= $le->foto ? base_url('assets/images/karyawan/' . $le->foto) : base_url('assets/images/user.png') ?>"
                                         class="avatar-sm me-2" alt="">
@@ -638,7 +696,7 @@
 
         <!-- Key Metrics: Clean stats -->
         <div class="row g-4 mb-5">
-            <div class="col-md-3">
+            <div class="col-12 col-sm-6 col-md-3">
                 <div class="clean-card p-4">
                     <span class="stat-badge primary mb-3">Total Karyawan</span>
                     <div class="d-flex justify-content-between align-items-end">
@@ -647,7 +705,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-12 col-sm-6 col-md-3">
                 <div class="clean-card p-4">
                     <span class="stat-badge success mb-3">Hadir Hari Ini</span>
                     <div class="d-flex justify-content-between align-items-end">
@@ -657,7 +715,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-12 col-sm-6 col-md-3">
                 <div class="clean-card p-4">
                     <span class="stat-badge warning mb-3">Izin/Sakit</span>
                     <div class="d-flex justify-content-between align-items-end">
@@ -666,7 +724,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-12 col-sm-6 col-md-3">
                 <div class="clean-card p-4">
                     <span class="stat-badge danger mb-3">Kedisiplinan</span>
                     <div class="d-flex justify-content-between align-items-end">
@@ -680,7 +738,7 @@
 
         <div class="row g-4">
             <!-- Left Column: Talent Stream -->
-            <div class="col-lg-8">
+            <div class="col-12 col-lg-8">
                 <!-- EXPIRING CONTRACTS ALERT -->
                 <?php if (!empty($expiring_contracts)): ?>
                     <div id="expiring_contracts_table" class="clean-card p-4 mb-4 border-danger"
@@ -1002,6 +1060,8 @@
                         </ul>
                     <?php endif; ?>
                 </div>
+
+
 
                 <!-- Live Attendance Feed -->
                 <div class="clean-card p-4">
