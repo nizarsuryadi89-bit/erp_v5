@@ -1,52 +1,30 @@
-name: Deploy to cPanel via FTP
+name: Deploy to Production
 
 on:
   push:
     branches:
-      - production # Proses deploy hanya berjalan jika Anda melakukan push ke branch production
+      - main
 
 jobs:
-  web-deploy:
-    name: 🎉 Deploy
+  deploy:
+    name: Deploy via SSH
     runs-on: ubuntu-latest
+
     steps:
-      - name: 🚚 Get latest code
-        uses: actions/checkout@v4
-      
-      - name: 📂 Sync files
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+      - name: Deploy to Server
+        uses: appleboy/ssh-action@v1.0.3
         with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          # Direktori tujuan di cPanel (kosongkan jika FTP user sudah diarahkan langsung ke public_html/tgm_erp)
-          # server-dir: /public_html/tgm_erp/
-          
-          # Mengecualikan folder dan file agar tidak menghapus atau menimpa yang ada di server
-          exclude: |
-            **/.git*
-            **/.git*/**
-            **/node_modules/**
-            .github/**
-            IMPLEMENTATION_PLAN.md
-            MOBILE_RESPONSIVE_FINAL.md
-            uploads/**
-            error_log
-            .env
-            assets/app-releases/**
-            flutter_example/**
-            portal/**
-            portal.zip
-            *.apk
-            *.zip
-            scratch*
-            vendor/**
-            system/**
-            user_guide/**
-            assets/vendor/**
-            application/logs/**
-            application/cache/**
-            application/tests/**
-            erp/**
-            database/**
-            documentation/**
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            cd /home/tgmprin2/repositories/erp_v5
+            git pull origin main
+            cp -R application /home/tgmprin2/erp.tgmprint.com/
+            cp -R assets /home/tgmprin2/erp.tgmprint.com/
+            cp -R system /home/tgmprin2/erp.tgmprint.com/
+            cp -R vendor /home/tgmprin2/erp.tgmprint.com/
+            cp index.php /home/tgmprin2/erp.tgmprint.com/
+            cp .htaccess /home/tgmprin2/erp.tgmprint.com/
+            echo "✅ Deploy selesai: $(date)"
