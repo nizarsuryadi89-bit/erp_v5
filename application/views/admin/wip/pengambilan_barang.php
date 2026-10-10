@@ -1039,11 +1039,7 @@ ksort($branches);
                                 });
 
                                 let editBtn = '';
-                                // Check if user level is authorized (1, 17, 21)
-                                const userLevel = parseInt('<?= $this->session->userdata("level") ?>');
-                                if ([1, 17, 21].includes(userLevel) && item.last_detail_id) {
-                                    editBtn = `<button class="btn btn-sm btn-outline-primary ms-2 p-1 border-0" style="font-size: 0.7rem;" onclick="editOutputQty(${item.last_detail_id}, ${item.qty_final}, '${nospk}')" title="Koreksi Output"><i class="fas fa-pencil-alt"></i></button>`;
-                                }
+                                // Historical output is displayed without an overwrite action.
 
                                 html += `
                                     <tr class="border-bottom">
@@ -1573,12 +1569,12 @@ ksort($branches);
 
     function reproduceRijek(nospk, konsumen) {
         Swal.fire({
-            title: '<h5 class="fw-900 text-danger mb-0 ls-n1">KEMBALIKAN KE PRODUKSI</h5>',
+            title: '<h5 class="fw-900 text-danger mb-0 ls-n1">AJUKAN PRODUKSI ULANG</h5>',
             html: `
                 <div class="p-3 text-start bg-danger bg-opacity-10 border border-danger border-opacity-25 rounded-4 mb-3">
                     <p class="small fw-bold text-danger mb-0">
-                        <i class="fas fa-exclamation-triangle me-2"></i> PERHATIAN: Tindakan ini akan mengembalikan SPK #${nospk} 
-                        (${konsumen}) ke Antrian Produksi. Seluruh riwayat pengerjaan produksi akan di-reset (kecuali Deskprint, Admin, Kasir).
+                        <i class="fas fa-exclamation-triangle me-2"></i> PERHATIAN: Tindakan ini akan mencatat SPK #${nospk} 
+                        (${konsumen}) sebagai permintaan produksi ulang untuk ditinjau supervisor. Riwayat tahap dan pemakaian bahan tetap tersimpan.
                     </p>
                 </div>
                 <div class="text-start">
@@ -1592,7 +1588,7 @@ ksort($branches);
                 </div>
             `,
             showCancelButton: true,
-            confirmButtonText: 'KEMBALIKAN KE PRODUKSI',
+            confirmButtonText: 'AJUKAN PRODUKSI ULANG',
             cancelButtonText: 'BATAL',
             customClass: {
                 confirmButton: 'btn btn-danger btn-lg px-5 py-3 fw-bold mt-2',
@@ -1617,7 +1613,7 @@ ksort($branches);
         }).then((result) => {
             if (result.isConfirmed) {
                 Swal.fire({ 
-                    title: 'MENGEMBALIKAN KE PRODUKSI...', 
+                    title: 'MENCATAT PERMINTAAN...', 
                     allowOutsideClick: false, 
                     didOpen: () => { Swal.showLoading(); } 
                 });
@@ -1631,11 +1627,11 @@ ksort($branches);
                         if (resp.success) {
                             Swal.fire({
                                 icon: 'success',
-                                title: 'DIKEMBALIKAN KE PRODUKSI',
+                                title: 'DIAJUKAN PRODUKSI ULANG',
                                 html: `<div class="p-4 rounded-4 bg-light">
-                                            <p class="mb-2 fw-bold text-muted">NOMOR SPK YANG DI-RESET:</p>
+                                            <p class="mb-2 fw-bold text-muted">NOMOR SPK REFERENSI:</p>
                                             <h2 class="fw-900 text-danger ls-n1">#${resp.new_nospk}</h2>
-                                            <p class="mt-3 small text-muted">Seluruh status tahap produksi (kecuali pra-cetak) telah dikembalikan ke dalam <b>Antrian Operator</b>.</p>
+                                            <p class="mt-3 small text-muted">Permintaan menunggu peninjauan supervisor. Riwayat dan status tahap produksi tetap dipertahankan.</p>
                                        </div>`,
                                 confirmButtonText: 'TUTUP',
                                 customClass: { confirmButton: 'btn btn-primary rounded-pill px-5' },

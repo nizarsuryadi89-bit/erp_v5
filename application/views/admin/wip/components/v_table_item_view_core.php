@@ -226,7 +226,7 @@
                         $groupStates[$gk]['pending']++;
                         if ($is_auth_active) $groupStates[$gk]['auth_pending']++;
                     }
-                    elseif ($stKey === 'proses') {
+                    elseif (in_array($stKey, ['proses', 'finishing'], true)) {
                         $groupStates[$gk]['proses']++;
                         if ($is_auth_active) $groupStates[$gk]['auth_proses']++;
                     }
@@ -285,7 +285,7 @@
 
                 $st = (string) $item->status_produksi;
                 $stClass = 'bg-info bg-opacity-10 text-info border-info';
-                if ($st === 'proses')
+                if (in_array($st, ['proses', 'finishing'], true))
                     $stClass = 'bg-warning bg-opacity-10 text-warning border-warning';
                 if ($st === 'done')
                     $stClass = 'bg-success bg-opacity-10 text-success border-success';
@@ -860,7 +860,7 @@
                                             <div class="text-muted" style="font-size: 0.6rem;">Deskprint: <span><?= htmlspecialchars($item->deskprint_nama) ?></span></div>
                                         <?php endif; ?>
 
-                                        <?php if ($st === 'proses'): ?>
+                                        <?php if (in_array($st, ['proses', 'finishing'], true)): ?>
                                             <?php if (!empty($item->assigned_user)): ?>
                                                 <div class="text-muted">Dikerjakan Oleh Operator: <span class="fw-bold text-dark"><?= htmlspecialchars($item->assigned_user) ?></span></div>
                                             <?php endif; ?>
@@ -911,7 +911,7 @@
                             $status_text = 'Belum di Proses';
                             $status_class = 'bg-secondary bg-opacity-10 text-secondary border-secondary';
                             
-                            if ($st === 'proses') {
+                            if (in_array($st, ['proses', 'finishing'], true)) {
                                 $status_text = 'Proses Produksi';
                                 $status_class = 'bg-warning bg-opacity-10 text-warning border-warning';
                             } elseif ($st === 'done') {
@@ -929,7 +929,7 @@
                                 style="padding: 6px 12px; font-size: 0.65rem; letter-spacing: 0.5px; min-width: 85px; font-weight: 800;">
                                 <?= strtoupper($status_text) ?>
                             </span>
-                            <?php if ($st === 'proses' && !empty($item->current_step_name)): ?>
+                            <?php if (in_array($st, ['proses', 'finishing'], true) && !empty($item->current_step_name)): ?>
                                 <span class="text-primary fw-900 text-center"
                                     style="font-size: 0.55rem; max-width: 100%; white-space: normal; line-height: 1.1;"><?= strtoupper($item->current_step_name) ?></span>
                                 <?php

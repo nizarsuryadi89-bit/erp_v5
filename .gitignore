@@ -10,6 +10,7 @@ Thumbs.db
 # Environments / Configs
 .env
 .vscode/
+node_modules/
 
 # User Uploads
 uploads/*

@@ -1,3 +1,11 @@
+<script>
+    const WIP_DETAIL_VERSIONS = <?= json_encode(array_reduce($detail_produksi ?? [], function ($versions, $step) {
+        if (!isset($versions[$step->produksi_id]) && !Production_workflow::step_completed($step->status_produksi)) {
+            $versions[$step->produksi_id] = Production_workflow::version($step);
+        }
+        return $versions;
+    }, [])) ?>;
+</script>
 <div class="app-content">
     <div class="container-fluid">
         <!-- Header -->
@@ -424,6 +432,14 @@
                             <input type="number" class="form-control" id="qty_missing" name="qty_missing" value="0" placeholder="0">
                         </div>
 
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Bahan terpakai aktual (satuan dasar)</label>
+                            <input type="number" min="0" step="0.01" class="form-control" name="qty_bahan_pakai" id="stock_usage" placeholder="Pemakaian tambahan" value="0">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Bahan rusak aktual (satuan dasar)</label>
+                            <input type="number" min="0" step="0.01" class="form-control" name="qty_bahan_rusak" id="stock_scrap" value="0">
+                        </div>
                          <div class="col-12"><hr class="my-2 opacity-10"></div>
 
                          <div class="col-md-6">
@@ -548,7 +564,15 @@
                             <input type="number" class="form-control" id="qty_missing_prod" name="qty_missing">
                         </div>
 
-                        <!-- Dimensions (Hidden by default) -->
+                                                <div class="col-md-6">
+                            <label class="form-label small fw-bold">Bahan terpakai aktual (satuan dasar)</label>
+                            <input type="number" min="0" step="0.01" class="form-control" name="qty_bahan_pakai" id="production_usage" placeholder="Pemakaian tambahan" value="0">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Bahan rusak aktual (satuan dasar)</label>
+                            <input type="number" min="0" step="0.01" class="form-control" name="qty_bahan_rusak" id="production_scrap" value="0">
+                        </div>
+<!-- Dimensions (Hidden by default) -->
                         <div class="col-12" id="dimensionsRow" style="display:none;">
                             <div class="row g-3">
                                 <div class="col-md-6">
@@ -708,7 +732,7 @@ function loadStockProductionData(detailId) {
     $.post('<?= site_url("wip/get_production_data") ?>', {detail_produksi_id: detailId}, function(res) {
         if(res.success && res.data) {
             let d = res.data;
-            if(d.qty_output > 0) $('#qty_output').val(d.qty_output);
+            $('#qty_output').val('');
             $('#qty_missing').val(d.qty_missing || 0);
             
             if(parseFloat(d.panjang_output) > 0 || parseFloat(d.lebar_output) > 0) {
@@ -772,7 +796,7 @@ function loadProductionData(detailId) {
         if(res.success && res.data) {
             let d = res.data;
             $('#qty_input').val(d.qty_input || '');
-            if(d.qty_output > 0) $('#qty_output_prod').val(d.qty_output);
+            $('#qty_output_prod').val('');
             $('#qty_missing_prod').val(d.qty_missing || 0);
             
             if(parseFloat(d.panjang_output) > 0 || parseFloat(d.lebar_output) > 0) {
@@ -861,7 +885,7 @@ function submitProductionProcess() {
             $.ajax({
                 url: '<?= site_url("wip/update_production_process") ?>',
                 type: 'POST',
-                data: $('#productionForm').serialize(),
+                data: $('#productionForm').serialize() + '&' + $.param({ expected_versions: WIP_DETAIL_VERSIONS }),
                 dataType: 'json',
                 success: function(res) {
                     if(res.success) {

@@ -750,7 +750,7 @@ class MY_Controller extends CI_Controller
             $captured_data = ['uri' => $this->uri->uri_string()];
 
         // Hilangkan data sensitif dari log (Password dsb)
-        $sensitive_fields = ['password', 'old_password', 'new_password', 'confirm_password', 'pass'];
+        $sensitive_fields = ['password', 'old_password', 'new_password', 'confirm_password', 'pass', 'pin', 'pin_operator', 'operator_pin', 'supervisor_pin', 'pin_produksi', 'wip_qc_csrf'];
         foreach ($sensitive_fields as $field) {
             if (isset($captured_data[$field]))
                 $captured_data[$field] = '********';

@@ -1,0 +1,64 @@
+// Render the real PHP view with fixtures; all network requests are stubbed.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const { execFileSync } = require('node:child_process');
+const { JSDOM } = require('../../node_modules/jsdom');
+const root = require('node:path').resolve(__dirname, '../..');
+const html = execFileSync('/Applications/XAMPP/xamppfiles/bin/php', ['-r', `
+define('FCPATH', getcwd().'/');
+function site_url($p){return '/'.$p;} function base_url($p){return '/'.$p;}
+$qc_status='pending'; $qc_page=1; $qc_search=''; $qc_can_review=true; $qc_enabled=true; $qc_error=''; $qc_csrf='test-csrf';
+$qc_queue=['total'=>1,'rows'=>[(object)['produksi_id'=>5,'qc_id'=>1,'version'=>1,'target_qty'=>2,'status'=>'pending','nospk'=>'TEST-<script>','product_nama'=>'<img src=x>','created_at'=>'2026-10-06 10:00:00','status_produksi'=>'done']]];
+require 'application/views/admin/wip/quality.php';`], { cwd: root, encoding: 'utf8' });
+const dom = new JSDOM(html, { url: 'https://offline.invalid/wip/quality', runScripts: 'outside-only' });
+const w = dom.window, d = w.document;
+w.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+w.HTMLDialogElement.prototype.close = function () { this.open = false; };
+let checks = 0;
+function check(fn) { fn(); checks++; }
+const calls = [];
+let response = { success: false, message: 'Stale QC version' };
+w.fetch = async (url, options = {}) => { calls.push({ url: String(url), options }); return { ok: true, json: async () => response }; };
+w.eval(fs.readFileSync(root + '/assets/js/wip_quality.js', 'utf8'));
+const form = d.getElementById('qc-form');
+const tick = () => new Promise(resolve => setImmediate(resolve));
+const submit = () => { form.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true })); return tick(); };
+(async () => {
+    check(() => assert.equal(d.querySelectorAll('img').length, 0, 'Server view escapes product names'));
+    d.querySelector('.qc-inspect').click();
+    check(() => assert.equal(d.getElementById('qc-dialog').open, true));
+    check(() => assert.equal(form.elements.accepted_qty.value, '2', 'Default inspection covers entire target'));
+    check(() => assert.equal(form.elements.request_reprint.disabled, true, 'No reprint for zero rejects'));
+    check(() => assert.equal(form.elements.wip_qc_csrf.value, 'test-csrf'));
+    form.elements.accepted_qty.value = 1;
+    await submit();
+    check(() => assert.equal(calls.length, 0, 'Incomplete totals are not sent'));
+    form.elements.rejected_qty.value = 1;
+    form.elements.rejected_qty.dispatchEvent(new w.Event('input'));
+    check(() => assert.equal(form.elements.note.required, true));
+    check(() => assert.equal(form.elements.request_reprint.disabled, false));
+    form.elements.note.value = 'Warna tidak sesuai'; form.elements.request_reprint.checked = true;
+    await submit();
+    check(() => assert.equal(calls.length, 1));
+    check(() => assert.equal(calls[0].options.method, 'POST'));
+    const payload = new URLSearchParams(calls[0].options.body.toString());
+    check(() => assert.equal(payload.get('request_reprint'), '1'));
+    check(() => assert.equal(payload.get('wip_qc_csrf'), 'test-csrf'));
+    check(() => assert.match(payload.get('request_key'), /^[a-f0-9]{32}$/));
+    check(() => assert.equal(d.getElementById('qc-form-message').textContent, 'Stale QC version'));
+    check(() => assert.equal(d.getElementById('qc-save').disabled, false));
+    await submit();
+    check(() => assert.equal(new URLSearchParams(calls[1].options.body.toString()).get('request_key'), payload.get('request_key'), 'Retry retains its request key'));
+    form.elements.rejected_qty.value = 0; form.elements.rejected_qty.dispatchEvent(new w.Event('input'));
+    check(() => assert.equal(form.elements.request_reprint.checked, false));
+    d.getElementById('qc-dialog').close();
+    const button = d.querySelector('.qc-inspect'), job = JSON.parse(button.dataset.job); job.status = 'hold'; button.dataset.job = JSON.stringify(job); button.click();
+    check(() => assert.equal(form.elements.note.required, true, 'Reinspection always requires follow-up note'));
+    d.getElementById('qc-dialog').close();
+    response = { success: true, rows: [{ revision: 1, accepted_qty: 1, rejected_qty: 1, decision: 'hold', note: '<img src=x onerror=alert(1)>', request_reprint: 1, inspector_user_id: 9, inspector_name: 'reviewer', inspected_at: '2026-10-06' }] };
+    d.querySelector('.qc-history').click(); await tick();
+    check(() => assert.equal(d.querySelectorAll('#qc-history-content img').length, 0, 'History escapes notes'));
+    check(() => assert.match(d.getElementById('qc-history-content').textContent, /Permintaan reprint: 1/));
+    console.log(`PASS: ${checks} QC DOM checks; HTTP stubbed.`);
+    w.close();
+})().catch(error => { console.error(error); w.close(); process.exitCode = 1; });

@@ -342,9 +342,9 @@
                             </button>
 
                             <?php if ($isReadyToPB): ?>
-                                <a href="<?= site_url('wip/kirim_pb_spk/' . $p->nospk) ?>"
+                                <a href="#"
                                     class="btn btn-warning btn-sm rounded-pill px-3 fw-bold text-dark shadow-sm d-flex align-items-center justify-content-center gap-1"
-                                    onclick="return confirm('Kirim ke PB?')">
+                                    onclick="ProductionApp.sendSPKToPB(<?= htmlspecialchars(json_encode($p->nospk), ENT_QUOTES, 'UTF-8') ?>); return false;">
                                     <i class="fas fa-truck"></i> PB
                                 </a>
                             <?php endif; ?>

@@ -4,6 +4,7 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 class Produksi_model extends CI_Model
 {
 
+
     // Ambil semua data produksi beserta detailnya
     public function get_all_produksi($operator_id = null)
     {
