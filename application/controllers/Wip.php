@@ -112,7 +112,8 @@ class Wip extends MY_Controller
                 $this->db->where('tbl_produksi.status_produksi', 'on_costumer');
             } elseif ($filter_status_view === 'ready_pb') {
                 $this->db->where('tbl_produksi.status_produksi', 'done');
-                if ($this->wip_quality->installed()) $this->db->where("NOT EXISTS (SELECT 1 FROM tbl_wip_qc q WHERE q.produksi_id = tbl_produksi.produksi_id AND q.status <> 'passed')", null, false);
+                if ($this->wip_quality->installed())
+                    $this->db->where("NOT EXISTS (SELECT 1 FROM tbl_wip_qc q WHERE q.produksi_id = tbl_produksi.produksi_id AND q.status <> 'passed')", null, false);
             } elseif ($filter_status_view === 'finishing') {
                 $this->db->group_start();
                 $this->db->where('tbl_produksi.status_produksi', 'finishing');
@@ -506,7 +507,8 @@ class Wip extends MY_Controller
                     }
                 }
                 $step->workflow_version = Production_workflow::version($step);
-                if (Production_workflow::step_completed($step->status_produksi)) $step->status_produksi = '2';
+                if (Production_workflow::step_completed($step->status_produksi))
+                    $step->status_produksi = '2';
                 $steps_map[$step->produksi_id][] = $step;
             }
 
@@ -591,7 +593,7 @@ class Wip extends MY_Controller
                         $item->workflow_step_id = $snapshot_step->detail_produksi_id;
                         $item->workflow_step_status = $snapshot_step->status_produksi;
                         $item->workflow_version = $snapshot_step->workflow_version;
-                    $item->workflow_qty_output = (float) ($snapshot_step->qty_output ?? 0);
+                        $item->workflow_qty_output = (float) ($snapshot_step->qty_output ?? 0);
                         break;
                     }
                 }
@@ -1009,23 +1011,32 @@ class Wip extends MY_Controller
     public function admin_save_item_edit()
     {
         $this->_workflow_response(function () {
-            if (!in_array((int) $this->session->userdata('level'), [1, 17], true)) throw new DomainException('Akses ditolak.');
+            if (!in_array((int) $this->session->userdata('level'), [1, 17], true))
+                throw new DomainException('Akses ditolak.');
             $id = $this->input->post('produksi_id', true);
             $data = $this->input->post(null, true);
             return $this->_workflow_execute([$id], 'report', function ($item, $step, $actor) use ($data) {
-                if (!Production_workflow::pending($item->status_produksi)) throw new DomainException('Spesifikasi pekerjaan berjalan/selesai tidak dapat ditimpa. Ajukan revisi terpisah.');
+                if (!Production_workflow::pending($item->status_produksi))
+                    throw new DomainException('Spesifikasi pekerjaan berjalan/selesai tidak dapat ditimpa. Ajukan revisi terpisah.');
                 foreach ($this->wip_workflow->steps($item) as $history) {
-                    if (!Production_workflow::pending($history->status_produksi) || !empty($history->waktu_mulai)) throw new DomainException('Item sudah memiliki riwayat pengerjaan; penimpaan ditolak.');
+                    if (!Production_workflow::pending($history->status_produksi) || !empty($history->waktu_mulai))
+                        throw new DomainException('Item sudah memiliki riwayat pengerjaan; penimpaan ditolak.');
                 }
                 $updates = [];
-                foreach (['qty', 'panjang', 'lebar'] as $field) $updates[$field] = Production_workflow::number($data[$field] ?? null, $field);
-                if ($updates['qty'] <= 0 || $updates['qty'] != floor($updates['qty'])) throw new DomainException('Qty order harus bilangan bulat positif.');
-                if (!empty($data['product_id']) && (int) $data['product_id'] !== (int) $item->product_id) throw new DomainException('Penggantian produk memerlukan SPK/revisi terpisah.');
-                if (!empty($data['step_updates'])) throw new DomainException('Riwayat operator dan konsumsi bahan tidak dapat ditimpa melalui editor.');
+                foreach (['qty', 'panjang', 'lebar'] as $field)
+                    $updates[$field] = Production_workflow::number($data[$field] ?? null, $field);
+                if ($updates['qty'] <= 0 || $updates['qty'] != floor($updates['qty']))
+                    throw new DomainException('Qty order harus bilangan bulat positif.');
+                if (!empty($data['product_id']) && (int) $data['product_id'] !== (int) $item->product_id)
+                    throw new DomainException('Penggantian produk memerlukan SPK/revisi terpisah.');
+                if (!empty($data['step_updates']))
+                    throw new DomainException('Riwayat operator dan konsumsi bahan tidak dapat ditimpa melalui editor.');
                 $updates['catatan'] = trim(($item->catatan ?? '') . "\n[ADMIN EDIT] " . trim((string) ($data['catatan'] ?? '')));
                 $updates['update_time'] = date('Y-m-d H:i:s');
-                if (!$this->db->where('produksi_id', $item->produksi_id)->update('tbl_produksi', $updates)) throw new RuntimeException('Gagal menyimpan spesifikasi.');
-                if (!$this->db->insert('tbl_produksi_log', ['produksi_id' => $item->produksi_id, 'user_id' => $actor['user_id'], 'status_asal' => $item->status_produksi, 'status_tujuan' => $item->status_produksi, 'catatan' => '[ADMIN EDIT] Spesifikasi sebelum produksi; qty sebelumnya: ' . $item->qty])) throw new RuntimeException('Gagal menyimpan audit.');
+                if (!$this->db->where('produksi_id', $item->produksi_id)->update('tbl_produksi', $updates))
+                    throw new RuntimeException('Gagal menyimpan spesifikasi.');
+                if (!$this->db->insert('tbl_produksi_log', ['produksi_id' => $item->produksi_id, 'user_id' => $actor['user_id'], 'status_asal' => $item->status_produksi, 'status_tujuan' => $item->status_produksi, 'catatan' => '[ADMIN EDIT] Spesifikasi sebelum produksi; qty sebelumnya: ' . $item->qty]))
+                    throw new RuntimeException('Gagal menyimpan audit.');
                 return [];
             });
         });
@@ -1034,7 +1045,8 @@ class Wip extends MY_Controller
     public function batch_status_produksi()
     {
         $this->_workflow_response(function () {
-            if ($this->input->post('status', true) !== 'proses') throw new DomainException('Batch hanya dapat memulai tahap; hasil dan PB memakai aksi terpisah.');
+            if ($this->input->post('status', true) !== 'proses')
+                throw new DomainException('Batch hanya dapat memulai tahap; hasil dan PB memakai aksi terpisah.');
             $data = $this->input->post(null, true);
             return $this->_workflow_execute(Production_workflow::ids($this->input->post('ids', true)), 'start', function ($item, $step) use ($data) {
                 return $this->_workflow_fields($item, $step, $data, false);
@@ -1098,21 +1110,28 @@ class Wip extends MY_Controller
             $lines = $this->input->post('items_rijek', true);
             $type = trim((string) $this->input->post('jenis_masalah', true));
             $reason = trim((string) $this->input->post('keterangan', true));
-            if (!$nospk || !$type || !is_array($lines) || !$lines || !$this->input->post('pin_operator', true)) throw new DomainException('Lengkapi item, jenis masalah, dan PIN operator.');
+            if (!$nospk || !$type || !is_array($lines) || !$lines || !$this->input->post('pin_operator', true))
+                throw new DomainException('Lengkapi item, jenis masalah, dan PIN operator.');
             $quantities = [];
             foreach ($lines as $line) {
                 $id = $line['id'] ?? 0;
-                if (isset($quantities[$id])) throw new DomainException('Item laporan tidak boleh duplikat.');
+                if (isset($quantities[$id]))
+                    throw new DomainException('Item laporan tidak boleh duplikat.');
                 $quantities[$id] = Production_workflow::number($line['qty_rijek'] ?? 0, 'Qty rijek');
             }
             return $this->_workflow_execute(array_keys($quantities), 'report', function ($item, $step, $actor) use ($nospk, $quantities, $type, $reason) {
-                if ($item->nospk !== $nospk) throw new DomainException('Item bukan milik SPK yang dilaporkan.');
+                if ($item->nospk !== $nospk)
+                    throw new DomainException('Item bukan milik SPK yang dilaporkan.');
                 $qty = $quantities[$item->produksi_id];
-                if ($qty <= 0 || $qty > (float) $item->qty) throw new DomainException('Qty rijek harus lebih dari nol dan tidak melebihi order.');
+                if ($qty <= 0 || $qty > (float) $item->qty)
+                    throw new DomainException('Qty rijek harus lebih dari nol dan tidak melebihi order.');
                 $note = '[MASALAH] ' . date('d/m/Y H:i') . ' | Karyawan #' . $actor['employee_id'] . ' | Qty: ' . $qty . ' | Jenis: ' . $type . ' | ' . $reason;
-                if ($this->input->post('is_reprint', true)) $note .= ' | Permintaan reprint; riwayat tahap dipertahankan, menunggu peninjauan supervisor';
-                if (!$this->db->where('produksi_id', $item->produksi_id)->update('tbl_produksi', ['catatan' => trim(($item->catatan ?? '') . "\n" . $note), 'update_time' => date('Y-m-d H:i:s')])) throw new RuntimeException('Gagal menyimpan masalah.');
-                if (!$this->db->insert('tbl_produksi_log', ['produksi_id' => $item->produksi_id, 'user_id' => $actor['user_id'], 'status_asal' => $item->status_produksi, 'status_tujuan' => $item->status_produksi, 'catatan' => $note])) throw new RuntimeException('Gagal menyimpan riwayat masalah.');
+                if ($this->input->post('is_reprint', true))
+                    $note .= ' | Permintaan reprint; riwayat tahap dipertahankan, menunggu peninjauan supervisor';
+                if (!$this->db->where('produksi_id', $item->produksi_id)->update('tbl_produksi', ['catatan' => trim(($item->catatan ?? '') . "\n" . $note), 'update_time' => date('Y-m-d H:i:s')]))
+                    throw new RuntimeException('Gagal menyimpan masalah.');
+                if (!$this->db->insert('tbl_produksi_log', ['produksi_id' => $item->produksi_id, 'user_id' => $actor['user_id'], 'status_asal' => $item->status_produksi, 'status_tujuan' => $item->status_produksi, 'catatan' => $note]))
+                    throw new RuntimeException('Gagal menyimpan riwayat masalah.');
                 return [];
             });
         });
@@ -1406,7 +1425,8 @@ class Wip extends MY_Controller
         echo json_encode(['success' => $this->db->trans_status()]);
     }
 
-
+    private function _deduct_secondary_bom_materials($ids, $outcomes, $primary_material_id)
+    {
         foreach ($ids as $pid) {
             $outcome = $outcomes[$pid] ?? ['status' => 'success'];
             if ($outcome['status'] !== 'success')
@@ -1574,7 +1594,10 @@ class Wip extends MY_Controller
         $produksi_id = $this->input->post('produksi_id', true);
         try {
             $this->wip_workflow->assert_access($data['produksi'], $this->wip_workflow->actor(null, $this->get_operator_id_for_current_user()));
-        } catch (DomainException $e) { show_error($e->getMessage(), 403); return; }
+        } catch (DomainException $e) {
+            show_error($e->getMessage(), 403);
+            return;
+        }
         $operator_id = $this->get_operator_id_for_current_user();
 
         $data['detail_produksi'] = $this->Produksi_model->get_detail_produksi_by_id($produksi_id, $operator_id);
@@ -1866,32 +1889,10 @@ class Wip extends MY_Controller
 
     public function batch_move_to_pb()
     {
-        $this->_workflow_response(function () { return $this->_workflow_execute(Production_workflow::ids($this->input->post('ids', true)), 'handover'); });
+        $this->_workflow_response(function () {
+            return $this->_workflow_execute(Production_workflow::ids($this->input->post('ids', true)), 'handover'); });
     }
 
-    public function ajax_get_log()
-    {
-        $produksi_id = $this->input->post('produksi_id', true);
-        if (empty($produksi_id)) {
-            echo json_encode(['success' => false, 'data' => []]);
-            return;
-        }
-
-        // Ambil data session
-        $perusahaan = $this->session->userdata('perusahaan_id');
-        $level = $this->session->userdata('level');
-        $user_id = $this->session->userdata('id_user') ?? $this->session->userdata('id') ?? 1;
-
-        $success_count = 0;
-        foreach ($ids as $id) {
-            $res = $this->Produksi_model->set_status_pb($id, $perusahaan, $level, $user_id, true);
-            if ($res['success']) {
-                $success_count++;
-            }
-        }
-
-        echo json_encode(['success' => ($success_count > 0)]);
-    }
 
     public function ajax_get_log()
     {
@@ -2408,8 +2409,10 @@ class Wip extends MY_Controller
 
             // Conversion factor (e.g., 500 if 1 RIM = 500 Sheets)
             $konversi = (float) $material_info->konversi;
-            if ($konversi == 0) $konversi = 1; // Preserve the legacy default without changing material data.
-            if ($konversi < 0) throw new DomainException('Konversi satuan material tidak valid.');
+            if ($konversi == 0)
+                $konversi = 1; // Preserve the legacy default without changing material data.
+            if ($konversi < 0)
+                throw new DomainException('Konversi satuan material tidak valid.');
 
             // Calculate reduction in Warehouse Unit (Satuan Gudang)
             // If production uses 50 sheets and conversion is 500, deduction is 50/500 = 0.1 RIM
@@ -2421,7 +2424,8 @@ class Wip extends MY_Controller
 
             // Gudang taken from: 1. $lokasi_proses, 2. $produksi->lokasi_cetak, 3. $produksi->perusahaan_id, 4. fallback 1
             $gudang_id = $lokasi_proses ?: (($produksi->lokasi_cetak ?? 0) ?: ($produksi->perusahaan_id ?? 0));
-            if (!$gudang_id) throw new DomainException('Lokasi gudang produksi belum ditentukan.');
+            if (!$gudang_id)
+                throw new DomainException('Lokasi gudang produksi belum ditentukan.');
 
             // 2. USE STOCK ENGINE (BEST PRACTICE)
             $nospk = $produksi->nospk;
@@ -2598,7 +2602,10 @@ class Wip extends MY_Controller
             $item->total_steps = count($routing);
             $item->done_steps = 0;
             foreach ($routing as $route_step) {
-                if (Production_workflow::step_completed($route_step->status_produksi)) { $item->done_steps++; continue; }
+                if (Production_workflow::step_completed($route_step->status_produksi)) {
+                    $item->done_steps++;
+                    continue;
+                }
                 if (!isset($item->workflow_step_id)) {
                     $item->workflow_step_id = $route_step->detail_produksi_id;
                     $item->workflow_version = $route_step->workflow_version;
@@ -2643,8 +2650,7 @@ class Wip extends MY_Controller
         // Allow Super Admin / Manager
         if (in_array((int) $level, [1, 17], true)) {
             $can_access = true;
-        }
-        else {
+        } else {
             // Standard Branch Check
             if ($produksi->lokasi_cetak == $perusahaan) {
                 $can_access = true;
@@ -2686,15 +2692,19 @@ class Wip extends MY_Controller
         $this->_workflow_response(function () {
             $id = $this->input->post('produksi_id', true);
             return $this->_workflow_execute([$id], 'report', function ($item, $step, $actor) {
-                if (!Production_workflow::pending($item->status_produksi)) throw new DomainException('Ukuran pekerjaan yang telah dimulai tidak dapat ditimpa.');
+                if (!Production_workflow::pending($item->status_produksi))
+                    throw new DomainException('Ukuran pekerjaan yang telah dimulai tidak dapat ditimpa.');
                 foreach ($this->wip_workflow->steps($item) as $history) {
-                    if (!empty($history->waktu_mulai)) throw new DomainException('Item memiliki riwayat pengerjaan; ukuran tidak dapat ditimpa.');
+                    if (!empty($history->waktu_mulai))
+                        throw new DomainException('Item memiliki riwayat pengerjaan; ukuran tidak dapat ditimpa.');
                 }
                 $meta = json_decode($item->metadata ?? '', true);
-                if (!is_array($meta)) $meta = [];
+                if (!is_array($meta))
+                    $meta = [];
                 $meta['panjang'] = Production_workflow::number($this->input->post('panjang', true), 'Panjang');
                 $meta['lebar'] = Production_workflow::number($this->input->post('lebar', true), 'Lebar');
-                if (!$this->db->where('produksi_id', $item->produksi_id)->update('tbl_produksi', ['metadata' => json_encode($meta)])) throw new RuntimeException('Gagal menyimpan ukuran.');
+                if (!$this->db->where('produksi_id', $item->produksi_id)->update('tbl_produksi', ['metadata' => json_encode($meta)]))
+                    throw new RuntimeException('Gagal menyimpan ukuran.');
                 return [];
             });
         });
@@ -2876,14 +2886,19 @@ class Wip extends MY_Controller
     {
         $this->_workflow_response(function () {
             $cat = (int) $this->input->post('cat_id', true);
-            if (!$cat || !$this->input->post('pin_operator', true)) throw new DomainException('Kategori dan PIN wajib diisi.');
+            if (!$cat || !$this->input->post('pin_operator', true))
+                throw new DomainException('Kategori dan PIN wajib diisi.');
             $branch = (int) $this->session->userdata('perusahaan_id');
             $admin = in_array((int) $this->session->userdata('level'), [1, 17], true);
             $this->db->select('p.produksi_id')->from('tbl_produksi p')->join('tbl_product pr', 'pr.product_id = p.product_id')->where('p.status_produksi', 'done');
-            if ($this->wip_quality->installed()) $this->db->where("NOT EXISTS (SELECT 1 FROM tbl_wip_qc q WHERE q.produksi_id = p.produksi_id AND q.status <> 'passed')", null, false);
-            if (in_array($cat, [2, 5, 8, 9], true)) $this->db->where('pr.kategori_id', $cat);
-            else $this->db->where_not_in('pr.kategori_id', [2, 5, 8, 9]);
-            if (!$admin) $this->db->where('COALESCE(NULLIF(p.lokasi_cetak, 0), p.perusahaan_id) =', $branch, false);
+            if ($this->wip_quality->installed())
+                $this->db->where("NOT EXISTS (SELECT 1 FROM tbl_wip_qc q WHERE q.produksi_id = p.produksi_id AND q.status <> 'passed')", null, false);
+            if (in_array($cat, [2, 5, 8, 9], true))
+                $this->db->where('pr.kategori_id', $cat);
+            else
+                $this->db->where_not_in('pr.kategori_id', [2, 5, 8, 9]);
+            if (!$admin)
+                $this->db->where('COALESCE(NULLIF(p.lokasi_cetak, 0), p.perusahaan_id) =', $branch, false);
             $ids = array_column($this->db->order_by('p.produksi_id')->limit(500)->get()->result_array(), 'produksi_id');
             return $this->_workflow_execute($ids, 'handover');
         });
@@ -3068,11 +3083,12 @@ class Wip extends MY_Controller
                 $snapshot_step->workflow_version = Production_workflow::version($snapshot_step);
                 if (!isset($item->workflow_step_id) && !Production_workflow::step_completed($snapshot_step->status_produksi)) {
                     $item->workflow_step_id = $snapshot_step->detail_produksi_id;
-                        $item->workflow_step_status = $snapshot_step->status_produksi;
+                    $item->workflow_step_status = $snapshot_step->status_produksi;
                     $item->workflow_version = $snapshot_step->workflow_version;
                     $item->workflow_qty_output = (float) ($snapshot_step->qty_output ?? 0);
                 }
-                if (Production_workflow::step_completed($snapshot_step->status_produksi)) $snapshot_step->status_produksi = '2';
+                if (Production_workflow::step_completed($snapshot_step->status_produksi))
+                    $snapshot_step->status_produksi = '2';
             }
         }
         $data['items'] = $items;
@@ -3490,8 +3506,10 @@ class Wip extends MY_Controller
             }
         } catch (DomainException $e) {
             return $this->output->set_content_type('application/json')->set_output(json_encode([
-                'machines' => [], 'is_mandatory' => $is_mandatory,
-                'message' => $e->getMessage(), 'user_mesin_ids' => []
+                'machines' => [],
+                'is_mandatory' => $is_mandatory,
+                'message' => $e->getMessage(),
+                'user_mesin_ids' => []
             ]));
         }
         $machines = $this->db->select('mesin_id, mesin_nama, kategori, mesin_keterangan, perusahaan_id')
@@ -3750,7 +3768,12 @@ class Wip extends MY_Controller
         echo json_encode(['success' => ($this->db->trans_status() !== FALSE)]);
     }
 
+    private function update_warehouse_stock_lf($produksi_id, $detail_id, $material_id, $stock_reduction)
+    {
+        if ($stock_reduction <= 0)
+            return false;
 
+        $mat = $this->db->get_where('tbl_material', ['material_id' => $material_id])->row();
         if (!$mat)
             return false;
 

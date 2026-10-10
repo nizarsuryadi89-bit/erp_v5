@@ -1,0 +1,17 @@
+{
+  "name": "tgm-erp-mcp",
+  "version": "1.0.0",
+  "description": "MCP Server for TGM ERP via Node.js",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.1",
+    "express": "^4.21.1",
+    "cors": "^2.8.5",
+    "mysql2": "^3.11.3",
+    "dotenv": "^16.4.5"
+  }
+}
