@@ -42,3 +42,10 @@ ci_test.php
 db_test.php
 flutter_example/
 portal/
+
+# Large Assets
+assets/app-releases/
+assets/qrcode/
+assets/images/karyawan/profile_*
+assets/images/karyawan/karyawan_*
+assets/uploads/
