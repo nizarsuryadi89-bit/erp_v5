@@ -407,7 +407,7 @@
                                             
                                             if ($key_lower === 'jenisprint') $label = 'Mesin';
                                             
-                                            if ($key_lower == 'sisi') {
+                                            if ($key_lower == 'sisi' && !$is_in_schema) { // Legacy: skip if schema handles it
                                                 if (isset($item->kategori_id) && in_array($item->kategori_id, [2, 9]) || strtolower($item->kategori_nama ?? '') == 'large format') {
                                                     continue;
                                                 }

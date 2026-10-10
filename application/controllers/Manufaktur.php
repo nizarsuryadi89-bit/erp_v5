@@ -854,7 +854,7 @@ class Manufaktur extends MY_Controller
                         } elseif ($name === 'side_id') {
                             $schemaThirdOptions = $field['options'];
                             $key_dim3 = 'side_id';
-                        } elseif ($name === 'ket_1' || strpos($labelLower, 'varian') !== false) {
+                        } elseif ($name === 'ket_1' || $name === 'sisi' || strpos($labelLower, 'varian') !== false || strpos($labelLower, 'sisi') !== false) {
                             $schemaSideOptions = $field['options'];
                             $key_dim1 = 'ket_1';
                         } else {

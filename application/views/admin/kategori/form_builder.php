@@ -305,106 +305,110 @@
 
 <!-- FIELD TEMPLATE (VIRTUAL) -->
 <div id="field-template" class="d-none">
-    <div class="field-item card border-0 shadow-sm mb-0 position-relative animate__animated animate__fadeIn">
-        <div class="card-body p-3">
-            <div class="d-flex align-items-center justify-content-between mb-2 pb-2 border-bottom border-light">
-                <div class="d-flex align-items-center gap-2 drag-handle" style="cursor: move;">
-                    <i class="fas fa-grip-vertical text-muted opacity-25"></i>
-                    <span class="badge bg-primary bg-opacity-10 text-primary rounded-pill px-2 py-1"
-                        style="font-size: 0.6rem;">FIELD ITEM</span>
-                </div>
-                <button type="button"
-                    class="btn btn-sm text-danger btn-light rounded-circle p-0 d-flex align-items-center justify-content-center"
-                    style="width: 24px; height: 24px;" onclick="removeField(this)" title="Hapus Field">
-                    <i class="fas fa-times"></i>
-                </button>
+    <div class="field-item card border shadow-sm mb-0 position-relative animate__animated animate__fadeIn" style="border-radius: 8px; border-color: #e2e8f0 !important;">
+        <!-- Card Header -->
+        <div class="card-header d-flex align-items-center justify-content-between py-2 px-3 drag-handle bg-white" style="cursor: move; border-radius: 8px 8px 0 0; border-bottom: 1px solid #e9ecef;">
+            <div class="d-flex align-items-center gap-2">
+                <i class="fas fa-grip-vertical text-muted" style="opacity: 0.3; font-size: 0.9rem;"></i>
+                <span class="badge bg-primary rounded-2 px-2 py-1 field-number-badge" style="font-size: 0.65rem; letter-spacing: 0.5px;">FIELD 1</span>
             </div>
+            <button type="button"
+                class="btn btn-sm btn-outline-danger rounded-2 px-2 py-0 d-flex align-items-center gap-1"
+                style="font-size: 0.7rem; height: 24px;" onclick="removeField(this)" title="Hapus Field">
+                <i class="fas fa-times" style="font-size: 0.65rem;"></i> Hapus
+            </button>
+        </div>
 
-            <div class="row g-3">
+        <!-- Card Body -->
+        <div class="card-body p-3">
+            <div class="row g-2">
+                <!-- Label & Variable ID on same row -->
                 <div class="col-8">
-                    <label class="small fw-bold text-muted mb-1" style="font-size: 0.7rem;">LABEL INPUT</label>
+                    <label class="small fw-semibold text-muted mb-1" style="font-size: 0.68rem; letter-spacing: 0.5px;">LABEL TAMPILAN</label>
                     <input type="text"
-                        class="form-control form-control-sm rounded-3 fw-bold field-label border-0 bg-light"
+                        class="form-control form-control-sm rounded-2 field-label"
                         placeholder="Contoh: Jenis Kertas" onkeyup="autoSlug(this); syncToJson()">
                 </div>
                 <div class="col-4">
-                    <label class="small fw-bold text-muted mb-1" style="font-size: 0.7rem;">VARIABLE ID</label>
-                    <input type="text"
-                        class="form-control form-control-sm rounded-3 fw-bold field-name text-primary font-monospace border-0 bg-light"
-                        placeholder="Contoh: jenis_bahan" onkeyup="validateId(this)" onchange="this.dataset.manual='true'">
+                    <label class="small fw-semibold text-muted mb-1" style="font-size: 0.68rem; letter-spacing: 0.5px;">VARIABLE ID</label>
+                    <input type="text" list="standard-variables"
+                        class="form-control form-control-sm rounded-2 field-name text-primary font-monospace"
+                        style="font-size: 0.8rem;"
+                        placeholder="jenis_bahan" onkeyup="validateId(this)" onchange="this.dataset.manual='true'; syncToJson();">
+                    <datalist id="standard-variables">
+                        <option value="sisi">Pilihan Sisi</option>
+                        <option value="mesin">Mesin Print</option>
+                        <option value="bahan">Bahan / Material</option>
+                        <option value="ukuran">Ukuran</option>
+                        <option value="finishing">Finishing</option>
+                        <option value="laminasi">Laminasi</option>
+                        <option value="keterangan">Keterangan</option>
+                    </datalist>
                 </div>
+
+                <!-- Tipe Input -->
                 <div class="col-12">
-                    <label class="small fw-bold text-muted mb-1" style="font-size: 0.7rem;">TIPE INPUT</label>
-                    <div class="input-group input-group-sm">
-                        <span class="input-group-text bg-white border-0"><i
-                                class="fas fa-sliders-h text-muted"></i></span>
-                        <select class="form-select form-select-sm rounded-end-3 fw-bold field-type border-0 bg-light"
-                            onchange="syncToJson()">
-                            <option value="text">Text Pendek (String)</option>
-                            <option value="textarea">Textarea (Keterangan)</option>
-                            <option value="number">Angka (Numeric)</option>
-                            <option value="select">Pilihan (Dropdown)</option>
-                            <option value="dimensions">Dimensi (P x L)</option>
-                            <option value="meter_lari">Meter Lari (Panjang Saja)</option>
-                            <option value="hidden">Hidden Input (Nilai Tetap)</option>
-                            <option value="date">Tanggal (Date Picker)</option>
-                            <option value="time">Waktu (Time Picker)</option>
-                            <option value="checkbox">Toggle (On/Off Switch)</option>
-                        </select>
-                    </div>
+                    <label class="small fw-semibold text-muted mb-1" style="font-size: 0.68rem; letter-spacing: 0.5px;">TIPE INPUT</label>
+                    <select class="form-select form-select-sm rounded-2 field-type" onchange="syncToJson()" style="font-size: 0.83rem;">
+                        <option value="text">📝 Text Pendek</option>
+                        <option value="textarea">📄 Textarea (Keterangan)</option>
+                        <option value="number">🔢 Angka (Numeric)</option>
+                        <option value="select">📋 Pilihan Dropdown</option>
+                        <option value="dimensions">📐 Dimensi (P × L)</option>
+                        <option value="meter_lari">📏 Meter Lari</option>
+                        <option value="hidden">🔒 Hidden (Nilai Tetap)</option>
+                        <option value="date">📅 Tanggal</option>
+                        <option value="time">⏰ Waktu</option>
+                        <option value="checkbox">🔘 Toggle On/Off</option>
+                    </select>
                 </div>
             </div>
 
             <!-- HIDDEN VALUE -->
-            <div
-                class="hidden-container mt-3 p-3 bg-secondary bg-opacity-10 rounded-3 d-none border border-secondary border-opacity-25">
-                <label class="small fw-bold text-dark mb-1" style="font-size: 0.7rem;">NILAI TETAP (VALUE)</label>
-                <input type="text" class="form-control form-control-sm rounded-3 fw-bold field-value border-0 bg-white"
+            <div class="hidden-container mt-3 p-3 rounded-2 border-start border-4 border-secondary d-none" style="background: #f8f9fa;">
+                <label class="small fw-semibold text-secondary mb-1" style="font-size: 0.68rem; letter-spacing: 0.5px;"><i class="fas fa-lock me-1"></i>NILAI TETAP (VALUE)</label>
+                <input type="text" class="form-control form-control-sm rounded-2 field-value"
                     placeholder="Masukkan nilai hidden..." onkeyup="syncToJson()">
             </div>
 
             <!-- METER LARI EXTRA -->
-            <div
-                class="meter-lari-container mt-3 p-3 bg-success bg-opacity-10 rounded-3 d-none border border-success border-opacity-25">
-                <label class="small fw-bold text-dark mb-1" style="font-size: 0.7rem;">LEBAR TETAP (FIXED WIDTH)</label>
+            <div class="meter-lari-container mt-3 p-3 rounded-2 border-start border-4 border-success d-none" style="background: #f0fdf4;">
+                <label class="small fw-semibold text-success mb-1" style="font-size: 0.68rem; letter-spacing: 0.5px;"><i class="fas fa-ruler me-1"></i>LEBAR TETAP</label>
                 <div class="input-group input-group-sm">
-                    <input type="number" class="form-control rounded-3 fw-bold field-fixed-width border-0 bg-white"
+                    <input type="number" class="form-control rounded-2 field-fixed-width"
                         placeholder="Contoh: 0.60" step="0.01" onkeyup="syncToJson()">
-                    <span class="input-group-text bg-transparent border-0 small fw-bold text-success">Meter</span>
+                    <span class="input-group-text bg-white text-success fw-bold border-start-0">Meter</span>
                 </div>
-                <div class="form-text small mt-1" style="font-size: 0.65rem;">Lebar ini akan otomatis terisi secara
-                    hidden saat tipe ini dipilih.</div>
+                <div class="form-text mt-1" style="font-size: 0.65rem;">Lebar ini otomatis terisi secara hidden.</div>
             </div>
 
             <!-- SELECT OPTIONS -->
-            <div
-                class="options-container mt-3 p-3 bg-warning bg-opacity-10 rounded-3 d-none border border-warning border-opacity-25">
-                <label class="small fw-bold text-dark mb-1 text-uppercase d-flex align-items-center">
-                    <i class="fas fa-list-ul me-2 text-warning"></i> Opsi Dropdown
+            <div class="options-container mt-3 p-3 rounded-2 border-start border-4 border-warning d-none" style="background: #fffbeb;">
+                <label class="small fw-semibold text-warning-emphasis mb-2 d-flex align-items-center gap-1" style="font-size: 0.68rem; letter-spacing: 0.5px;">
+                    <i class="fas fa-list-ul text-warning"></i> OPSI DROPDOWN
                 </label>
                 <input type="text"
-                    class="form-control form-control-sm rounded-3 fw-bold field-options border-0 bg-white"
-                    placeholder="key:Value, key2:Value2" onkeyup="syncToJson()">
-                <div class="d-flex justify-content-between mt-1">
-                    <span class="form-text small mb-0 fst-italic" style="font-size: 0.7rem;">Format:
-                        <code>value:Label</code>, pisahkan dengan koma.</span>
+                    class="form-control form-control-sm rounded-2 field-options"
+                    placeholder="1:Label Satu, 2:Label Dua, 3:Label Tiga" onkeyup="syncToJson()">
+                <div class="mt-2">
+                    <span class="text-muted fst-italic" style="font-size: 0.7rem;">Format: <code class="px-1 rounded bg-white border">value:Label</code>, pisahkan dengan koma.</span>
                 </div>
             </div>
 
             <!-- NUMBER EXTRA -->
-            <div
-                class="number-container mt-3 p-3 bg-info bg-opacity-10 rounded-3 d-none border border-info border-opacity-25">
+            <div class="number-container mt-3 p-3 rounded-2 border-start border-4 border-info d-none" style="background: #eff6ff;">
+                <label class="small fw-semibold text-info-emphasis mb-2" style="font-size: 0.68rem; letter-spacing: 0.5px;"><i class="fas fa-ruler-horizontal me-1 text-info"></i>KONFIGURASI ANGKA</label>
                 <div class="row g-2">
                     <div class="col-6">
-                        <label class="small fw-bold text-dark mb-1" style="font-size: 0.7rem;">SATUAN</label>
+                        <label class="small text-muted mb-1" style="font-size: 0.68rem;">Satuan</label>
                         <input type="text"
-                            class="form-control form-control-sm rounded-3 fw-bold field-unit border-0 bg-white"
-                            placeholder="cm, kg..." onkeyup="syncToJson()">
+                            class="form-control form-control-sm rounded-2 field-unit"
+                            placeholder="cm, kg, pcs..." onkeyup="syncToJson()">
                     </div>
                     <div class="col-6">
-                        <label class="small fw-bold text-dark mb-1" style="font-size: 0.7rem;">STEP</label>
+                        <label class="small text-muted mb-1" style="font-size: 0.68rem;">Step / Kelipatan</label>
                         <input type="text"
-                            class="form-control form-control-sm rounded-3 fw-bold field-step border-0 bg-white"
+                            class="form-control form-control-sm rounded-2 field-step"
                             placeholder="1" onkeyup="syncToJson()">
                     </div>
                 </div>

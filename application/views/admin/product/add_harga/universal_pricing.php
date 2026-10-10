@@ -119,7 +119,7 @@
                 $labelThird = $dim['label'];
                 $schemaThirdOptions = $dim['options'];
                 $dim['name'] = 'side_id';
-            } elseif ($name === 'ket_1' || strpos($labelLower, 'varian') !== false) {
+            } elseif ($name === 'ket_1' || $name === 'sisi' || strpos($labelLower, 'varian') !== false || strpos($labelLower, 'sisi') !== false) {
                 $showSide = true;
                 $labelSide = $dim['label'];
                 $schemaSideOptions = $dim['options'];

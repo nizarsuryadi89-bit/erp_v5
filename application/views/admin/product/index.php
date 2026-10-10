@@ -33,7 +33,16 @@ $buildPageUrl = function ($pageNumber) use ($pagination_base_params) {
         <!-- Search Bar -->
         <div class="input-group" style="max-width: 450px;">
             <input type="text" class="form-control bg-light border-end-0 border-secondary" id="searchInput" placeholder="Search product name..." value="<?= $this->input->get('q') ?>" style="border-radius: 4px 0 0 4px; box-shadow: none;">
-            <span class="input-group-text bg-light border-secondary border-start-0" style="border-radius: 0 4px 4px 0; cursor: pointer;">
+            
+            <?php if(!empty($this->input->get('q')) || !empty($this->input->get('kategori'))): ?>
+            <span class="input-group-text bg-light border-secondary border-start-0 border-end-0 px-2" style="cursor: pointer;"
+                onclick="document.getElementById('searchInput').value=''; document.getElementById('filterKategori').value=''; filterTable();"
+                title="Kosongkan Pencarian & Kategori">
+                <i class="bi bi-x-circle text-danger"></i>
+            </span>
+            <?php endif; ?>
+            
+            <span class="input-group-text bg-light border-secondary border-start-0" style="border-radius: 0 4px 4px 0; cursor: pointer;" onclick="filterTable()">
                 <i class="bi bi-search text-muted"></i>
             </span>
         </div>

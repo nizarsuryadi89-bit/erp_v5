@@ -574,7 +574,7 @@
                     if (newBanners !== undefined) $('.animate__fadeInDown').html(newBanners);
                 }
             });
-        }, REFRESH_TIME);
+        }, 15000); // 15 detik
     }
     $(document).ready(startAutoRefresh);
 </script>

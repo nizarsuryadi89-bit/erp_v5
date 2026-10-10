@@ -10,7 +10,7 @@ class Wip_quality_model extends CI_Model
     public function __construct()
     {
         parent::__construct();
-        $this->config->load('wip_quality', true);
+        $this->config->load('wip_quality', true, true);
         $this->settings = $this->config->item('wip_quality');
     }
 

@@ -406,15 +406,6 @@ $print_time = date('d/m/Y H:i');
                     $combined_meta['ket_3'] = $item_detail->ket_3;
                 }
                 
-                if (isset($item_detail->kategori_id) && $item_detail->kategori_id == 1) {
-                    if (empty($combined_meta['ket_1'])) {
-                        if (!empty($ijp)) {
-                            $combined_meta['ket_1'] = $ijp;
-                        } elseif (!empty($combined_meta['jenisprint_id'])) {
-                            $combined_meta['ket_1'] = $combined_meta['jenisprint_id'];
-                        }
-                    }
-                }
 
                 if (empty($combined_meta['sisi'])) {
                     $jp = !empty($ijp) ? $ijp : (!empty($combined_meta['jenisprint_id']) ? $combined_meta['jenisprint_id'] : null);
@@ -489,7 +480,7 @@ $print_time = date('d/m/Y H:i');
                         continue;
                     }
 
-                    if ($key_lower == 'sisi') {
+                    if ($key_lower == 'sisi' && !$is_in_schema) { // Legacy: skip if schema handles it
                         if (in_array($item_detail->kategori_id, [2, 9]) || strtolower($item_detail->kategori_nama ?? '') == 'large format') {
                             continue;
                         }
@@ -507,10 +498,7 @@ $print_time = date('d/m/Y H:i');
                     if (strpos($key_lower, 'ket_') === 0 && !$is_in_schema) {
                         $val = trim($val, '[]');
                         if (!empty($val)) {
-                            if (isset($item_detail->kategori_id) && $item_detail->kategori_id == 1 && ($val == '1' || $val == '2')) {
-                                $val = $val . ' Sisi';
-                            }
-                            
+
                             // Jika setelah diformat nilainya masih murni angka (seperti ID mesin atau data kosong bernilai 1),
                             // kita sembunyikan agar tidak tampil angka rancu seperti '1' di Jasa Desain
                             if (is_numeric($val)) {

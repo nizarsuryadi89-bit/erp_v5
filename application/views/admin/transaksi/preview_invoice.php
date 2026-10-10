@@ -219,9 +219,6 @@ if (!function_exists('invoice_detail_metadata')) {
                     $p_side_id = !empty($dt->real_side_id) ? $dt->real_side_id : (isset($dt->side_id) ? $dt->side_id : '');
                     $p_side_name = !empty($dt->real_side_name) ? $dt->real_side_name : (isset($dt->side_name) ? $dt->side_name : '');
                     $p_ket_1 = isset($dt->ket_1) ? $dt->ket_1 : '';
-                    if (isset($dt->kategori_id) && $dt->kategori_id == 1 && empty($p_ket_1) && !empty($dt->jenisprint_id)) {
-                        $p_ket_1 = $dt->jenisprint_id;
-                    }
 
                     if (!empty($p_side_name)) {
                         $display_side = $p_side_name;

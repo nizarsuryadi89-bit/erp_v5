@@ -75,23 +75,7 @@
                                                             ?>
                                                             <br><small class="text-muted">Mesin: <?= $machineLabel ?></small>
                                                         <?php endif; ?>
-                                                        <?php if ($dt->kategori_id == 1): ?>
-                                                            <?php
-                                                            $p_ket_1 = isset($dt->ket_1) ? $dt->ket_1 : '';
-                                                            if (empty($p_ket_1) && !empty($dt->jenisprint_id)) {
-                                                                $p_ket_1 = $dt->jenisprint_id;
-                                                            }
-                                                            if (!empty($p_ket_1)) {
-                                                                $display_side = '';
-                                                                if ($p_ket_1 == '1' || strtolower(trim($p_ket_1)) == '1 side') $display_side = '1 Sisi';
-                                                                elseif ($p_ket_1 == '2' || strtolower(trim($p_ket_1)) == '2 side') $display_side = '2 Sisi';
-                                                                else $display_side = $p_ket_1;
-                                                                if ($display_side != '3' && stripos($display_side, 'Tidak Ada') === false) {
-                                                                    echo '<br><small class="text-muted">' . htmlspecialchars($display_side) . '</small>';
-                                                                }
-                                                            }
-                                                            ?>
-                                                        <?php endif; ?>
+
                                                     </td>
                                                     <td class="text-center"><?= $dt->qty ?></td>
                                                     <td>

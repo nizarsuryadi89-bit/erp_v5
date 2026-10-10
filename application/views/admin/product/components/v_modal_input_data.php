@@ -72,19 +72,7 @@
 
                     <!-- Pilihan Sisi -->
                     <div class="row mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold">Pilihan Sisi</label>
-                            <select name="side_id" class="form-select">
-                                <option value="">-- Pilihan Sisi --</option>
-                                <?php foreach ($sisi as $k): ?>
-                                    <option value="<?= $k->side_id ?>" <?= isset($getproduct['side_id']) && $k->side_id == $getproduct['side_id'] ? 'selected' : '' ?>>
-                                        <?= $k->side_name ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-
-                        <div class="col-md-6">
+                        <div class="col-md-12">
                             <label class="form-label fw-bold">Pilihan Metode Penjualan</label>
                             <select name="metode_id" class="form-select">
                                 <option value="">-- Pilihan Metode Penjualan --</option>

@@ -409,16 +409,6 @@ if (!function_exists('invoice_detail_metadata')) {
                                             $combined_meta['ket_1'] = $dt->ket_1;
                                         }
 
-                                        // [NEW] Kategori 1: Jika jenisprint_id ada, pakai sebagai ket_1 (1 Sisi / 2 Sisi)
-                                        if (isset($dt->kategori_id) && $dt->kategori_id == 1) {
-                                            if (empty($combined_meta['ket_1'])) {
-                                                if (!empty($dt->jenisprint_id)) {
-                                                    $combined_meta['ket_1'] = $dt->jenisprint_id;
-                                                } elseif (!empty($combined_meta['jenisprint_id'])) {
-                                                    $combined_meta['ket_1'] = $combined_meta['jenisprint_id'];
-                                                }
-                                            }
-                                        }
 
                                         // [NEW] Resolve schema untuk label dinamis
                                         $schema_map = [];
@@ -472,7 +462,7 @@ if (!function_exists('invoice_detail_metadata')) {
                                                 continue;
                                             }
 
-                                            if ($key_lower == 'sisi') {
+                                            if ($key_lower == 'sisi' && !$is_in_schema) { // Legacy: skip if schema handles it
                                                 if (in_array($dt->kategori_id, [2, 5, 9]) || strtolower($dt->kategori_nama ?? '') == 'large format') {
                                                     continue;
                                                 }
@@ -489,7 +479,7 @@ if (!function_exists('invoice_detail_metadata')) {
                                                 continue;
                                             }
 
-                                            if ($key_lower == 'mesin_fallback') {
+                                            if ($key_lower == 'mesin_fallback' && !$is_in_schema) {
                                                 $val_clean = strtolower(trim($val));
                                                 if (!in_array($val_clean, $printed_values)) {
                                                     $meta_str .= "$val &bull; ";
@@ -502,14 +492,6 @@ if (!function_exists('invoice_detail_metadata')) {
                                             if (strpos($key_lower, 'ket_') === 0 && !$is_in_schema) {
                                                 $val = trim($val, '[]');
                                                 if (!empty($val)) {
-                                                    if (isset($dt->kategori_id) && $dt->kategori_id == 1) {
-                                                        if ($val == '1' || strtolower(trim($val)) == '1 side')
-                                                            $val = '1 Sisi';
-                                                        elseif ($val == '2' || strtolower(trim($val)) == '2 side')
-                                                            $val = '2 Sisi';
-                                                        elseif ($val == '3' || stripos($val, 'Tidak Ada') !== false)
-                                                            continue;
-                                                    }
 
                                                     $val_clean = strtolower(trim($val));
                                                     if (!in_array($val_clean, $printed_values)) {

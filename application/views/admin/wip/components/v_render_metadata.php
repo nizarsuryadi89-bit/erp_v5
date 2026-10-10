@@ -14,10 +14,6 @@ if (empty($meta)) {
     if (isset($item->side_id) && $item->side_id !== '') $meta['side_id'] = $item->side_id;
     if (isset($item->keterangan) && $item->keterangan !== '') $meta['keterangan'] = $item->keterangan;
     
-    // Alias ket_1 to sisi if category is A3+
-    if (isset($item->kategori_id) && $item->kategori_id == 1 && isset($item->ket_1)) {
-        $meta['sisi'] = $item->ket_1;
-    }
 }
 
 $schema = !empty($item->merged_schema_assoc) ? array_values($item->merged_schema_assoc) : ($category_schemas[$item->kategori_id] ?? []);
@@ -40,129 +36,74 @@ if ($renderBadges && !empty($schema) && !empty($meta)) {
         if (in_array($key, $excludeColumns))
             continue;
 
-        // [NEW] Category 2 (Large Format) & 9 (DTF) Sisi/Side Exclusion rule
-        if (in_array($item->kategori_id, [2, 9]) && in_array($key, ['sisi', 'side_id', 'ket_1'])) {
-            continue;
-        }
-
-        if (!isset($meta[$key]) || $meta[$key] === '') {
-            // [NEW] Clean key fallback: check if clean key (without _id) exists in metadata
-            $clean_k = str_replace('_id', '', $key);
-            if (isset($meta[$clean_k]) && $meta[$clean_k] !== '') {
-                $meta[$key] = $meta[$clean_k];
+        // Check if value exists in meta
+        if (!isset($meta[$key]) || $meta[$key] === '' || $meta[$key] === '0' || $meta[$key] === '-') {
+            // Check fallback with _id
+            if (isset($meta[$key . '_id']) && $meta[$key . '_id'] !== '' && $meta[$key . '_id'] !== '0') {
+                $meta[$key] = $meta[$key . '_id'];
             } else {
                 continue;
             }
         }
-
+        
+        $label = $field['label'] ?? $key;
         $val = $meta[$key];
-        $label = $field['label'] ?? strtoupper($key);
-
-        // Formatter
-        if (in_array($field['type'], ['select', 'radio', 'checkbox'])) {
-            if (isset($field['options']) && is_array($field['options'])) {
-                if (!is_array($val))
-                    $val = $field['options'][$val] ?? $val;
-            }
-        }
-        if ($field['type'] === 'boolean')
-            $val = ($val == 1 || $val == 'true') ? 'YA' : 'TIDAK';
-
-        // Highlighting for Large Format Finishing
-        $isLFFinishing = false;
-        if ($item->kategori_id == 2) {
-            $checkStr = strtolower($key . ' ' . $label);
-            $keywords = ['finish', 'mata ayam', 'mataayam', 'seaming', 'selongsong', 'lebihan', 'laminasi', 'potong'];
-            foreach ($keywords as $kw) {
-                if (strpos($checkStr, $kw) !== false) {
-                    $isLFFinishing = true;
-                    break;
-                }
-            }
+        if (isset($field['options']) && is_array($field['options']) && isset($field['options'][$val])) {
+            $val = $field['options'][$val];
         }
 
-        // Styling
-        if ($key === 'jenisprint_id') {
-            if ($item->kategori_id == 3) {
-                // Flatbed Color Profile
-                echo "<span class='badge bg-info bg-opacity-10 text-info border border-info border-opacity-25' style='{$uniform_badge_style}'>";
-                echo "<i class='fas fa-palette me-1'></i> WARNA: " . strtoupper($val);
-                echo "</span>";
-            } else {
-                // Standard Machine Badge
-                echo "<span class='badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25' style='{$uniform_badge_style}'>";
-                echo "<i class='fas fa-print me-1'></i> " . strtoupper($val);
-                echo "</span>";
+        // [NEW] Dynamically choose icon and color based on key
+        $icon = 'fa-tag';
+        $bg = 'bg-light';
+        $txt = 'text-dark';
+        
+        $keyLower = strtolower($key);
+        $labelLower = strtolower($label);
+        
+        if (strpos($keyLower, 'mesin') !== false || strpos($keyLower, 'jenisprint') !== false) {
+            $icon = 'fa-print';
+            $bg = 'bg-primary bg-opacity-10';
+            $txt = 'text-primary border-primary border-opacity-25';
+        } elseif (strpos($keyLower, 'warna') !== false) {
+            $icon = 'fa-palette';
+            $bg = 'bg-info bg-opacity-10';
+            $txt = 'text-info border-info border-opacity-25';
+        } elseif (strpos($keyLower, 'material') !== false || strpos($keyLower, 'bahan') !== false) {
+            $icon = 'fa-layer-group';
+            $bg = 'bg-dark';
+            $txt = 'text-white border-secondary shadow-sm';
+        } elseif (strpos($keyLower, 'ukuran') !== false || strpos($keyLower, 'bidang') !== false || strpos($keyLower, 'tebal') !== false || strpos($keyLower, 'thickness') !== false) {
+            $icon = 'fa-ruler-combined';
+            $bg = 'bg-dark text-white border-secondary shadow-sm';
+            $txt = 'text-white';
+        } elseif (strpos($keyLower, 'model') !== false || strpos($keyLower, 'varian') !== false) {
+            $icon = 'fa-cubes';
+            $bg = 'bg-primary';
+            $txt = 'text-white border-primary shadow-sm';
+        } elseif (strpos($keyLower, 'sisi') !== false || strpos($keyLower, 'side') !== false) {
+            $icon = 'fa-copy';
+            $bg = 'bg-secondary bg-opacity-10';
+            $txt = 'text-secondary border-secondary border-opacity-25';
+        }
+        
+        $isFinishing = false;
+        $keywords = ['finish', 'mata ayam', 'mataayam', 'seaming', 'selongsong', 'lebihan', 'laminasi', 'potong'];
+        foreach ($keywords as $kw) {
+            if (strpos($keyLower . ' ' . $labelLower, $kw) !== false) {
+                $isFinishing = true;
+                break;
             }
-        } elseif ($item->kategori_id == 6 && $key === 'ket_1') {
-            // Laser Material Branding
-            echo "<span class='badge bg-dark text-white border border-secondary shadow-sm' style='{$uniform_badge_style}'>";
-            echo "<i class='fas fa-layer-group me-1'></i> MATERIAL: " . strtoupper($val);
-            echo "</span>";
-        } elseif ($item->kategori_id == 6 && $key === 'thickness') {
-            // Laser Thickness Branding
-            echo "<span class='badge bg-dark text-white border border-secondary shadow-sm' style='{$uniform_badge_style}'>";
-            echo "<i class='fas fa-ruler-vertical me-1'></i> TEBAL: " . strtoupper($val) . " MM";
-            echo "</span>";
-        } elseif ($item->kategori_id == 6 && $key === 'metode_laser') {
-            // Laser Method Branding
-            echo "<span class='badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25' style='{$uniform_badge_style}'>";
-            echo "<i class='fas fa-cut me-1'></i> " . strtoupper($val);
-            echo "</span>";
-        } elseif ($item->kategori_id == 7 && $key === 'model_apparel') {
-            // Apparel Model
-            echo "<span class='badge bg-primary text-white border border-primary shadow-sm' style='{$uniform_badge_style}'>";
-            echo "<i class='fas fa-tshirt me-1'></i> " . strtoupper($val);
-            echo "</span>";
-        } elseif ($item->kategori_id == 7 && in_array($key, ['size_details', 'jersey_data'])) {
-            // Apparel Specific Details
-            $icon = ($key === 'size_details') ? 'fa-ruler-combined' : 'fa-id-card';
-            echo "<span class='badge bg-info bg-opacity-10 text-info border border-info border-opacity-25' style='{$uniform_badge_style}'>";
-            echo "<i class='fas $icon me-1'></i> " . strtoupper($val);
-            echo "</span>";
-        } elseif ($item->kategori_id == 8 && $key === 'ket_1') {
-            // DTG Print Size
-            echo "<span class='badge bg-dark text-white border border-secondary shadow-sm' style='{$uniform_badge_style}'>";
-            echo "<i class='fas fa-expand-arrows-alt me-1'></i> BIDANG: " . strtoupper($val);
-            echo "</span>";
-        } elseif ($item->kategori_id == 8 && $key === 'jenisprint_id') {
-            // DTG Process Style (override standard machine look)
-            $isDark = (strpos(strtolower($val), 'gelap') !== false || strpos(strtolower($val), 'warna') !== false);
-            $bg = $isDark ? 'bg-secondary' : 'bg-light';
-            $txt = $isDark ? 'text-white' : 'text-dark';
-            echo "<span class='badge $bg $txt border shadow-sm' style='{$uniform_badge_style}'>";
-            echo "<i class='fas fa-filter me-1'></i> PROSES: " . strtoupper($val);
-            echo "</span>";
-        } elseif ($item->kategori_id == 8 && $key === 'posisi_cetak') {
-            // DTG Print Position
-            echo "<span class='badge bg-info bg-opacity-10 text-info border border-info border-opacity-25' style='{$uniform_badge_style}'>";
-            echo "<i class='fas fa-bullseye me-1'></i> POSISI: " . strtoupper($val);
-            echo "</span>";
-        } elseif ($item->kategori_id == 10 && $key === 'ket_1') {
-            // Merchandise Model/Varian
-            echo "<span class='badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 shadow-sm' style='{$uniform_badge_style}'>";
-            echo "<i class='fas fa-gift me-1'></i> MODEL: " . strtoupper($val);
-            echo "</span>";
-        } elseif ($item->kategori_id == 10 && $key === 'keterangan_merch') {
-            // Merchandise Special Notes
-            echo "<span class='badge bg-warning bg-opacity-10 text-dark border border-warning border-opacity-25' style='{$uniform_badge_style}'>";
-            echo "<i class='fas fa-sticky-note me-1'></i> NOTE: " . strtoupper($val);
-            echo "</span>";
-        } elseif (in_array($item->kategori_id, [5, 9]) && $key === 'ket_1') {
-            $formatted_val = str_replace(',', ' x', $val);
-            echo "<span class='badge bg-dark bg-opacity-10 text-dark border border-dark border-opacity-25 shadow-sm' style='{$uniform_badge_style}'>";
-            echo "<i class='fas fa-ruler-horizontal me-1'></i> " . strtoupper($formatted_val);
-            echo "</span>";
-        } elseif ($isLFFinishing) {
-            // Highly prominent badge for Finishing Instructions in Large Format
+        }
+        
+        if ($isFinishing) {
             echo "<span class='badge bg-warning text-dark border border-warning shadow-sm' style='{$uniform_badge_style}'>";
             echo "<i class='fas fa-tools me-1 opacity-75'></i> <span class='opacity-75 me-1'>" . strtoupper($label) . ":</span>";
             echo "<span class='text-uppercase'>" . $val . "</span>";
             echo "</span>";
         } else {
-            echo "<span class='badge bg-light text-dark border' style='{$uniform_badge_style}'>";
-            echo "<span class='text-muted text-uppercase me-1'>" . $label . ":</span>";
-            echo "<span>" . strtoupper($val) . "</span>";
+            echo "<span class='badge {$bg} {$txt} border' style='{$uniform_badge_style}'>";
+            echo "<i class='fas {$icon} me-1 opacity-75'></i> <span class='opacity-75 me-1 text-uppercase'>" . $label . ":</span>";
+            echo "<span class='text-uppercase'>" . $val . "</span>";
             echo "</span>";
         }
     }

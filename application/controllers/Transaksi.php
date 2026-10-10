@@ -1141,7 +1141,8 @@ class Transaksi extends MY_Controller
             if ($satuan_id == 11) {
                 $pricing_qty = $panjang * $inputs['qty'];
             } else if ($panjang > 0 && $lebar > 0) {
-                $area = ($panjang * $lebar) / 10000;
+                // Area = P * L (Input unit matches pricing unit)
+                $area = ($panjang * $lebar);
                 $pricing_qty = $area * $inputs['qty'];
             } else if ($panjang > 0 && empty($lebar)) {
                 $pricing_qty = $panjang * $inputs['qty'];
@@ -1157,7 +1158,7 @@ class Transaksi extends MY_Controller
 
         if ($cekhargaproduct) {
             $harga_satuan = floatval($cekhargaproduct['harga_1'] ?? 0);
-            $subtotal = $harga_satuan * floatval($inputs['qty']);
+            $subtotal = $harga_satuan * floatval($pricing_qty);
             $detail = $cekhargaproduct['detail_product'] ?? '';
             
             $harga_minimal = floatval($cekhargaproduct['harga_minimal'] ?? 0);
@@ -1254,8 +1255,8 @@ class Transaksi extends MY_Controller
                 // Meter Lari strictly bypasses area calculation and uses Length * Qty
                 $pricing_qty = $panjang * $inputs['qty'];
             } else if ($panjang > 0 && $lebar > 0) {
-                // Area in m2 = (P cm * L cm / 10000) * Qty Lembar
-                $area = ($panjang * $lebar) / 10000;
+                // Area = P * L (Input unit matches pricing unit)
+                $area = ($panjang * $lebar);
                 $pricing_qty = $area * $inputs['qty'];
             } else if ($panjang > 0 && empty($lebar)) {
                 // Meter Lari logic: Harga per meter fix, so Qty = P * Qty
@@ -1483,8 +1484,8 @@ class Transaksi extends MY_Controller
             if ($satuan_id == 11) {
                 $pricing_qty = $panjang * $inputs['qty'];
             } else if ($panjang > 0 && $lebar > 0) {
-                // Area in m2
-                $area = ($panjang * $lebar) / 10000;
+                // Area = P * L (Input unit matches pricing unit)
+                $area = ($panjang * $lebar);
                 $pricing_qty = $area * $inputs['qty'];
             } else if ($panjang > 0 && empty($lebar)) {
                 $pricing_qty = $panjang * $inputs['qty'];
@@ -2067,13 +2068,7 @@ class Transaksi extends MY_Controller
                 $dimensi = $item->panjang . ' x ' . $item->lebar;
             } else if (!empty($item->panjang) && $item->panjang != '0' && (empty($item->lebar) || $item->lebar == '0')) {
                 $dimensi = $item->panjang . ' m';
-            } else if (isset($item->kategori_id) && $item->kategori_id == 1 && !empty($item->ket_1)) {
-                $resolved_side = isset($side_map[$item->ket_1]) ? $side_map[$item->ket_1] : $item->ket_1;
-                if (stripos($resolved_side, 'Tidak Ada') !== false) {
-                    $dimensi = '';
-                } else {
-                    $dimensi = $resolved_side;
-                }
+
             } else {
                 $dimensi = '';
             }

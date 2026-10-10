@@ -45,8 +45,12 @@ if (!empty($transaksi)) {
                     <p class="mb-1 text-dark fw-bold"><?= $dt->detail_product ?></p>
 
                     <?php
-                    // [NEW] 1. Try to resolve from Dynamic Metadata first
                     $meta = !empty($dt->metadata) ? json_decode($dt->metadata, true) : [];
+                    if (empty($meta)) {
+                        if (isset($dt->ket_1) && $dt->ket_1 !== '') $meta['ket_1'] = $dt->ket_1;
+                        if (isset($dt->jenisprint_id) && $dt->jenisprint_id !== '') $meta['jenisprint_id'] = $dt->jenisprint_id;
+                        if (isset($dt->side_id) && $dt->side_id !== '') $meta['side_id'] = $dt->side_id;
+                    }
                     $exclude_keys = ['product_id', 'nospk', 'qty', 'panjang', 'lebar', 'kategori_id', 'keterangan', 'approve', 'lokasi_cetak', 'subkategori_id', 'user_id', 'kodeproduk', 'jenis_transaksi', 'id_jenis_transaksi', 'konsumen_id', 'deskprint_id', 'user', 'subkategori', 'konsumen', 'deskprint', 'unit_price', 'subtotal', 'price_snapshot_at'];
                     $is_lf_or_dtf = in_array((int)$dt->kategori_id, [2, 9]);
 
@@ -103,7 +107,13 @@ if (!empty($transaksi)) {
                             if (strtolower($key) === 'side' && (isset($schema_fields['sisi']) || isset($meta['sisi']))) {
                                 continue;
                             }
-                            if (strtolower($key) === 'jenisprint' && (isset($schema_fields['mesin']) || isset($meta['mesin']))) {
+                            if (strtolower($key) === 'jenisprint') {
+                                if (isset($schema_fields['mesin']) || isset($meta['mesin'])) continue;
+                                if (isset($schema_fields['sisi']) || isset($meta['sisi'])) continue;
+                            }
+                            
+                            // Hide duplicate legacy ket_ if the product uses Form Schema
+                            if (!$in_schema && strpos(strtolower($key), 'ket_') === 0 && !empty($schema_fields)) {
                                 continue;
                             }
 
@@ -152,111 +162,6 @@ if (!empty($transaksi)) {
                             } else {
                                 echo "<small class='{$color_class} fw-bold d-block text-uppercase'><i class='fas {$icon} me-1'></i>{$lbl}: " . strtoupper($val) . "</small>";
                             }
-                        }
-                    } else {
-                        // 2. Intelligent Variation Resolver using Schema
-                        $schema_json = !empty($dt->product_form_schema) && $dt->product_form_schema !== '[]'
-                            ? $dt->product_form_schema
-                            : (!empty($dt->subcategory_form_schema) && $dt->subcategory_form_schema !== '[]'
-                                ? $dt->subcategory_form_schema
-                                : ($dt->category_form_schema ?? ''));
-
-                        $variations_to_check = [
-                            'ket_1' => $dt->ket_1 ?? '',
-                            'jenisprint_id' => $dt->jenisprint_id ?? '',
-                            'side_id' => $dt->side_id ?? ''
-                        ];
-                        
-                        $db_meta = !empty($dt->metadata) ? json_decode($dt->metadata, true) : [];
-                        if (empty($db_meta) && !empty($dt->product_metadata)) {
-                            $db_meta = json_decode($dt->product_metadata, true);
-                        }
-                        if (is_array($db_meta)) {
-                            foreach($db_meta as $mk => $mv) {
-                                if (strpos($mk, 'dim_') === 0 && !isset($variations_to_check[$mk])) {
-                                    $variations_to_check[$mk] = $mv;
-                                }
-                            }
-                        }
-
-                        $printed_variations = false;
-                        if (!empty($schema_json)) {
-                            $schema = json_decode($schema_json, true);
-                            if (is_array($schema)) {
-                                foreach ($variations_to_check as $var_key => $raw_val) {
-                                    if (empty($raw_val) || $raw_val === '0') continue;
-                                    
-                                    $found = false;
-                                    $lbl = '';
-                                    $val = '';
-                                    
-                                    foreach ($schema as $field) {
-                                        if (($field['name'] ?? '') === $var_key || ($field['variabel_id'] ?? '') === $var_key) {
-                                            $lbl = strtoupper($field['label'] ?? $var_key);
-                                            $val = $field['options'][$raw_val] ?? $raw_val;
-                                            $found = true;
-                                            break;
-                                        }
-                                    }
-                                    
-                                    if ($found && !empty($lbl) && !empty($val) && !in_array($val, ['-', '0'])) {
-                                        $icon = 'fa-info-circle';
-                                        $color = 'text-info';
-                                        if ($var_key === 'jenisprint_id' || strpos($lbl, 'MESIN') !== false) {
-                                            $icon = 'fa-print';
-                                            $color = 'text-primary';
-                                        } elseif ($var_key === 'side_id') {
-                                            $icon = 'fa-clone';
-                                            $color = 'text-secondary';
-                                        }
-                                        echo "<small class='{$color} fw-bold d-block text-uppercase'><i class='fas {$icon} me-1'></i>{$lbl}: " . strtoupper($val) . "</small>";
-                                        $printed_variations = true;
-                                    }
-                                }
-                            }
-                        }
-                        
-                        if (!$printed_variations && empty($schema_json)) {
-                            // Fallback to absolute legacy
-                            $variation_label = '';
-                            $variation_value = '';
-                            $variation_color = 'text-info';
-                            
-                            if ($dt->kategori_id == 2) {
-                                $variation_label = 'MESIN';
-                                $variation_value = $map_mesin[$dt->ket_1] ?? '-';
-                                $variation_color = 'text-primary';
-                            } elseif ($dt->kategori_id == 9) {
-                                $variation_label = '';
-                            } elseif (isset($map_lebar_textile[$dt->ket_1])) {
-                                $variation_label = 'JENIS LEBAR';
-                                $variation_value = $map_lebar_textile[$dt->ket_1];
-                                $variation_color = 'text-success';
-                            } else {
-                                if ($dt->ket_1 == '1') {
-                                    $variation_label = 'Cetak';
-                                    $variation_value = '1 Sisi';
-                                } else if ($dt->ket_1 == '2') {
-                                    $variation_label = 'Cetak';
-                                    $variation_value = '2 Sisi (Bolak-Balik)';
-                                }
-                            }
-
-                            if ($dt->kategori_id == 9) {
-                                $variation_label = '';
-                                $variation_value = '';
-                            }
-
-                            if (!empty($variation_label) && !empty($variation_value) && !in_array($variation_value, ['-', '0'])): ?>
-                                <small class="<?= $variation_color ?> fw-bold d-block text-uppercase">
-                                    <?php if (strpos($variation_label, 'MESIN') !== false): ?>
-                                        <i class="fa fa-print me-1"></i>
-                                    <?php elseif (strpos($variation_label, 'LEBAR') !== false): ?>
-                                        <i class="fas fa-arrows-alt-h me-1"></i>
-                                    <?php endif; ?>
-                                    <?= $variation_label ?>: <?= strtoupper($variation_value) ?>
-                                </small>
-                            <?php endif;
                         }
                     }
                     ?>

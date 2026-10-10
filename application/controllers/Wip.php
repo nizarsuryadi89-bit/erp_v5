@@ -13,6 +13,273 @@ class Wip extends MY_Controller
         $this->load->model('Warehouse_model', 'warehouse');
     }
 
+    public function quality()
+    {
+        $actor = $this->wip_workflow->actor();
+        $status = $this->input->get('status', true) ?: 'pending';
+        if (!in_array($status, ['pending', 'hold', 'passed', 'reprint', 'all'], true))
+            $status = 'pending';
+        $page = max(1, (int) $this->input->get('page'));
+        $search = substr(trim((string) $this->input->get('search', true)), 0, 100);
+        $csrf = $this->session->userdata('wip_qc_csrf');
+        if (!$csrf) {
+            $csrf = bin2hex(random_bytes(32));
+            $this->session->set_userdata('wip_qc_csrf', $csrf);
+        }
+        $data = [
+            'qc_csrf' => $csrf,
+            'title' => 'Pemeriksaan QC',
+            'qc_status' => $status,
+            'qc_page' => $page,
+            'qc_search' => $search,
+            'qc_can_review' => $this->wip_quality->can_review($actor),
+            'qc_enabled' => $this->wip_quality->enabled(),
+            'qc_error' => ''
+        ];
+        try {
+            $data['qc_queue'] = $this->wip_quality->queue($actor, $status, $search, $page);
+        } catch (Exception $e) {
+            $data['qc_queue'] = ['rows' => [], 'total' => 0];
+            $data['qc_error'] = $e instanceof DomainException ? $e->getMessage() : 'Antrean QC belum dapat dimuat.';
+        }
+        $this->load_admin_view('admin/wip/quality', $data);
+    }
+
+    public function quality_inspect()
+    {
+        $this->_workflow_response(function () {
+            $this->wip_workflow->assert_transactional_storage();
+            $token = (string) $this->session->userdata('wip_qc_csrf');
+            if (!$token || !hash_equals($token, (string) $this->input->post('wip_qc_csrf', true)))
+                throw new DomainException('Sesi formulir QC tidak valid. Muat ulang halaman.');
+            return $this->wip_quality->inspect(
+                $this->input->post('produksi_id', true),
+                $this->input->post('version', true),
+                $this->input->post('accepted_qty', true),
+                $this->input->post('rejected_qty', true),
+                $this->input->post('note', true),
+                $this->input->post('request_reprint', true) === '1',
+                $this->input->post('request_key', true),
+                $this->wip_workflow->actor()
+            );
+        });
+    }
+
+    public function quality_history()
+    {
+        try {
+            $id = Production_workflow::ids([$this->input->get('produksi_id', true)])[0];
+            if (!$this->wip_quality->assert_storage())
+                throw new DomainException('QC belum tersedia.');
+            $response = ['success' => true, 'rows' => $this->wip_quality->history($id, $this->wip_workflow->actor())];
+        } catch (Exception $e) {
+            $response = ['success' => false, 'message' => $e instanceof DomainException ? $e->getMessage() : 'Riwayat QC belum dapat dimuat.'];
+        }
+        return $this->output->set_content_type('application/json')->set_output(json_encode($response));
+    }
+
+    private function _workflow_response($work)
+    {
+        if (strtolower($this->input->method()) !== 'post') {
+            $this->output->set_status_header(405)->set_header('Allow: POST');
+            $response = ['success' => false, 'status' => false, 'message' => 'Aksi produksi harus dikirim melalui POST.'];
+        } else {
+            try {
+                $response = $work();
+            } catch (Exception $e) {
+                if (!($e instanceof DomainException))
+                    log_message('error', 'WIP action: ' . $e->getMessage());
+                $response = [
+                    'success' => false,
+                    'status' => false,
+                    'message' => $e instanceof DomainException
+                        ? $e->getMessage() : 'Gagal memproses transaksi produksi.'
+                ];
+            }
+        }
+        $response['csrf_hash'] = $this->security->get_csrf_hash();
+        $this->output->set_content_type('application/json')->set_output(json_encode($response));
+    }
+
+    private function _workflow_map($name)
+    {
+        $value = $this->input->post($name, true);
+        if (is_string($value))
+            $value = json_decode($value, true);
+        return is_array($value) ? $value : [];
+    }
+
+    private function _workflow_execute($ids, $action, $callback = null)
+    {
+        $actor = $this->wip_workflow->actor($action === 'start' ? null : $this->input->post('pin_operator', true), $this->get_operator_id_for_current_user());
+        $expected = $this->_workflow_map('expected_step_ids');
+        $versions = $this->_workflow_map('expected_versions');
+        $detail_id = $this->input->post('detail_id', true) ?: $this->input->post('detail_produksi_id', true);
+        if ($detail_id && count($ids) === 1)
+            $expected[$ids[0]] = $detail_id;
+        $materials = [];
+        foreach (['material_id', 'bahan_id'] as $field) {
+            $mid = $this->input->post($field, true);
+            if (ctype_digit((string) $mid) && (int) $mid > 0)
+                $materials[] = (int) $mid;
+        }
+        foreach ($this->_workflow_map('outcomes') as $outcome) {
+            foreach (($outcome['bom_usage'] ?? []) as $line) {
+                $mid = $line['bom_material_id'] ?? 0;
+                if (ctype_digit((string) $mid) && (int) $mid > 0)
+                    $materials[] = (int) $mid;
+            }
+        }
+        return $this->wip_workflow->execute($ids, $action, $actor, $expected, $versions, $callback, $materials);
+    }
+
+    private function _workflow_fields($item, $step, $data, $result_required = true)
+    {
+        $fields = [];
+        foreach (($result_required ? ['qty_output', 'qty_missing', 'panjang_output', 'lebar_output'] : []) as $name) {
+            if (isset($data[$name]) && $data[$name] !== '')
+                $fields[$name] = Production_workflow::number($data[$name], $name);
+        }
+        if ($result_required && !array_key_exists('qty_output', $fields))
+            throw new DomainException('Isi jumlah hasil baik aktual.');
+        foreach (['mesin_id', 'material_id', 'lokasi_proses'] as $name) {
+            if (!empty($data[$name])) {
+                if (!ctype_digit((string) $data[$name]))
+                    throw new DomainException('Pilihan ' . $name . ' tidak valid.');
+                $fields[$name] = (int) $data[$name];
+            }
+        }
+        if ($result_required && empty($fields['mesin_id']) && !empty($step->mesin_id))
+            $fields['mesin_id'] = (int) $step->mesin_id;
+        $location = (int) (($item->lokasi_cetak ?? 0) ?: $item->perusahaan_id);
+        if (
+            $result_required && !empty($step->bom_line_id) && empty($step->is_finishing)
+            && stripos($step->routing_name ?? '', 'rip') === false
+        ) {
+            $product = $this->db->get_where('tbl_product', ['product_id' => $item->product_id])->row();
+            if ($product && (int) $product->kategori_id !== 10 && (int) $product->tipe_id === 1 && empty($fields['mesin_id'])) {
+                throw new DomainException('Pilih mesin aktual untuk tahap cetak ini.');
+            }
+        }
+        if (!empty($fields['mesin_id'])) {
+            $machine = $this->db->get_where('tbl_mesin', ['mesin_id' => $fields['mesin_id'], 'status' => '1'])->row();
+            if (!$machine)
+                throw new DomainException('Mesin tidak aktif atau tidak ditemukan.');
+            if (!Production_workflow::machine_matches_locations($machine, [$location]))
+                throw new DomainException('Mesin yang dipilih tidak sesuai lokasi produksi item. Buka ulang form dan pilih mesin yang tersedia untuk lokasi item.');
+        }
+        $location = (int) (($item->lokasi_cetak ?? 0) ?: $item->perusahaan_id);
+        if (!empty($fields['lokasi_proses']) && $fields['lokasi_proses'] !== $location) {
+            throw new DomainException('Lokasi proses harus sesuai lokasi produksi item.');
+        }
+        if (!empty($data['catatan']))
+            $fields['catatan'] = trim((string) $data['catatan']);
+        if (!empty($data['alasan_missing']))
+            $fields['alasan_missing'] = trim((string) $data['alasan_missing']);
+        return $fields;
+    }
+
+    private function _workflow_require_material($step, $usage)
+    {
+        if (empty($step->bom_line_id) || stripos($step->routing_name ?? '', 'rip') !== false)
+            return;
+        $bom = $this->db->get_where('bom_lines', ['bom_line_id' => $step->bom_line_id])->row();
+        if ($bom && !empty($bom->bahan_id) && (float) ($bom->quantity ?? 0) > 0 && $usage <= 0) {
+            throw new DomainException('Tahap ini membutuhkan bahan. Isi pemakaian bahan aktual sebelum mencatat hasil.');
+        }
+    }
+
+    private function _workflow_post_material($item, $step, $material_id, $qty, $actor)
+    {
+        $qty = Production_workflow::number($qty, 'Pemakaian bahan');
+        if (!$qty)
+            return;
+        if (!ctype_digit((string) $material_id) || (int) $material_id < 1)
+            throw new DomainException('Pilih material untuk pemakaian bahan.');
+        if (!$this->update_warehouse_stock($item->produksi_id, $step->detail_produksi_id, $material_id, $qty, null, $actor['employee_id'])) {
+            throw new DomainException('Pemakaian bahan gagal atau stok tidak mencukupi. Hasil belum disimpan.');
+        }
+    }
+
+    private function _workflow_advance()
+    {
+        $this->_workflow_response(function () {
+            $id = $this->input->post('produksi_id', true);
+            $type = $this->input->post('type', true);
+            $action = $type === 'next' ? 'complete' : $type;
+            $data = $this->input->post(null, true);
+            return $this->_workflow_execute([$id], $action, function ($item, $step, $actor) use ($action, $data) {
+                if ($action !== 'complete')
+                    return $action === 'start' ? $this->_workflow_fields($item, $step, $data, false) : [];
+                $fields = $this->_workflow_fields($item, $step, $data);
+                $used = Production_workflow::number($data['qty_pakai'] ?? 0, 'Bahan terpakai');
+                $scrap = Production_workflow::number($data['qty_rusak'] ?? 0, 'Bahan rusak');
+                $this->_workflow_require_material($step, $used + $scrap);
+                $this->_workflow_post_material($item, $step, $data['bahan_id'] ?? 0, $used + $scrap, $actor);
+                $fields['qty_bahan_pakai'] = (float) ($step->qty_bahan_pakai ?? 0) + $used;
+                $fields['qty_bahan_rusak'] = (float) ($step->qty_bahan_rusak ?? 0) + $scrap;
+                if (!empty($data['bahan_id']))
+                    $fields['material_id'] = (int) $data['bahan_id'];
+                return $fields;
+            });
+        });
+    }
+
+    private function _workflow_detail_action($action)
+    {
+        $this->_workflow_response(function () use ($action) {
+            $detail_id = $this->input->post('detail_id', true) ?: $this->input->post('detail_produksi_id', true);
+            if (!ctype_digit((string) $detail_id) || (int) $detail_id < 1)
+                throw new DomainException('ID tahap tidak valid.');
+            $detail = $this->db->get_where('detail_produksi', ['detail_produksi_id' => $detail_id])->row();
+            if (!$detail)
+                throw new DomainException('Tahap tidak ditemukan.');
+            $posted_id = $this->input->post('produksi_id', true);
+            if ($posted_id && (int) $posted_id !== (int) $detail->produksi_id)
+                throw new DomainException('Tahap bukan milik item produksi ini.');
+            $data = $this->input->post(null, true);
+            return $this->_workflow_execute([$detail->produksi_id], $action, function ($item, $step, $actor) use ($action, $data) {
+                if ($action !== 'complete')
+                    return $action === 'start' ? $this->_workflow_fields($item, $step, $data, false) : [];
+                $data['qty_missing'] = $data['qty_missing'] ?? ($data['qty_failed'] ?? 0);
+                $data['alasan_missing'] = $data['alasan_missing'] ?? ($data['alasan_failed'] ?? '');
+                $fields = $this->_workflow_fields($item, $step, $data);
+                $used = Production_workflow::number($data['qty_bahan_pakai'] ?? 0, 'Bahan terpakai');
+                $scrap = Production_workflow::number($data['qty_bahan_rusak'] ?? 0, 'Bahan rusak');
+                $this->_workflow_require_material($step, $used + $scrap);
+                $material = $data['material_id'] ?? ($step->material_id ?? 0);
+                $this->_workflow_post_material($item, $step, $material, $used + $scrap, $actor);
+                $fields['qty_bahan_pakai'] = (float) ($step->qty_bahan_pakai ?? 0) + $used;
+                $fields['qty_bahan_rusak'] = (float) ($step->qty_bahan_rusak ?? 0) + $scrap;
+                return $fields;
+            });
+        });
+    }
+
+    private function _workflow_spk_ids($nospk, $category = null, $status = null)
+    {
+        if (!$nospk)
+            throw new DomainException('Nomor SPK wajib diisi.');
+        $this->db->select('p.produksi_id')->from('tbl_produksi p')
+            ->join('tbl_product pr', 'pr.product_id = p.product_id')->where('p.nospk', $nospk);
+        if ($category) {
+            if (in_array((int) $category, [2, 5, 8, 9], true))
+                $this->db->where('pr.kategori_id', (int) $category);
+            else
+                $this->db->where_not_in('pr.kategori_id', [2, 5, 8, 9]);
+        }
+        if ($status)
+            $this->db->where('p.status_produksi', $status);
+        return array_column($this->db->order_by('p.produksi_id')->get()->result_array(), 'produksi_id');
+    }
+
+    private function _workflow_legacy_rejected()
+    {
+        $this->_workflow_response(function () {
+            throw new DomainException('Gunakan tombol Mulai/Catat Hasil pada daftar produksi. Perubahan status langsung tidak diperbolehkan.');
+        });
+    }
+
     // =========================================================================
     // MAIN PAGES
     // =========================================================================
@@ -119,24 +386,19 @@ class Wip extends MY_Controller
                 $this->db->where('tbl_produksi.status_produksi', 'finishing');
                 $this->db->or_group_start();
                 $this->db->where('tbl_produksi.status_produksi', 'proses');
-                // Operator has completed a step
-                $this->db->where("EXISTS (
-                    SELECT 1 
-                    FROM detail_produksi dp 
-                    LEFT JOIN routing r ON (dp.routing_id > 0 AND r.routing_id = dp.routing_id) OR ((dp.routing_id IS NULL OR dp.routing_id = 0 OR dp.routing_id = '') AND r.product_id = tbl_produksi.product_id AND r.routing_urutan = dp.routing_urutan)
-                    WHERE dp.produksi_id = tbl_produksi.produksi_id 
-                    AND (dp.operator_id = " . (int) $active_operator . " OR r.operator_id = " . (int) $active_operator . ")
-                    AND dp.status_produksi = '2'
-                )", NULL, FALSE);
-                // And operator has NO incomplete steps left (so it shouldn't be in 'proses' tab)
-                $this->db->where("NOT EXISTS (
-                    SELECT 1 
-                    FROM detail_produksi dp2 
-                    LEFT JOIN routing r2 ON (dp2.routing_id > 0 AND r2.routing_id = dp2.routing_id) OR ((dp2.routing_id IS NULL OR dp2.routing_id = 0 OR dp2.routing_id = '') AND r2.product_id = tbl_produksi.product_id AND r2.routing_urutan = dp2.routing_urutan)
-                    WHERE dp2.produksi_id = tbl_produksi.produksi_id 
-                    AND (dp2.operator_id = " . (int) $active_operator . " OR r2.operator_id = " . (int) $active_operator . ")
-                    AND dp2.status_produksi != '2'
-                )", NULL, FALSE);
+                $this->db->where("EXISTS (SELECT 1 FROM detail_produksi fp JOIN routing fr ON fr.routing_id = fp.routing_id
+                    WHERE fp.produksi_id = tbl_produksi.produksi_id AND fr.is_finishing = 1
+                    AND fp.status_produksi IN ('0', '', '1'))", null, false);
+                $this->db->group_end()->group_end();
+            } elseif ($filter_status_view === 'proses') {
+                $this->db->where_in('tbl_produksi.status_produksi', ['proses', 'finishing']);
+            } elseif ($filter_status_view === 'pending') {
+                $this->db->group_start();
+                $this->db->where('tbl_produksi.status_produksi', 'pending');
+                $this->db->or_where('tbl_produksi.status_produksi', 'approved');
+                $this->db->or_where('tbl_produksi.status_produksi', 'approve');
+                $this->db->or_where('tbl_produksi.status_produksi', '');
+                $this->db->or_where('tbl_produksi.status_produksi', '0');
                 $this->db->group_end();
                 // Filter out rijek
                 $this->db->group_start();
@@ -156,66 +418,37 @@ class Wip extends MY_Controller
                 $this->db->where('tbl_produksi.status_produksi !=', 'on_costumer');
                 $this->db->where('tbl_produksi.status_produksi !=', 'done');
             }
-        } elseif ($filter_status_view === 'proses') {
-            $this->db->where('tbl_produksi.status_produksi', 'proses');
-        } elseif ($filter_status_view === 'pending') {
-            $this->db->group_start();
-            $this->db->where('tbl_produksi.status_produksi', 'pending');
-            $this->db->or_where('tbl_produksi.status_produksi', 'approved');
-            $this->db->or_where('tbl_produksi.status_produksi', '');
-            $this->db->or_where('tbl_produksi.status_produksi', '0');
-            $this->db->group_end();
-            // Filter out rijek
-            $this->db->group_start();
-            $this->db->not_like('tbl_produksi.catatan', '[DIKEMBALIKAN KE PRODUKSI]', 'both');
-            $this->db->or_where('tbl_produksi.catatan IS NULL');
-            $this->db->group_end();
-        } elseif ($filter_status_view === 'rijek') {
-            $this->db->group_start();
-            $this->db->where('tbl_produksi.status_produksi', 'pending');
-            $this->db->or_where('tbl_produksi.status_produksi', 'approved');
-            $this->db->group_end();
-            $this->db->like('tbl_produksi.catatan', '[DIKEMBALIKAN KE PRODUKSI]', 'both');
-        } elseif ($filter_status_view === 'all_active' || $filter_status_view === 'global_stats') {
-            // For global stats, we don't filter out done items if we want to count ready_to_pb
-            // but actually global stats only counts pending, proses, done. 
-            // We exclude on_costumer, but KEEP on_pb so they can be tracked in active views.
-            $this->db->where('tbl_produksi.status_produksi !=', 'on_costumer');
-        } else {
-            $this->db->where('tbl_produksi.status_produksi !=', 'on_pb');
-            $this->db->where('tbl_produksi.status_produksi !=', 'on_costumer');
-            $this->db->where('tbl_produksi.status_produksi !=', 'done');
-        }
 
-        $this->db->where('tbl_produksi.status_produksi IS NOT NULL');
-        $this->db->where('tbl_pemesanan.status_pembayaran', 'paid');
+            $this->db->where('tbl_produksi.status_produksi IS NOT NULL');
+            $this->db->where('tbl_pemesanan.status_pembayaran', 'paid');
 
-        if ($active_operator !== 'all') {
-            if ($filter_status_view !== 'ready_pb' && $filter_status_view !== 'pb' && $filter_status_view !== 'konsumen') {
-                $this->db->group_start();
-                // PIPELINE VISIBILITY: Show job to operator if they have ANY incomplete step in the routing, 
-                // not just if it's currently their exact turn. This allows downstream operators (e.g. Finishing) 
-                // to see jobs that are still being processed by upstream operators (e.g. Print A3).
-                $this->db->where("EXISTS (
-                    SELECT 1 
-                    FROM detail_produksi dp 
-                    LEFT JOIN routing r ON (dp.routing_id > 0 AND r.routing_id = dp.routing_id) OR ((dp.routing_id IS NULL OR dp.routing_id = 0 OR dp.routing_id = '') AND r.product_id = tbl_produksi.product_id AND r.routing_urutan = dp.routing_urutan)
-                    WHERE dp.produksi_id = tbl_produksi.produksi_id 
-                    AND dp.status_produksi != '2' 
-                    AND (dp.operator_id = " . (int) $active_operator . " OR r.operator_id = " . (int) $active_operator . ")
-                )", NULL, FALSE);
-                $this->db->group_end();
-            } else {
-                $this->db->group_start();
-                // Allow viewing in ready_pb, pb, konsumen if they participated in the SPK at all
-                $this->db->where("EXISTS (
-                    SELECT 1 
-                    FROM detail_produksi dp 
-                    LEFT JOIN routing r ON (dp.routing_id > 0 AND r.routing_id = dp.routing_id) OR ((dp.routing_id IS NULL OR dp.routing_id = 0 OR dp.routing_id = '') AND r.product_id = tbl_produksi.product_id AND r.routing_urutan = dp.routing_urutan)
-                    WHERE dp.produksi_id = tbl_produksi.produksi_id 
-                    AND (dp.operator_id = " . (int) $active_operator . " OR r.operator_id = " . (int) $active_operator . ")
-                )", NULL, FALSE);
-                $this->db->group_end();
+            if ($active_operator !== 'all') {
+                if ($filter_status_view !== 'ready_pb' && $filter_status_view !== 'pb' && $filter_status_view !== 'konsumen') {
+                    $this->db->group_start();
+                    // PIPELINE VISIBILITY: Show job to operator if they have ANY incomplete step in the routing, 
+                    // not just if it's currently their exact turn. This allows downstream operators (e.g. Finishing) 
+                    // to see jobs that are still being processed by upstream operators (e.g. Print A3).
+                    $this->db->where("EXISTS (
+                        SELECT 1 
+                        FROM detail_produksi dp 
+                        LEFT JOIN routing r ON (dp.routing_id > 0 AND r.routing_id = dp.routing_id) OR ((dp.routing_id IS NULL OR dp.routing_id = 0 OR dp.routing_id = '') AND r.product_id = tbl_produksi.product_id AND r.routing_urutan = dp.routing_urutan)
+                        WHERE dp.produksi_id = tbl_produksi.produksi_id 
+                        AND (dp.status_produksi IS NULL OR dp.status_produksi NOT IN ('2', '3', 'done', 'on_pb', 'on_costumer'))
+                        AND (dp.operator_id = " . (int) $active_operator . " OR r.operator_id = " . (int) $active_operator . ")
+                    )", NULL, FALSE);
+                    $this->db->group_end();
+                } else {
+                    $this->db->group_start();
+                    // Allow viewing in ready_pb, pb, konsumen if they participated in the SPK at all
+                    $this->db->where("EXISTS (
+                        SELECT 1 
+                        FROM detail_produksi dp 
+                        LEFT JOIN routing r ON (dp.routing_id > 0 AND r.routing_id = dp.routing_id) OR ((dp.routing_id IS NULL OR dp.routing_id = 0 OR dp.routing_id = '') AND r.product_id = tbl_produksi.product_id AND r.routing_urutan = dp.routing_urutan)
+                        WHERE dp.produksi_id = tbl_produksi.produksi_id 
+                        AND (dp.operator_id = " . (int) $active_operator . " OR r.operator_id = " . (int) $active_operator . ")
+                    )", NULL, FALSE);
+                    $this->db->group_end();
+                }
             }
 
         } // Status/operator filters
@@ -333,12 +566,16 @@ class Wip extends MY_Controller
         $this->_apply_produksi_filters('konsumen', $active_operator, $is_admin, $filter_cabang, $perusahaan, $filter_metode, false);
         $stats['konsumen'] = $this->db->get()->row()->count_konsumen;
 
+        $this->db->select('COUNT(tbl_produksi.produksi_id) as total')->from('tbl_produksi');
+        $this->_apply_produksi_filters('finishing', $active_operator, $is_admin, $filter_cabang, $perusahaan, $filter_metode, false);
+        $stats['finishing'] = (int) $this->db->get()->row()->total;
+
         $stats['ready_to_pb'] = $stats['selesai'];
 
         // Pagination Config
         $this->load->library('pagination');
         $per_page = 50;
-        $page = $this->input->get('page') ? (int) $this->input->get('page') : 1;
+        $page = max(1, (int) ($this->input->get('page') ?: 1));
         $offset = ($page - 1) * $per_page;
 
         // Count Total Unique SPK for the current filter
@@ -460,7 +697,7 @@ class Wip extends MY_Controller
             $all_routing_steps = [];
             $p_ids_chunks = array_chunk($p_ids, 1000);
             foreach ($p_ids_chunks as $chunk) {
-                $this->db->select('dp.produksi_id, r.routing_name, dp.status_produksi, m.mesin_nama, dp.lokasi_proses, dp.operator_id, r.operator_id AS routing_operator_id, dp.routing_urutan, r.is_finishing, r.bom_line_id');
+                $this->db->select('dp.*, r.routing_name, dp.status_produksi, m.mesin_nama, dp.lokasi_proses, dp.operator_id, r.operator_id AS routing_operator_id, dp.routing_urutan, r.is_finishing, r.bom_line_id');
                 $this->db->from('detail_produksi dp');
                 $this->db->join('routing r', 'r.routing_id = dp.routing_id', 'left');
                 $this->db->join('tbl_mesin m', 'm.mesin_id = dp.mesin_id', 'left');
@@ -807,10 +1044,9 @@ class Wip extends MY_Controller
             // [OPTIMIZATION] Pre-fetch Dynamic BOM Mapping to avoid N+1 queries in the loop
             $dynamic_boms_map = [];
             if (!empty($product_ids)) {
-                $this->db->select('dm.*, m.varian as bahan_nama, b.satuan_id, s.satuan_nama, m.bahan_id as base_bahan_id');
+                $this->db->select('dm.*, b.bahan_nama, b.satuan_id, s.satuan_nama');
                 $this->db->from('tbl_bom_dynamic_mapping dm');
-                $this->db->join('tbl_material m', 'm.material_id = dm.bahan_id', 'left');
-                $this->db->join('tbl_bahan b', 'b.bahan_id = m.bahan_id', 'left');
+                $this->db->join('tbl_bahan b', 'b.bahan_id = dm.bahan_id', 'left');
                 $this->db->join('tbl_satuan s', 's.satuan_id = b.satuan_id', 'left');
                 $this->db->where_in('dm.product_id', $product_ids);
                 $dyn_bom_data = $this->db->get()->result();
@@ -878,7 +1114,7 @@ class Wip extends MY_Controller
                                 $pseudo_bom->product_id = $item->product_id;
                                 $pseudo_bom->satuan_id = $dbom->satuan_id;
                                 $pseudo_bom->satuan_nama = $dbom->satuan_nama;
-                                $pseudo_bom->bahan_id = $dbom->base_bahan_id;
+                                $pseudo_bom->bahan_id = $dbom->bahan_id;
                                 $pseudo_bom->bom_material_id = $dbom->bahan_id;
                                 $pseudo_bom->panjang = null;
                                 $pseudo_bom->lebar = null;
@@ -1139,454 +1375,77 @@ class Wip extends MY_Controller
 
     public function batch_selesai_dan_stok()
     {
-        $ids = $this->input->post('ids', true);
-        $outcomes_raw = $this->input->post('outcomes');
-        $outcomes = is_string($outcomes_raw) ? json_decode($outcomes_raw, true) : $this->input->post('outcomes', true);
-        $material_id = $this->input->post('material_id', true);
-        $pin = $this->input->post('pin_operator', true);
-        $total_usage_raw = $this->input->post('total_usage', true);
-        $total_usage = (float) str_replace(',', '.', $total_usage_raw); // Handle ID format (koma ke titik)
-        $mesin_id = $this->input->post('mesin_id', true);
-
-        if (empty($pin)) {
-            echo json_encode(['success' => false, 'message' => 'Masukkan PIN Operator untuk verifikasi.']);
-            return;
-        }
-
-        // Verify PIN (Filter by Company - RELAXED: allow valid PIN across branches)
-        $this->db->where('pin_produksi', $pin);
-        // $this->db->where('perusahaan_id', $this->session->userdata('perusahaan_id'));
-        $operator = $this->db->get('tbl_karyawan')->row();
-        if (!$operator) {
-            echo json_encode(['success' => false, 'message' => 'PIN Operator tidak valid!']);
-            return;
-        }
-        $operator_id = $operator->karyawan_id;
-
-        // Validation: If no material_id provided, it's considered a "Finishing Only" batch (no stock deduction)
-        $is_finishing_only = empty($material_id) || $material_id === 'null' || $material_id === 'none';
-
-        if (empty($ids) || (!$is_finishing_only && $total_usage <= 0)) {
-            echo json_encode([
-                'success' => false,
-                'message' => 'Data tidak lengkap. ids_empty: ' . (empty($ids) ? 'Y' : 'N') .
-                    ', is_fin_only: ' . ($is_finishing_only ? 'Y' : 'N') .
-                    ', total_usage: ' . $total_usage .
-                    ', mat_id: ' . print_r($material_id, true)
-            ]);
-            return;
-        }
-
-        // REAL-TIME STOCK VALIDATION
-        if (!$is_finishing_only) {
-            $perusahaan = $this->session->userdata('perusahaan_id');
-            // Bypass validasi PIN untuk cabang selain TGM Merch (ID 3)
-            // Temporarily disabled due to low stock issues as requested
-            if (false && $perusahaan == 3) {
-                $current_stock = $this->warehouse->get_current_stock($material_id, $perusahaan);
-                if ($total_usage > $current_stock) {
-                    $supervisor_pin = $this->input->post('supervisor_pin', true);
-                    if (empty($supervisor_pin)) {
-                        echo json_encode([
-                            'success' => false,
-                            'require_pin_override' => true,
-                            'message' => "Stok gudang tidak mencukupi (Sisa: $current_stock). Silahkan ajukan produk/pengambilan barang ke Admin Gudang. Butuh PIN Otorisasi (Supervisor) untuk memaksakan/melanjutkan produksi."
-                        ]);
-                        return;
-                    } else {
-                        if (!$this->db->field_exists('pin', 'tbl_operator')) {
-                            echo json_encode(['success' => false, 'message' => 'Sistem gagal verifikasi PIN (kolom PIN tidak ada). Hubungi Admin.']);
-                            return;
-                        }
-                        $check_pin = $this->db->get_where('tbl_operator', ['pin' => $supervisor_pin])->row();
-                        if (!$check_pin) {
-                            echo json_encode(['success' => false, 'require_pin_override' => true, 'message' => "PIN Otorisasi Salah! Silakan coba lagi."]);
-                            return;
-                        }
-                    }
-                }
+        $this->_workflow_response(function () {
+            if (!$this->input->post('pin_operator', true))
+                throw new DomainException('Masukkan PIN operator.');
+            $ids = Production_workflow::ids($this->input->post('ids', true));
+            $outcomes = $this->_workflow_map('outcomes');
+            $material = $this->input->post('material_id', true);
+            $usage = Production_workflow::number($this->input->post('total_usage', true) ?: 0, 'Total pemakaian bahan');
+            if ($usage > 0 && !ctype_digit((string) $material))
+                throw new DomainException('Pilih material pemakaian batch.');
+            // Explicit allocations are in base units. Legacy batches use a documented quantity-based allocation.
+            $weights = [];
+            foreach ($ids as $id) {
+                $item = $this->db->get_where('tbl_produksi', ['produksi_id' => $id])->row();
+                if (!$item)
+                    throw new DomainException('Item batch tidak ditemukan.');
+                $weights[$id] = max(0, (float) $item->qty);
             }
-        }
-
-        $this->db->trans_start();
-
-        $ids_fully_done = [];
-        $any_step_updated = false; // Flag to track if any step was actually completed in this request
-
-        foreach ($ids as $pid) {
-            $this->_ensure_detail_produksi($pid); // INITIALIZE STEPS IF MISSING
-            $outcome = $outcomes[$pid] ?? ['status' => 'success', 'reason' => ''];
-
-            if ($outcome['status'] === 'fail') {
-                // REJECT/REDO LOGIC: Revert EVERYTHING for this job
-                $reason = ($outcome['reason'] ?: 'Rijek Produksi / Misprint');
-
-                // 1. Get current data for logging
-                $curr = $this->db->get_where('tbl_produksi', ['produksi_id' => $pid])->row();
-                $new_note = trim(($curr->catatan ?? '') . "\n[RIJEK] " . date('d/m/Y H:i') . " | Alasan: " . $reason);
-
-                // 2. Revert Global Status to 'approved' (Antrian)
-                $update_header = [
-                    'status_produksi' => 'approved',
-                    'catatan' => $new_note,
-                    'update_time' => date('Y-m-d H:i:s')
-                ];
-
-                // Add is_reprint if column exists
-                if ($this->db->field_exists('is_reprint', 'tbl_produksi')) {
-                    $update_header['is_reprint'] = 1;
-                }
-
-                $this->db->where('produksi_id', $pid);
-                $this->db->update('tbl_produksi', $update_header);
-
-                // 3. Clear timestamps and revert ALL steps to pending (0)
-                // This ensures it starts from Step 1 again
-                $this->db->where('produksi_id', $pid);
-                $this->db->update('detail_produksi', [
-                    'status_produksi' => '0',
-                    'waktu_mulai' => null,
-                    'waktu_selesai' => null,
-                    'operator_id' => null,
-                    'mesin_id' => null,
-                    'alasan_missing' => $reason,
-                    'qty_missing' => 1
+            $total_weight = array_sum($weights);
+            if ($usage > 0 && $total_weight <= 0)
+                throw new DomainException('Qty batch tidak valid.');
+            $last_id = end($ids);
+            $allocated = 0;
+            $machine = $this->input->post('mesin_id', true);
+            return $this->_workflow_execute($ids, 'complete', function ($item, $step, $actor) use ($outcomes, $material, $usage, $weights, $total_weight, $last_id, &$allocated, $machine) {
+                $id = $item->produksi_id;
+                $outcome = $outcomes[$id] ?? null;
+                if (!is_array($outcome) || !in_array($outcome['status'] ?? '', ['success', 'fail'], true))
+                    throw new DomainException('Isi hasil setiap item batch.');
+                $fields = $this->_workflow_fields($item, $step, [
+                    'qty_output' => $outcome['qty_output'] ?? null,
+                    'qty_missing' => $outcome['qty_missing'] ?? 0,
+                    'mesin_id' => $machine
                 ]);
-            } else {
-                // SUCCESS LOGIC: Step-Aware Completion
-                // ... (Logic Sukses Tetap Sama)
-                // 1. Identify current active/pending step
-                $this->db->select('detail_produksi_id');
-                $this->db->where('produksi_id', $pid);
-                $this->db->where_in('status_produksi', ['', '0', '1']);
-                $this->db->order_by('routing_urutan', 'ASC');
-                $this->db->order_by('detail_produksi_id', 'ASC');
-                $current_step = $this->db->get('detail_produksi')->row();
-
-                if ($current_step) {
-                    // Anti-Spam / Race condition protection
-                    // Prevent finishing multiple steps in < 3 seconds
-                    $last_completed = $this->db->select('waktu_selesai')
-                        ->from('detail_produksi')
-                        ->where('produksi_id', $pid)
-                        ->where('status_produksi', '2')
-                        ->order_by('waktu_selesai', 'DESC')
-                        ->limit(1)
-                        ->get()->row();
-
-                    if ($last_completed && !empty($last_completed->waktu_selesai)) {
-                        $last_time = strtotime($last_completed->waktu_selesai);
-                        if (time() - $last_time < 3) {
-                            continue; // Skip this to prevent accidental double tap
-                        }
-                    }
-
-                    // Close this specific step
-                    $update_step = [
-                        'status_produksi' => '2',
-                        'operator_id' => $operator_id,
-                        'waktu_selesai' => date('Y-m-d H:i:s')
-                    ];
-                    if ($mesin_id) {
-                        $update_step['mesin_id'] = $mesin_id;
-                    }
-                    $this->db->where('detail_produksi_id', $current_step->detail_produksi_id);
-                    $this->db->where('status_produksi !=', '2'); // Concurrency guard
-                    $this->db->update('detail_produksi', $update_step);
-
-                    if ($this->db->affected_rows() > 0) {
-                        $any_step_updated = true;
-                    }
+                $failed = $outcome['status'] === 'fail';
+                if ($failed && !trim((string) ($outcome['reason'] ?? '')))
+                    throw new DomainException('Isi alasan hasil rijek.');
+                $fields['_failed'] = $failed;
+                $fields['_note'] = trim((string) ($outcome['reason'] ?? ''));
+                $share = $usage > 0 ? ($id == $last_id ? $usage - $allocated : $usage * $weights[$id] / $total_weight) : 0;
+                $allocated += $share;
+                if ($share > 0)
+                    $fields['_note'] .= '; alokasi bahan batch berdasarkan qty order: ' . $share;
+                $this->_workflow_post_material($item, $step, $material, $share, $actor);
+                $fields['qty_bahan_pakai'] = (float) ($step->qty_bahan_pakai ?? 0) + $share;
+                if ($share > 0)
+                    $fields['material_id'] = (int) $material;
+                $secondary = [];
+                foreach (($outcome['bom_usage'] ?? []) as $line) {
+                    $mid = $line['bom_material_id'] ?? 0;
+                    $qty = Production_workflow::number($line['qty'] ?? 0, 'Pemakaian aktual BOM');
+                    if ($mid == $material || !$qty)
+                        continue;
+                    if (!ctype_digit((string) $mid) || (int) $mid < 1)
+                        throw new DomainException('Material BOM tidak valid.');
+                    $secondary[$mid] = ($secondary[$mid] ?? 0) + $qty;
                 }
-
-                // 2. Check if any steps remain after this update
-                $remaining = $this->db->where('produksi_id', $pid)
-                    ->where_in('status_produksi', ['', '0', '1'])
-                    ->count_all_results('detail_produksi');
-
-                // ============================================================
-                // [FIX] CEK FINISHING SEBELUM MENENTUKAN STATUS FINAL
-                // Jika tidak ada step yang tersisa (remaining=0), WAJIB cek apakah
-                // SPK ini masih memiliki finishing yang belum dikerjakan.
-                // Finishing bisa berupa:
-                // (A) Baris detail_produksi dengan is_finishing = 1 yang BELUM selesai
-                // (B) Kolom finishing_id di tbl_produksi (paketan/standalone finishing)
-                // ============================================================
-                $has_pending_finishing = false;
-
-                // CEK (A): Apakah ada baris detail_produksi dengan is_finishing=1 yang belum selesai?
-                if ($this->db->field_exists('is_finishing', 'detail_produksi')) {
-                    $pending_fin_rows = $this->db
-                        ->where('produksi_id', $pid)
-                        ->where('is_finishing', 1)
-                        ->where_in('status_produksi', ['', '0', '1'])
-                        ->count_all_results('detail_produksi');
-                    if ($pending_fin_rows > 0) {
-                        $has_pending_finishing = true;
-                    }
-                }
-
-                // CEK (B): Apakah ada finishing_id di tbl_produksi yang belum selesai?
-                // finishing_id ada → produk ini punya finishing paketan/standalone
-                if (!$has_pending_finishing) {
-                    if ($this->db->field_exists('finishing_id', 'tbl_produksi')) {
-                        $select_cols = 'finishing_id';
-                        $has_status_col = $this->db->field_exists('status_finishing', 'tbl_produksi');
-                        if ($has_status_col) {
-                            $select_cols .= ', status_finishing';
-                        }
-
-                        $spk_fin = $this->db
-                            ->select($select_cols)
-                            ->get_where('tbl_produksi', ['produksi_id' => $pid])
-                            ->row();
-
-                        // finishing_id terisi DAN status_finishing belum 'done'
-                        if ($spk_fin && !empty($spk_fin->finishing_id)) {
-                            $current_fin_status = '';
-                            if ($has_status_col) {
-                                $current_fin_status = strtolower(trim($spk_fin->status_finishing ?? ''));
-                            }
-
-                            $fin_status_done = ['done', 'selesai', 'finished', 'on_pb'];
-                            if (!in_array($current_fin_status, $fin_status_done)) {
-                                $has_pending_finishing = true;
-                            }
-                        }
-                    }
-                }
-
-                // 3. Update Global Status
-                if ($remaining > 0 && !$has_pending_finishing) {
-                    // Ada step non-finishing yang masih pending → tetap proses
-                    $this->db->where('produksi_id', $pid);
-                    $this->db->update('tbl_produksi', [
-                        'status_produksi' => 'proses'
-                    ]);
-                } elseif ($has_pending_finishing) {
-                    // [NEW] Step cetak/print selesai, TAPI masih ada finishing yang belum dikerjakan
-                    // → Arahkan ke antrian Finishing, JANGAN langsung ke PB
-                    $this->db->where('produksi_id', $pid);
-                    $this->db->update('tbl_produksi', [
-                        'status_produksi' => 'finishing', // Status baru: Menunggu Finishing
-                        'update_time' => date('Y-m-d H:i:s')
-                    ]);
-                    log_message('info', "[WIP] SPK #$pid → status 'finishing' (finishing belum selesai, tidak dikirim ke PB).");
-                } else {
-                    // Fully done — semua step termasuk finishing sudah selesai
-                    $final_status = $this->input->post('send_to_pb') == 1 ? 'on_pb' : 'done';
-
-                    // Auto PB for Jasa products (no physical item to send)
-                    $prod_info = $this->db->select('tbl_product.product_nama')
-                        ->from('tbl_produksi')
-                        ->join('tbl_product', 'tbl_product.product_id = tbl_produksi.product_id', 'left')
-                        ->where('tbl_produksi.produksi_id', $pid)
-                        ->get()->row();
-
-                    if ($prod_info && stripos(trim($prod_info->product_nama), 'jasa') === 0) {
-                        $final_status = 'on_pb';
-                    }
-
-                    $update_payload = [
-                        'status_produksi' => $final_status,
-                        'tgl_selesai' => date('Y-m-d H:i:s')
-                    ];
-
-                    if ($final_status === 'on_pb') {
-                        $update_payload['tgl_kirim_pb'] = date('Y-m-d H:i:s');
-                    }
-
-                    $this->db->where('produksi_id', $pid);
-                    $this->db->update('tbl_produksi', $update_payload);
-
-                    if ($final_status === 'on_pb') {
-                        $this->db->where('produksi_id', $pid);
-                        $this->db->update('detail_produksi', [
-                            'status_produksi' => 'on_pb',
-                            'update_time' => date('Y-m-d H:i:s')
-                        ]);
-                    }
-                    $ids_fully_done[] = $pid;
-                }
-            }
-        }
-
-        // 3. Reduce Stock (Deduct regardless of success/fail, but ONLY if it's a printing batch AND we actually processed a step)
-        if (!$is_finishing_only && $any_step_updated) {
-            $ref_id = $ids[0];
-            $this->update_warehouse_stock($ref_id, 0, $material_id, $total_usage, null, $operator_id);
-        }
-
-        // 4. Automatically deduct secondary materials based on BOM when Production starts or finishes
-        $this->_deduct_secondary_bom_materials($ids, $outcomes, $material_id);
-
-        $this->db->trans_complete();
-
-        echo json_encode(['success' => $this->db->trans_status()]);
+                ksort($secondary, SORT_NUMERIC);
+                foreach ($secondary as $mid => $qty)
+                    $this->_workflow_post_material($item, $step, $mid, $qty, $actor);
+                $this->_workflow_require_material($step, $share + array_sum($secondary));
+                // Completion and handover are separate actions; send_to_pb is not a status override.
+                return $fields;
+            });
+        });
     }
 
-    private function _deduct_secondary_bom_materials($ids, $outcomes, $primary_material_id)
-    {
-        foreach ($ids as $pid) {
-            $outcome = $outcomes[$pid] ?? ['status' => 'success'];
-            if ($outcome['status'] !== 'success')
-                continue; // Don't deduct BOM if the final step failed
 
-            // 1. Find which material_id have ALREADY been deducted for this produksi_id
-            $already_deducted_material_ids = [];
-            if ($this->db->table_exists('tbl_stok_log')) {
-                $logs = $this->db->get_where('tbl_stok_log', ['trx_type' => 'Produksi', 'trx_id' => $pid])->result();
-                foreach ($logs as $l) {
-                    if (!empty($l->material_id)) {
-                        $already_deducted_material_ids[] = $l->material_id;
-                    }
-                }
-            }
-
-            // [NEW] If bom_usage was submitted dynamically from the frontend modal, use it directly!
-            if (!empty($outcome['bom_usage']) && is_array($outcome['bom_usage'])) {
-                foreach ($outcome['bom_usage'] as $bom_item) {
-                    // Note: 'bom_material_id' from bom_usage is the material_id from tbl_material
-                    $bom_material_id = $bom_item['bom_material_id'] ?? $bom_item['bahan_id'] ?? 0;
-                    $deduction = (float) ($bom_item['qty'] ?? 0);
-
-                    if (empty($bom_material_id) || $deduction <= 0)
-                        continue;
-
-                    // SKIP the primary material which was already deducted collectively for this batch
-                    if ($primary_material_id && $bom_material_id == $primary_material_id)
-                        continue;
-
-                    // SKIP if this material_id was already deducted previously
-                    if (in_array($bom_material_id, $already_deducted_material_ids))
-                        continue;
-
-                    // Execute deduction
-                    $this->update_warehouse_stock($pid, 0, $bom_material_id, $deduction, null, $operator_id);
-                }
-                // Skip the traditional DB blind lookup if manual usage was provided!
-                continue;
-            }
-
-            // --- Traditional Fallback (if modal wasn't used or no bom_usage sent) ---
-            $item = $this->db->select('product_id, qty, metadata, panjang, lebar')->get_where('tbl_produksi', ['produksi_id' => $pid])->row();
-            if (!$item || empty($item->product_id) || $item->qty <= 0)
-                continue;
-
-            $product_id = $item->product_id;
-            $qty_pesanan = (float) $item->qty;
-
-            // 2. Fetch BOM for this product
-            $bom_lines = $this->db->get_where('bom_lines', ['product_id' => $product_id])->result();
-
-            // [DYNAMIC BOM MAPPING INJECTION]
-            if (!empty($item->metadata)) {
-                $meta = json_decode($item->metadata, true);
-                if (is_array($meta)) {
-                    $this->db->select('dm.*, m.bahan_id as base_bahan_id');
-                    $this->db->from('tbl_bom_dynamic_mapping dm');
-                    $this->db->join('tbl_material m', 'm.material_id = dm.bahan_id', 'left');
-                    $this->db->where('dm.product_id', $product_id);
-                    $dynamic_boms = $this->db->get()->result();
-
-                    foreach ($dynamic_boms as $dbom) {
-                        $meta_val = isset($meta[$dbom->attribute_key]) ? $meta[$dbom->attribute_key] : null;
-                        if ($meta_val !== null && $meta_val == $dbom->attribute_value) {
-                            $base_qty = 1;
-                            if ($dbom->calc_type === 'area') {
-                                $p = isset($meta['panjang']) ? (float) $meta['panjang'] : (isset($item->panjang) ? (float) $item->panjang : 1);
-                                $l = isset($meta['lebar']) ? (float) $meta['lebar'] : (isset($item->lebar) ? (float) $item->lebar : 1);
-                                $base_qty = $p * $l;
-                            } else if ($dbom->calc_type === 'sheets_plano' || $dbom->calc_type === 'fixed') {
-                                $base_qty = 1;
-                            }
-
-                            if (!empty($dbom->multiplier_key)) {
-                                if (is_numeric($dbom->multiplier_key)) {
-                                    $base_qty *= (float) $dbom->multiplier_key;
-                                } else if (isset($meta[$dbom->multiplier_key])) {
-                                    $base_qty *= (float) $meta[$dbom->multiplier_key];
-                                }
-                            }
-
-                            if ((float) $dbom->divider_factor > 0) {
-                                $base_qty /= (float) $dbom->divider_factor;
-                            }
-
-                            if ((float) $dbom->scrap_factor > 0) {
-                                $base_qty += ($base_qty * ((float) $dbom->scrap_factor / 100));
-                            }
-
-                            $pseudo_bom = new stdClass();
-                            $pseudo_bom->bahan_id = $dbom->base_bahan_id; // Base bahan_id
-                            $pseudo_bom->bom_material_id = $dbom->bahan_id; // Material variant ID
-                            $pseudo_bom->quantity = $base_qty;
-
-                            $bom_lines[] = $pseudo_bom;
-                        }
-                    }
-                }
-            }
-            // [/DYNAMIC BOM MAPPING INJECTION]
-
-            foreach ($bom_lines as $bom) {
-                // In bom_lines, the column 'bahan_id' ACTUALLY stores the 'material_id' from tbl_material!
-                $bom_material_id = $bom->bahan_id;
-
-                if (empty($bom_material_id))
-                    continue;
-
-                // SKIP the primary material which was already deducted collectively for this batch
-                if ($primary_material_id && $bom_material_id == $primary_material_id) {
-                    continue;
-                }
-
-                // SKIP if this material_id was already deducted previously (e.g., manually in Step 1)
-                if (in_array($bom_material_id, $already_deducted_material_ids)) {
-                    continue;
-                }
-
-                // 3. Deduct directly using the material_id from BOM
-                $deduction = $qty_pesanan * (float) $bom->quantity;
-                if ($deduction > 0) {
-                    $this->update_warehouse_stock($pid, 0, $bom_material_id, $deduction, null, $operator_id);
-                }
-            }
-        }
-    }
 
     public function selesai_item($produksi_id)
     {
-        if (empty($produksi_id)) {
-            redirect('wip/produksi');
-        }
-
-        $data = [
-            'status_produksi' => 'done',
-            'tgl_selesai' => date('Y-m-d H:i:s')
-        ];
-
-        $prod_info = $this->db->select('tbl_product.product_nama')
-            ->from('tbl_produksi')
-            ->join('tbl_product', 'tbl_product.product_id = tbl_produksi.product_id', 'left')
-            ->where('tbl_produksi.produksi_id', $produksi_id)
-            ->get()->row();
-
-        if ($prod_info && stripos(trim($prod_info->product_nama), 'jasa') === 0) {
-            $data['status_produksi'] = 'on_pb';
-            $data['tgl_kirim_pb'] = date('Y-m-d H:i:s');
-        }
-
-        $this->db->where('produksi_id', $produksi_id);
-        $update = $this->db->update('tbl_produksi', $data);
-
-        if ($update) {
-            $this->session->set_flashdata('message', '<div class="alert alert-success">Produksi selesai! Barang dipindahkan ke PB.</div>');
-        } else {
-            $this->session->set_flashdata('message', '<div class="alert alert-danger">Gagal memperbarui status.</div>');
-        }
-
-        redirect('wip/produksi');
+        $this->_workflow_legacy_rejected();
     }
 
     public function get_detail_produksi()
@@ -1644,247 +1503,24 @@ class Wip extends MY_Controller
 
     public function complete_process()
     {
-        $this->load->library('form_validation');
-
-        $this->form_validation->set_rules('detail_produksi_id', 'Detail Produksi ID', 'required|numeric');
-        $this->form_validation->set_rules('qty_output', 'Qty Output', 'required|numeric');
-        $this->form_validation->set_rules('qty_missing', 'Qty Missing', 'numeric');
-        $this->form_validation->set_rules('panjang_output', 'Panjang Output', 'numeric');
-        $this->form_validation->set_rules('lebar_output', 'Lebar Output', 'numeric');
-        $this->form_validation->set_rules('mesin_id', 'Mesin ID', 'required|numeric');
-        $this->form_validation->set_rules('material_id', 'Material ID', 'numeric');
-        $this->form_validation->set_rules('lokasi_proses', 'Lokasi Cetak', 'required|numeric');
-
-        if ($this->form_validation->run() == FALSE) {
-            $response = ['success' => false, 'message' => validation_errors()];
-        } else {
-            $detail_produksi_id = $this->input->post('detail_produksi_id', true);
-            $qty_output = $this->input->post('qty_output', true);
-            $qty_missing = $this->input->post('qty_missing', true) ?: 0;
-            $panjang_output = $this->input->post('panjang_output', true);
-            $lebar_output = $this->input->post('lebar_output', true);
-            $alasan_missing = $this->input->post('alasan_missing', true);
-
-            $detail_data = $this->db->get_where('detail_produksi', ['detail_produksi_id' => $detail_produksi_id])->row();
-
-            if (!$detail_data) {
-                $response = ['success' => false, 'message' => 'Detail produksi not found'];
-            } else if (in_array($detail_data->status_produksi, ['2', '3'])) {
-                $response = ['success' => false, 'message' => 'Tahapan ini sudah selesai diproses sebelumnya. Silakan muat ulang halaman.'];
-            } else {
-                // Kalkulasi dan validasi stok sebelum transaksi
-                $stock_reduction = $this->calculate_stock_reduction($detail_data, $qty_output, $panjang_output, $lebar_output);
-                $material_id = $this->input->post('material_id', true) ?: $detail_data->material_id;
-
-                if ($stock_reduction > 0 && $material_id) {
-                    $perusahaan = $this->session->userdata('perusahaan_id');
-
-                    // Bypass validasi PIN untuk cabang selain TGM Merch (ID 3)
-                    // Temporarily disabled due to low stock issues as requested
-                    if (false && $perusahaan == 3) {
-                        $current_stock = $this->warehouse->get_current_stock($material_id, $perusahaan);
-                        if ($stock_reduction > $current_stock) {
-                            $supervisor_pin = $this->input->post('supervisor_pin', true);
-                            if (empty($supervisor_pin)) {
-                                echo json_encode([
-                                    'success' => false,
-                                    'require_pin_override' => true,
-                                    'message' => "Stok gudang tidak mencukupi (Sisa: $current_stock). Silahkan ajukan produk/pengambilan barang ke Admin Gudang. Butuh PIN Otorisasi (Supervisor) untuk memaksakan/melanjutkan produksi."
-                                ]);
-                                return;
-                            } else {
-                                if (!$this->db->field_exists('pin', 'tbl_operator')) {
-                                    echo json_encode(['success' => false, 'message' => 'Sistem gagal verifikasi PIN (kolom PIN tidak ada). Hubungi Admin.']);
-                                    return;
-                                }
-                                $check_pin = $this->db->get_where('tbl_operator', ['pin' => $supervisor_pin])->row();
-                                if (!$check_pin) {
-                                    echo json_encode(['success' => false, 'require_pin_override' => true, 'message' => "PIN Otorisasi Salah! Silakan coba lagi."]);
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                $this->db->trans_start();
-
-                try {
-                    $update_data = [
-                        'qty_output' => $qty_output,
-                        'qty_missing' => $qty_missing,
-                        'panjang_output' => $panjang_output,
-                        'lebar_output' => $lebar_output,
-                        'alasan_missing' => $alasan_missing,
-                        'mesin_id' => $this->input->post('mesin_id', true),
-                        'material_id' => $this->input->post('material_id', true) ?: null,
-                        'lokasi_proses' => $this->input->post('lokasi_proses', true),
-                        'status_produksi' => '2', // Selesai Di Produksi
-                        'waktu_selesai' => date('Y-m-d H:i:s'),
-                        'update_time' => date('Y-m-d H:i:s')
-                    ];
-
-                    $this->db->where('detail_produksi_id', $detail_produksi_id);
-                    $this->db->where('status_produksi !=', '2'); // ATOMIC CHECK
-                    $this->db->update('detail_produksi', $update_data);
-
-                    if ($this->db->affected_rows() == 0) {
-                        throw new Exception('Proses sudah selesai oleh aksi lain. Muat ulang halaman.');
-                    }
-
-                    // Stock reduction
-                    $stock_reduction = $this->calculate_stock_reduction($detail_data, $qty_output, $panjang_output, $lebar_output);
-
-                    if ($stock_reduction > 0) {
-                        $material_id = $this->input->post('material_id', true) ?: $detail_data->material_id;
-                        $lokasi_proses = $this->input->post('lokasi_proses', true);
-                        $this->update_warehouse_stock($detail_data->produksi_id, $detail_produksi_id, $material_id, $stock_reduction, $lokasi_proses);
-                    }
-
-                    $this->db->trans_complete();
-
-                    if ($this->db->trans_status() === FALSE) {
-                        $this->db->trans_rollback();
-                        $response = ['success' => false, 'message' => 'Failed to complete process and update stock'];
-                    } else {
-                        $response = ['success' => true, 'message' => 'Process completed and stock updated successfully'];
-                    }
-
-                } catch (Exception $e) {
-                    $this->db->trans_rollback();
-                    $response = ['success' => false, 'message' => 'Error: ' . $e->getMessage()];
-                }
-            }
-        }
-
-        header('Content-Type: application/json');
-        echo json_encode($response);
+        $this->_workflow_detail_action('complete');
     }
 
     public function update_production_process()
     {
-        $this->load->library('form_validation');
-
-        $this->form_validation->set_rules('detail_produksi_id', 'Detail Produksi ID', 'required|numeric');
-        $this->form_validation->set_rules('status_produksi', 'Status Produksi', 'required|in_list[0,1,2,3]');
-        $this->form_validation->set_rules('mesin_id', 'Mesin ID', 'required|numeric');
-        $this->form_validation->set_rules('lokasi_proses', 'Lokasi Proses', 'required|numeric');
-        // Optional fields validation
-        $this->form_validation->set_rules('material_id', 'Material ID', 'numeric');
-        $this->form_validation->set_rules('qty_input', 'Qty Input', 'numeric');
-        $this->form_validation->set_rules('qty_output', 'Qty Output', 'numeric');
-
-        if ($this->form_validation->run() == FALSE) {
-            $response = ['success' => false, 'message' => validation_errors()];
-        } else {
-            $detail_produksi_id = $this->input->post('detail_produksi_id', true);
-            $status_produksi = $this->input->post('status_produksi', true);
-
-            // Collect optional data
-            $qty_input = $this->input->post('qty_input', true) ?: null;
-            $qty_output = $this->input->post('qty_output', true) ?: null;
-            $qty_missing = $this->input->post('qty_missing', true) ?: 0;
-            $panjang_output = $this->input->post('panjang_output', true) ?: null;
-            $lebar_output = $this->input->post('lebar_output', true) ?: null;
-            $lokasi_proses = $this->input->post('lokasi_proses', true) ?: null;
-            $alasan_missing = $this->input->post('alasan_missing', true) ?: null;
-            $material_id = $this->input->post('material_id', true) ?: null;
-
-            $current_data = $this->db->get_where('detail_produksi', ['detail_produksi_id' => $detail_produksi_id])->row();
-
-            if (!$current_data) {
-                $response = ['success' => false, 'message' => 'Detail produksi not found'];
-            } else {
-                $this->db->trans_start();
-
-                try {
-                    $update_data = [
-                        'status_produksi' => $status_produksi,
-                        'mesin_id' => $this->input->post('mesin_id', true),
-                        'update_time' => date('Y-m-d H:i:s')
-                    ];
-
-                    if ($qty_input !== null)
-                        $update_data['qty_input'] = $qty_input;
-                    if ($qty_output !== null)
-                        $update_data['qty_output'] = $qty_output;
-                    if ($qty_missing !== null)
-                        $update_data['qty_missing'] = $qty_missing;
-                    if ($panjang_output !== null)
-                        $update_data['panjang_output'] = $panjang_output;
-                    if ($lebar_output !== null)
-                        $update_data['lebar_output'] = $lebar_output;
-                    if ($lokasi_proses !== null)
-                        $update_data['lokasi_proses'] = $lokasi_proses;
-                    if ($alasan_missing !== null)
-                        $update_data['alasan_missing'] = $alasan_missing;
-                    if ($material_id !== null)
-                        $update_data['material_id'] = $material_id == '0' ? null : $material_id;
-
-                    // Set status dependent timestamps
-                    if ($status_produksi == '1' && $current_data->status_produksi != '1') {
-                        $update_data['waktu_mulai'] = date('Y-m-d H:i:s');
-                    } elseif (in_array($status_produksi, ['2', '3']) && !in_array($current_data->status_produksi, ['2', '3'])) {
-                        $update_data['waktu_selesai'] = date('Y-m-d H:i:s');
-                    }
-
-                    $this->db->where('detail_produksi_id', $detail_produksi_id);
-                    if (in_array($status_produksi, ['2', '3'])) {
-                        $this->db->where_not_in('status_produksi', ['2', '3']); // ATOMIC CHECK
-                    }
-                    $this->db->update('detail_produksi', $update_data);
-
-                    if (in_array($status_produksi, ['2', '3']) && $this->db->affected_rows() == 0) {
-                        throw new Exception('Proses sudah selesai oleh aksi lain. Muat ulang halaman.');
-                    }
-
-                    // Update stock if completed
-                    if (in_array($status_produksi, ['2', '3']) && !in_array($current_data->status_produksi, ['2', '3']) && $qty_output && $panjang_output && $lebar_output) {
-                        $stock_reduction = $this->calculate_stock_reduction($current_data, $qty_output, $panjang_output, $lebar_output);
-                        if ($stock_reduction > 0) {
-                            $material_id = $this->input->post('material_id', true) ?: $current_data->material_id;
-                            $lokasi_proses = $this->input->post('lokasi_proses', true);
-                            $this->update_warehouse_stock($current_data->produksi_id, $detail_produksi_id, $material_id, $stock_reduction, $lokasi_proses);
-                        }
-                    }
-
-                    $this->db->trans_complete();
-
-                    if ($this->db->trans_status() === FALSE) {
-                        $this->db->trans_rollback();
-                        $response = ['success' => false, 'message' => 'Failed to update production process'];
-                    } else {
-                        $response = ['success' => true, 'message' => 'Production process updated successfully'];
-                    }
-
-                } catch (Exception $e) {
-                    $this->db->trans_rollback();
-                    $response = ['success' => false, 'message' => 'Error: ' . $e->getMessage()];
-                }
-            }
+        $status = (string) $this->input->post('status_produksi', true);
+        $actions = ['0' => 'cancel', '1' => 'start', '2' => 'complete'];
+        if (!isset($actions[$status])) {
+            $this->_workflow_legacy_rejected();
+            return;
         }
-
-        header('Content-Type: application/json');
-        echo json_encode($response);
+        $this->_workflow_detail_action($actions[$status]);
     }
 
     public function move_to_pb()
     {
-        $id = $this->input->post('produksi_id', true);
-        if (!$id) {
-            echo json_encode(['success' => false, 'message' => 'ID tidak ditemukan']);
-            return;
-        }
-
-        // Ambil data session
-        $perusahaan = $this->session->userdata('perusahaan_id');
-        $level = $this->session->userdata('level');
-        $user_id = $this->session->userdata('id_user') ?? $this->session->userdata('id') ?? 1; // Fallback untuk user_id
-
-        $response = $this->Produksi_model->set_status_pb($id, $perusahaan, $level, $user_id, false);
-
-        header('Content-Type: application/json');
-        echo json_encode($response);
+        $this->_workflow_response(function () {
+            return $this->_workflow_execute([$this->input->post('produksi_id', true)], 'handover'); });
     }
 
     public function batch_move_to_pb()
@@ -1892,7 +1528,6 @@ class Wip extends MY_Controller
         $this->_workflow_response(function () {
             return $this->_workflow_execute(Production_workflow::ids($this->input->post('ids', true)), 'handover'); });
     }
-
 
     public function ajax_get_log()
     {
@@ -2134,7 +1769,7 @@ class Wip extends MY_Controller
 
         $nospk = $row->nospk;
 
-        $this->db->select('tbl_produksi.*, tbl_product.product_nama, tbl_product.kategori_id, tbl_kategori.kategori_nama, tbl_konsumen.konsumen_nama, tbl_konsumen.konsumen_nohp, tbl_satuan.satuan_nama, (CASE WHEN tbl_product.kategori_id = 1 THEN tbl_harga_product.jenisprint_id ELSE tbl_harga_product.ket_1 END) as sisi, tbl_harga_product.ket_1 as db_ket_1, tbl_harga_product.jenisprint_id as db_jenisprint_id, tbl_perusahaan.nama_perusahaan as cabang_asal, tbl_perusahaan.tag_paper, tbl_perusahaan.tag_font_size, tbl_perusahaan.tag_font_family, tbl_perusahaan.tag_show_logo, tbl_perusahaan.tag_logo_width, tbl_perusahaan.tag_show_qr, tbl_perusahaan.tag_qr_width, tbl_perusahaan.tag_footer_note, tbl_perusahaan.tag_section_spacing, tbl_perusahaan.invoice_font_size, tbl_perusahaan.invoice_font_family, tbl_perusahaan.invoice_section_spacing, tbl_pemesanan.created_at as tgl_spk, tbl_pemesanan.status_pembayaran, dk.nama_lengkap as deskprint_nama, tbl_jenis_transaksi.nama_jenis_transaksi, tbl_pemesanan.resi_marketplace, tbl_product.form_schema as product_schema, tbl_kategori.form_schema as kategori_schema');
+        $this->db->select('tbl_produksi.*, tbl_product.product_nama, tbl_product.kategori_id, tbl_kategori.kategori_nama, tbl_konsumen.konsumen_nama, tbl_satuan.satuan_nama, (CASE WHEN tbl_product.kategori_id = 1 THEN tbl_harga_product.jenisprint_id ELSE tbl_harga_product.ket_1 END) as sisi, tbl_harga_product.ket_1 as db_ket_1, tbl_harga_product.jenisprint_id as db_jenisprint_id, tbl_perusahaan.nama_perusahaan as cabang_asal, tbl_perusahaan.tag_paper, tbl_perusahaan.tag_font_size, tbl_perusahaan.tag_font_family, tbl_perusahaan.tag_show_logo, tbl_perusahaan.tag_logo_width, tbl_perusahaan.tag_show_qr, tbl_perusahaan.tag_qr_width, tbl_perusahaan.tag_footer_note, tbl_perusahaan.tag_section_spacing, tbl_perusahaan.invoice_font_size, tbl_perusahaan.invoice_font_family, tbl_perusahaan.invoice_section_spacing, tbl_pemesanan.created_at as tgl_spk, tbl_pemesanan.status_pembayaran, dk.nama_lengkap as deskprint_nama, tbl_jenis_transaksi.nama_jenis_transaksi, tbl_pemesanan.resi_marketplace, tbl_product.form_schema as product_schema, tbl_kategori.form_schema as kategori_schema');
         $this->db->select('(SELECT mesin_nama FROM tbl_mesin m JOIN detail_produksi dp ON dp.mesin_id = m.mesin_id WHERE dp.produksi_id = tbl_produksi.produksi_id AND dp.mesin_id IS NOT NULL LIMIT 1) as mesin_nama');
         $this->db->select('(SELECT nama_lengkap FROM tbl_karyawan k JOIN detail_produksi dp ON dp.operator_id = k.karyawan_id WHERE dp.produksi_id = tbl_produksi.produksi_id AND dp.operator_id IS NOT NULL AND dp.status_produksi = \'2\' ORDER BY dp.detail_produksi_id DESC LIMIT 1) as nama_operator');
         $this->db->select('(SELECT (MAX(total_tagihan) - MAX(total_bayar)) FROM tbl_pembayaran WHERE nospk = tbl_produksi.nospk) as sisa_tagihan');
@@ -2192,7 +1827,7 @@ class Wip extends MY_Controller
             show_404();
         }
 
-        $this->db->select('tbl_produksi.*, tbl_product.product_nama, tbl_product.kategori_id, tbl_kategori.kategori_nama, tbl_konsumen.konsumen_nama, tbl_konsumen.konsumen_nohp, tbl_satuan.satuan_nama, (CASE WHEN tbl_product.kategori_id = 1 THEN tbl_harga_product.jenisprint_id ELSE tbl_harga_product.ket_1 END) as sisi, tbl_harga_product.ket_1 as db_ket_1, tbl_harga_product.jenisprint_id as db_jenisprint_id, tbl_perusahaan.nama_perusahaan as cabang_asal, tbl_perusahaan.tag_paper, tbl_perusahaan.tag_font_size, tbl_perusahaan.tag_font_family, tbl_perusahaan.tag_show_logo, tbl_perusahaan.tag_logo_width, tbl_perusahaan.tag_show_qr, tbl_perusahaan.tag_qr_width, tbl_perusahaan.tag_footer_note, tbl_perusahaan.tag_section_spacing, tbl_perusahaan.invoice_font_size, tbl_perusahaan.invoice_font_family, tbl_perusahaan.invoice_section_spacing, tbl_pemesanan.created_at as tgl_spk, tbl_pemesanan.status_pembayaran, dk.nama_lengkap as deskprint_nama, tbl_jenis_transaksi.nama_jenis_transaksi, tbl_pemesanan.resi_marketplace, tbl_product.form_schema as product_schema, tbl_kategori.form_schema as kategori_schema');
+        $this->db->select('tbl_produksi.*, tbl_product.product_nama, tbl_product.kategori_id, tbl_kategori.kategori_nama, tbl_konsumen.konsumen_nama, tbl_satuan.satuan_nama, (CASE WHEN tbl_product.kategori_id = 1 THEN tbl_harga_product.jenisprint_id ELSE tbl_harga_product.ket_1 END) as sisi, tbl_harga_product.ket_1 as db_ket_1, tbl_harga_product.jenisprint_id as db_jenisprint_id, tbl_perusahaan.nama_perusahaan as cabang_asal, tbl_perusahaan.tag_paper, tbl_perusahaan.tag_font_size, tbl_perusahaan.tag_font_family, tbl_perusahaan.tag_show_logo, tbl_perusahaan.tag_logo_width, tbl_perusahaan.tag_show_qr, tbl_perusahaan.tag_qr_width, tbl_perusahaan.tag_footer_note, tbl_perusahaan.tag_section_spacing, tbl_perusahaan.invoice_font_size, tbl_perusahaan.invoice_font_family, tbl_perusahaan.invoice_section_spacing, tbl_pemesanan.created_at as tgl_spk, tbl_pemesanan.status_pembayaran, dk.nama_lengkap as deskprint_nama, tbl_jenis_transaksi.nama_jenis_transaksi, tbl_pemesanan.resi_marketplace, tbl_product.form_schema as product_schema, tbl_kategori.form_schema as kategori_schema');
         $this->db->select('(SELECT mesin_nama FROM tbl_mesin m JOIN detail_produksi dp ON dp.mesin_id = m.mesin_id WHERE dp.produksi_id = tbl_produksi.produksi_id AND dp.mesin_id IS NOT NULL LIMIT 1) as mesin_nama');
         $this->db->select('(SELECT nama_lengkap FROM tbl_karyawan k JOIN detail_produksi dp ON dp.operator_id = k.karyawan_id WHERE dp.produksi_id = tbl_produksi.produksi_id AND dp.operator_id IS NOT NULL AND dp.status_produksi = \'2\' ORDER BY dp.detail_produksi_id DESC LIMIT 1) as nama_operator');
         $this->db->select('(SELECT (MAX(total_tagihan) - MAX(total_bayar)) FROM tbl_pembayaran WHERE nospk = tbl_produksi.nospk) as sisa_tagihan');
@@ -2354,42 +1989,6 @@ class Wip extends MY_Controller
         echo json_encode($response);
     }
 
-    private function calculate_stock_reduction($detail_data, $qty_output, $panjang_output, $lebar_output)
-    {
-        try {
-            $produksi_data = $this->db->get_where('tbl_produksi', ['produksi_id' => $detail_data->produksi_id])->row();
-            $routing_data = $this->db->get_where('routing', ['routing_id' => $detail_data->routing_id])->row();
-
-            if (!$produksi_data || !$routing_data) {
-                return 0;
-            }
-
-            $output_area = $panjang_output * $lebar_output;
-            $total_output_area = $output_area * $qty_output;
-
-            $fields = $this->db->list_fields('bom_lines');
-            $has_routing_id = in_array('routing_id', $fields);
-
-            if ($has_routing_id) {
-                $bom_data = $this->db->get_where('bom_lines', [
-                    'product_id' => $produksi_data->product_id,
-                    'routing_id' => $detail_data->routing_id
-                ])->row();
-
-                if ($bom_data) {
-                    $consumption_rate = isset($bom_data->qty_required) ? $bom_data->qty_required : 1;
-                    return $total_output_area * $consumption_rate;
-                }
-            }
-
-            return $qty_output * $output_area;
-
-        } catch (Exception $e) {
-            log_message('error', 'Error in calculate_stock_reduction: ' . $e->getMessage());
-            return 0;
-        }
-    }
-
     private function update_warehouse_stock($produksi_id, $detail_id, $material_id, $stock_reduction, $lokasi_proses = null, $override_karyawan_id = null)
     {
         try {
@@ -2448,7 +2047,7 @@ class Wip extends MY_Controller
                 }
             }
 
-            $this->M_gudang->update_stock_with_log(
+            return $this->M_gudang->update_stock_with_log(
                 $material_id,
                 $gudang_id,
                 -$warehouse_reduction, // Negative value for deduction
@@ -2722,164 +2321,18 @@ class Wip extends MY_Controller
 
     public function selesai_spk_ajax()
     {
-        $nospk = $this->input->post('nospk', true);
-        $cat_id = $this->input->post('cat', true);
-        $pin = $this->input->post('pin_operator', true);
-
-        if (empty($nospk) || empty($pin)) {
-            $this->output->set_status_header(400);
-            echo json_encode(['success' => false, 'message' => 'Data tidak lengkap.']);
-            return;
-        }
-
-        // Verify PIN (Filter by Company - RELAXED)
-        $this->db->where('pin_produksi', $pin);
-        // $this->db->where('perusahaan_id', $this->session->userdata('perusahaan_id'));
-        $operator = $this->db->get('tbl_karyawan')->row();
-        if (!$operator) {
-            echo json_encode(['success' => false, 'message' => 'PIN Operator tidak valid!']);
-            return;
-        }
-
-        // 1. Cari Item yang akan diupdate (Select First)
-        $this->db->select('tbl_produksi.produksi_id, pr.product_nama');
-        $this->db->from('tbl_produksi');
-
-        if ($cat_id) {
-            $is_granular_cat = in_array((int) $cat_id, [2, 5, 8, 9]);
-            $this->db->join('tbl_product pr', 'pr.product_id = tbl_produksi.product_id');
-            if ($is_granular_cat) {
-                $this->db->where('pr.kategori_id', $cat_id);
-            } else {
-                // Untuk A3 dan Finishing, selesaikan semua item non-granular dalam SPK ini
-                $this->db->where_not_in('pr.kategori_id', [2, 5, 8, 9]);
-            }
-        }
-
-        $this->db->where('tbl_produksi.nospk', $nospk);
-        $this->db->where('tbl_produksi.status_produksi', 'proses');
-
-        // Access Control (Perusahaan / Branch)
-        $perusahaan = $this->session->userdata('perusahaan_id');
-        $level = $this->session->userdata('level');
-
-        if (!in_array((int) $level, [1, 17], true)) {
-            $this->db->group_start();
-            $this->db->where('tbl_produksi.lokasi_cetak', $perusahaan);
-            $this->db->or_group_start();
-            $this->db->where("(tbl_produksi.lokasi_cetak IS NULL OR tbl_produksi.lokasi_cetak = '' OR tbl_produksi.lokasi_cetak = '0')", NULL, FALSE);
-            $this->db->where('tbl_produksi.perusahaan_id', $perusahaan);
-            $this->db->group_end();
-            $this->db->group_end();
-        }
-
-        $items = $this->db->get()->result();
-
-        if (empty($items)) {
-            echo json_encode(['success' => false, 'message' => 'Tidak ada item "Proses" yang dapat diselesaikan.']);
-            return;
-        }
-
-        $ids_jasa = [];
-        $ids_normal = [];
-        foreach ($items as $item) {
-            if (!empty($item->product_nama) && stripos(trim($item->product_nama), 'jasa') === 0) {
-                $ids_jasa[] = $item->produksi_id;
-            } else {
-                $ids_normal[] = $item->produksi_id;
-            }
-        }
-
-        // 2. Transaction Update
-        $this->db->trans_start();
-
-        if (!empty($ids_normal)) {
-            foreach ($ids_normal as $pid) {
-                // 1. Identify current active/pending step
-                $this->db->select('detail_produksi_id');
-                $this->db->where('produksi_id', $pid);
-                $this->db->where_in('status_produksi', ['', '0', '1']);
-                $this->db->order_by('routing_urutan', 'ASC');
-                $this->db->order_by('detail_produksi_id', 'ASC');
-                $current_step = $this->db->get('detail_produksi')->row();
-
-                if ($current_step) {
-                    // Anti-Spam / Race condition protection
-                    // Prevent finishing multiple steps in < 3 seconds
-                    $last_completed = $this->db->select('waktu_selesai')
-                        ->from('detail_produksi')
-                        ->where('produksi_id', $pid)
-                        ->where('status_produksi', '2')
-                        ->order_by('waktu_selesai', 'DESC')
-                        ->limit(1)
-                        ->get()->row();
-
-                    if ($last_completed && !empty($last_completed->waktu_selesai)) {
-                        $last_time = strtotime($last_completed->waktu_selesai);
-                        if (time() - $last_time < 3) {
-                            // Skip this to prevent accidental double tap
-                            continue;
-                        }
-                    }
-
-                    $this->db->where('detail_produksi_id', $current_step->detail_produksi_id);
-                    $this->db->where('status_produksi !=', '2'); // Safeguard against concurrent updates
-                    $this->db->update('detail_produksi', [
-                        'status_produksi' => '2',
-                        'operator_id' => $operator->karyawan_id ?? null,
-                        'waktu_selesai' => date('Y-m-d H:i:s')
-                    ]);
-
-                    if ($this->db->affected_rows() == 0) {
-                        continue; // Already processed by another concurrent request
-                    }
-                }
-
-                // 2. Check remaining steps
-                $remaining = $this->db->where('produksi_id', $pid)
-                    ->where_in('status_produksi', ['', '0', '1'])
-                    ->count_all_results('detail_produksi');
-
-                // 3. Update global status
-                if ($remaining > 0) {
-                    $this->db->where('produksi_id', $pid);
-                    $this->db->update('tbl_produksi', [
-                        'status_produksi' => 'proses'
-                    ]);
-                } else {
-                    $this->db->where('produksi_id', $pid);
-                    $this->db->update('tbl_produksi', [
-                        'status_produksi' => 'done',
-                        'tgl_selesai' => date('Y-m-d H:i:s')
-                    ]);
-                }
-            }
-        }
-
-        if (!empty($ids_jasa)) {
-            $update_jasa = [
-                'status_produksi' => 'on_pb',
-                'tgl_selesai' => date('Y-m-d H:i:s'),
-                'tgl_kirim_pb' => date('Y-m-d H:i:s')
-            ];
-            $this->db->where_in('produksi_id', $ids_jasa);
-            $this->db->update('tbl_produksi', $update_jasa);
-
-            $this->db->where_in('produksi_id', $ids_jasa);
-            $this->db->update('detail_produksi', [
-                'status_produksi' => 'on_pb',
-                'update_time' => date('Y-m-d H:i:s')
-            ]);
-        }
-
-        $this->db->trans_complete();
-
-        if ($this->db->trans_status() === FALSE) {
-            $this->output->set_status_header(500);
-            echo json_encode(['success' => false, 'message' => 'Gagal memperbarui status produksi.']);
-        } else {
-            echo json_encode(['success' => true, 'message' => 'SPK ' . $nospk . ' berhasil diselesaikan oleh ' . $operator->nama_lengkap]);
-        }
+        $this->_workflow_response(function () {
+            if (!$this->input->post('pin_operator', true))
+                throw new DomainException('Masukkan PIN operator.');
+            $ids = $this->_workflow_spk_ids($this->input->post('nospk', true), $this->input->post('cat', true), 'proses');
+            $results = $this->_workflow_map('outcomes');
+            return $this->_workflow_execute($ids, 'complete', function ($item, $step, $actor) use ($results) {
+                // SPK quick completion is for operations without a material posting requirement.
+                if (!empty($step->bom_line_id))
+                    throw new DomainException('Tahap ini memerlukan pencatatan bahan. Gunakan Catat Hasil per item.');
+                return $this->_workflow_fields($item, $step, $results[$item->produksi_id] ?? []);
+            });
+        });
     }
 
     public function process_all_ready_to_pb_ajax()
@@ -3136,342 +2589,12 @@ class Wip extends MY_Controller
 
     public function submit_step_result()
     {
-        $detail_id = $this->input->post('detail_id', true);
-        $produksi_id = $this->input->post('produksi_id', true);
-        $op_id = $this->input->post('operator_id', true);
-
-        $perusahaan = $this->session->userdata('perusahaan_id');
-        $level = $this->session->userdata('level');
-        if (!in_array((int) $level, [1, 17], true)) {
-            $check = $this->db->select('produksi_id')
-                ->from('tbl_produksi')
-                ->where('produksi_id', $produksi_id)
-                ->group_start()
-                ->where('lokasi_cetak', $perusahaan)
-                ->or_group_start()
-                ->where("(lokasi_cetak IS NULL OR lokasi_cetak = '' OR lokasi_cetak = '0')", NULL, FALSE)
-                ->where('perusahaan_id', $perusahaan)
-                ->group_end()
-                ->group_end()
-                ->get()->num_rows();
-
-            if ($check == 0) {
-                $this->session->set_flashdata('message', '<div class="alert alert-danger">Akses ditolak: Branch tidak sesuai.</div>');
-                redirect('wip/produksi');
-                return;
-            }
-        }
-
-        // Fetch existing data for additive logic
-        $existing = $this->db->get_where('detail_produksi', ['detail_produksi_id' => $detail_id])->row();
-
-        $qty_pakai_input = (float) $this->input->post('qty_bahan_pakai', true);
-        $qty_rusak_input = (float) $this->input->post('qty_bahan_rusak', true);
-
-        // Final values for DB (Add to existing if they are not NULL)
-        $new_qty_pakai = (float) ($existing->qty_bahan_pakai ?? 0) + $qty_pakai_input;
-        $new_qty_rusak = (float) ($existing->qty_bahan_rusak ?? 0) + $qty_rusak_input;
-
-        $data_update = [
-            'status_produksi' => '2',
-            'qty_output' => $this->input->post('qty_output', true),
-            'qty_missing' => $this->input->post('qty_failed', true),
-            'qty_bahan_pakai' => $new_qty_pakai,
-            'qty_bahan_rusak' => $new_qty_rusak,
-            'panjang_output' => $this->input->post('panjang_output', true) ?: 0,
-            'lebar_output' => $this->input->post('lebar_output', true) ?: 0,
-            'material_id' => $this->input->post('material_id', true),
-            'operator_id' => !empty($op_id) ? $op_id : $existing->operator_id,
-            'alasan_missing' => $this->input->post('alasan_failed', true),
-            'catatan' => $this->input->post('catatan', true),
-            'waktu_selesai' => date('Y-m-d H:i:s')
-        ];
-
-        // REAL-TIME STOCK VALIDATION (Before transaction starts)
-        $material_id = $this->input->post('material_id', true);
-        if ($material_id && ($qty_pakai_input > 0 || $qty_rusak_input > 0)) {
-            $delta_reduced = $qty_pakai_input + $qty_rusak_input;
-
-            $current_stock = $this->warehouse->get_current_stock($material_id, $perusahaan);
-            // Temporarily disabled due to low stock issues as requested
-            if (false && $delta_reduced > $current_stock) {
-                $supervisor_pin = $this->input->post('supervisor_pin', true);
-                if (empty($supervisor_pin)) {
-                    // Blokir sementara dan minta otorisasi PIN
-                    echo json_encode([
-                        'success' => false,
-                        'require_pin_override' => true,
-                        'message' => "Stok gudang tidak mencukupi (Sisa: $current_stock). Silahkan ajukan produk/pengambilan barang ke Admin Gudang. Butuh PIN Otorisasi (Supervisor) untuk memaksakan/melanjutkan produksi."
-                    ]);
-                    return;
-                } else {
-                    // Validasi PIN Otorisasi
-                    if (!$this->db->field_exists('pin', 'tbl_operator')) {
-                        echo json_encode(['success' => false, 'message' => 'Sistem gagal verifikasi PIN (kolom PIN tidak ada). Hubungi Admin.']);
-                        return;
-                    }
-                    $check_pin = $this->db->get_where('tbl_operator', ['pin' => $supervisor_pin])->row();
-                    if (!$check_pin) {
-                        echo json_encode(['success' => false, 'require_pin_override' => true, 'message' => "PIN Otorisasi Salah! Silakan coba lagi."]);
-                        return;
-                    }
-                }
-            }
-        }
-
-        $this->db->trans_start();
-
-        $this->db->where('detail_produksi_id', $detail_id);
-        $this->db->update('detail_produksi', $data_update);
-
-        if ($material_id && ($qty_pakai_input > 0 || $qty_rusak_input > 0)) {
-            $delta_reduced = $qty_pakai_input + $qty_rusak_input;
-
-            $this->update_warehouse_stock($produksi_id, $detail_id, $material_id, $delta_reduced);
-        }
-
-        $this->db->trans_complete();
-
-        if ($this->db->trans_status() === FALSE) {
-            echo json_encode(['success' => false, 'message' => 'Gagal menyimpan hasil tahap produksi.']);
-        } else {
-            echo json_encode(['success' => true, 'message' => 'Hasil tahap produksi berhasil disimpan.']);
-        }
+        $this->_workflow_detail_action('complete');
     }
 
     public function advance_step_ajax()
     {
-        // Enforce JSON check or login check
-        if (!$this->input->is_ajax_request())
-            show_404();
-
-        $produksi_id = $this->input->post('produksi_id', true);
-
-        // SAFETY CHECK: Ensure this legacy function is NOT used for Large Format (Category 2)
-        // This prevents regressions in A3+ when LF logic is modified elsewhere.
-        $check = $this->db->select('kategori_id')->from('tbl_product pr')->join('tbl_produksi p', 'p.product_id = pr.product_id')->where('p.produksi_id', $produksi_id)->get()->row();
-        if ($check && $check->kategori_id == 2) {
-            echo json_encode(['success' => false, 'message' => 'System Routing Error: LF items must use their own dedicated processor.']);
-            return;
-        }
-
-        // Get Inputs
-        $action_type = $this->input->post('type', true); // 'start' or 'next'
-
-        // Verify PIN if provided
-        $pin = $this->input->post('pin_operator', true);
-        $operator_id = null;
-        if (!empty($pin)) {
-            // Relaxed PIN cross-branch check
-            $this->db->where('pin_produksi', $pin);
-            // $this->db->where('perusahaan_id', $this->session->userdata('perusahaan_id'));
-            $operator = $this->db->get('tbl_karyawan')->row();
-            if (!$operator) {
-                echo json_encode(['success' => false, 'message' => 'PIN Operator tidak valid!']);
-                return;
-            }
-            $operator_id = $operator->karyawan_id;
-        } else {
-            $operator_id = $this->session->userdata('karyawan_id');
-        }
-
-        if (!$produksi_id) {
-            echo json_encode(['success' => false, 'message' => 'ID Produksi Invalid']);
-            return;
-        }
-
-        $this->db->trans_start();
-
-        // 1. Get current steps
-        $this->db->select('*');
-        $this->db->from('detail_produksi');
-        $this->db->where('produksi_id', $produksi_id);
-        $this->db->order_by('routing_urutan', 'ASC');
-        $steps = $this->db->get()->result();
-
-        // CASE A: SINGLE STEP ITEM (No Routing)
-        if (empty($steps)) {
-            $this->db->where('produksi_id', $produksi_id);
-            $item = $this->db->get('tbl_produksi')->row();
-
-            if ($item) {
-                $user_id = $this->session->userdata('id_user') ?? $this->session->userdata('id') ?? 1;
-                if ($item->status_produksi == 'pending' || $item->status_produksi == 'approved' || $item->status_produksi == '') {
-                    $this->Produksi_model->change_status($produksi_id, 'proses', $user_id);
-                } elseif ($item->status_produksi == 'proses') {
-                    $this->Produksi_model->change_status($produksi_id, 'done', $user_id);
-                }
-            }
-            $this->db->trans_complete();
-            echo json_encode(['success' => true]);
-            return;
-        }
-
-        // CASE B: MULTI-STEP ROUTING
-        $currentInProcess = null;
-        $nextPending = null;
-
-        foreach ($steps as $s) {
-            if ($s->status_produksi == '1') {
-                $currentInProcess = $s;
-            }
-            if (($s->status_produksi === '0' || $s->status_produksi === '') && !$nextPending) {
-                $nextPending = $s;
-            }
-        }
-
-        // ACTION LOGIC based on 'type' parameter or auto-detect
-        if ($action_type === 'next' && $currentInProcess) {
-            // FINISH CURRENT STEP
-            $qty_pakai_input = (float) $this->input->post('qty_pakai', true);
-            $qty_rusak_input = (float) $this->input->post('qty_rusak', true);
-            $bahan_id = $this->input->post('bahan_id', true); // Get Selected Material ID
-            $mesin_id = $this->input->post('mesin_id', true);
-
-            // Additive logic for reprint/revision
-            $new_qty_pakai = (float) ($currentInProcess->qty_bahan_pakai ?? 0) + $qty_pakai_input;
-            $new_qty_rusak = (float) ($currentInProcess->qty_bahan_rusak ?? 0) + $qty_rusak_input;
-
-            $update_step = [
-                'status_produksi' => '2',
-                'waktu_selesai' => date('Y-m-d H:i:s'),
-                'qty_bahan_pakai' => $new_qty_pakai,
-                'qty_bahan_rusak' => $new_qty_rusak,
-                'qty_output' => $qty_pakai_input, // Record the actual output quantity
-                'operator_id' => !empty($operator_id) ? $operator_id : $currentInProcess->operator_id,
-                'material_id' => !empty($bahan_id) ? $bahan_id : NULL
-            ];
-
-            if ($mesin_id) {
-                $update_step['mesin_id'] = $mesin_id;
-            }
-
-            $this->db->where('detail_produksi_id', $currentInProcess->detail_produksi_id);
-            $this->db->update('detail_produksi', $update_step);
-
-            // Stock Deduction (Only for A3+ logic here in this function)
-            if (!empty($bahan_id) && ($qty_pakai_input > 0 || $qty_rusak_input > 0)) {
-                $delta_reduced = $qty_pakai_input + $qty_rusak_input;
-
-                // REAL-TIME STOCK VALIDATION
-                $perusahaan = $this->session->userdata('perusahaan_id');
-                $current_stock = $this->warehouse->get_current_stock($bahan_id, $perusahaan);
-                // Temporarily disabled due to low stock issues as requested
-                if (false && $delta_reduced > $current_stock) {
-                    $supervisor_pin = $this->input->post('supervisor_pin', true);
-                    if (empty($supervisor_pin)) {
-                        $this->db->trans_rollback();
-                        echo json_encode([
-                            'success' => false,
-                            'require_pin_override' => true,
-                            'message' => "Stok gudang tidak mencukupi (Sisa: $current_stock). Silahkan ajukan produk/pengambilan barang ke Admin Gudang. Butuh PIN Otorisasi (Supervisor) untuk memaksakan/melanjutkan produksi."
-                        ]);
-                        return;
-                    } else {
-                        if (!$this->db->field_exists('pin', 'tbl_operator')) {
-                            $this->db->trans_rollback();
-                            echo json_encode(['success' => false, 'message' => 'Sistem gagal verifikasi PIN (kolom PIN tidak ada). Hubungi Admin.']);
-                            return;
-                        }
-                        $check_pin = $this->db->get_where('tbl_operator', ['pin' => $supervisor_pin])->row();
-                        if (!$check_pin) {
-                            $this->db->trans_rollback();
-                            echo json_encode(['success' => false, 'require_pin_override' => true, 'message' => "PIN Otorisasi Salah! Silakan coba lagi."]);
-                            return;
-                        }
-                    }
-                }
-
-                $this->update_warehouse_stock($produksi_id, $currentInProcess->detail_produksi_id, $bahan_id, $delta_reduced);
-            }
-
-            // Check if this was the last step
-            $remaining = 0;
-            foreach ($steps as $s) {
-                if ($s->detail_produksi_id !== $currentInProcess->detail_produksi_id && $s->status_produksi != '2') {
-                    $remaining++;
-                }
-            }
-
-            if ($remaining === 0) {
-                $this->db->where('produksi_id', $produksi_id);
-                $this->db->update('tbl_produksi', [
-                    'status_produksi' => 'done',
-                    'update_time' => date('Y-m-d H:i:s'),
-                    'tgl_selesai' => date('Y-m-d H:i:s')
-                ]);
-            } else {
-                $this->db->where('produksi_id', $produksi_id);
-                $this->db->set('status_produksi', 'proses');
-                $this->db->set('update_time', date('Y-m-d H:i:s'));
-                $this->db->set('tgl_mulai', 'IFNULL(tgl_mulai, "' . date('Y-m-d H:i:s') . '")', FALSE);
-                $this->db->update('tbl_produksi');
-            }
-
-        } elseif ($action_type === 'start' && $nextPending) {
-            // START NEXT PENDING STEP
-            $mesin_id = $this->input->post('mesin_id', true);
-            $lokasi_proses = $this->input->post('lokasi_proses', true);
-
-            $update_step = [
-                'status_produksi' => '1',
-                'waktu_mulai' => date('Y-m-d H:i:s'),
-                'operator_id' => $operator_id
-            ];
-
-            if ($mesin_id)
-                $update_step['mesin_id'] = $mesin_id;
-            if ($lokasi_proses)
-                $update_step['lokasi_proses'] = $lokasi_proses;
-
-            $this->db->where('detail_produksi_id', $nextPending->detail_produksi_id);
-            $this->db->update('detail_produksi', $update_step);
-
-            $this->db->where('produksi_id', $produksi_id);
-            $this->db->set('status_produksi', 'proses');
-            $this->db->set('update_time', date('Y-m-d H:i:s'));
-            // Set tgl_mulai only if it is null
-            $this->db->set('tgl_mulai', 'IFNULL(tgl_mulai, "' . date('Y-m-d H:i:s') . '")', FALSE);
-            $this->db->update('tbl_produksi');
-
-        } elseif ($action_type === 'cancel' && $currentInProcess) {
-            // CANCEL CURRENT IN-PROCESS STEP
-            $update_step = [
-                'status_produksi' => '0',
-                'waktu_mulai' => NULL,
-                'operator_id' => NULL
-            ];
-
-            $this->db->where('detail_produksi_id', $currentInProcess->detail_produksi_id);
-            $this->db->update('detail_produksi', $update_step);
-
-            // Check if there are any completed steps before this
-            $has_completed = false;
-            foreach ($steps as $s) {
-                if ($s->status_produksi == '2') {
-                    $has_completed = true;
-                    break;
-                }
-            }
-
-            // If no steps are completed, the whole SPK goes back to pending
-            if (!$has_completed) {
-                $this->db->where('produksi_id', $produksi_id);
-                $this->db->set('status_produksi', 'pending');
-                $this->db->set('tgl_mulai', NULL);
-                $this->db->set('update_time', date('Y-m-d H:i:s'));
-                $this->db->update('tbl_produksi');
-            }
-
-        }
-
-        $this->db->trans_complete();
-
-        if ($this->db->trans_status() === FALSE) {
-            echo json_encode(['success' => false, 'message' => 'Database Error']);
-        } else {
-            echo json_encode(['success' => true]);
-        }
+        $this->_workflow_advance();
     }
 
     public function get_machines_ajax()
@@ -3571,315 +2694,10 @@ class Wip extends MY_Controller
      */
     public function advance_step_lf_ajax()
     {
-        if (!$this->input->is_ajax_request())
-            show_404();
-
-        $produksi_id = $this->input->post('produksi_id', true);
-        $action_type = $this->input->post('type', true);
-        $pin = $this->input->post('pin_operator', true);
-
-        $operator_id = null;
-        if (!empty($pin)) {
-            $operator = $this->db->get_where('tbl_karyawan', [
-                'pin_produksi' => $pin,
-                'perusahaan_id' => $this->session->userdata('perusahaan_id')
-            ])->row();
-
-            if (!$operator) {
-                echo json_encode(['success' => false, 'message' => 'PIN Operator tidak valid!']);
-                return;
-            }
-            $operator_id = $operator->karyawan_id;
-        } else {
-            $operator_id = $this->session->userdata('karyawan_id');
-        }
-
-        $this->db->trans_start();
-
-        $this->db->select('*')->from('detail_produksi')->where('produksi_id', $produksi_id)->order_by('routing_urutan', 'ASC');
-        $steps = $this->db->get()->result();
-
-        $currentInProcess = null;
-        $nextPending = null;
-        foreach ($steps as $s) {
-            if ($s->status_produksi == '1')
-                $currentInProcess = $s;
-            if (($s->status_produksi === '0' || $s->status_produksi === '') && !$nextPending)
-                $nextPending = $s;
-        }
-
-        if ($action_type === 'next' && $currentInProcess) {
-            $qty_pakai_input = (float) $this->input->post('qty_pakai', true);
-            $qty_rusak_input = (float) $this->input->post('qty_rusak', true);
-            $bahan_id = $this->input->post('bahan_id', true);
-            $mesin_id = $this->input->post('mesin_id', true);
-
-            $new_qty_pakai = (float) ($currentInProcess->qty_bahan_pakai ?? 0) + $qty_pakai_input;
-            $new_qty_rusak = (float) ($currentInProcess->qty_bahan_rusak ?? 0) + $qty_rusak_input;
-
-            $update_step = [
-                'status_produksi' => '2',
-                'waktu_selesai' => date('Y-m-d H:i:s'),
-                'qty_bahan_pakai' => $new_qty_pakai,
-                'qty_bahan_rusak' => $new_qty_rusak,
-                'qty_output' => $qty_pakai_input, // Record the actual output quantity
-                'operator_id' => !empty($operator_id) ? $operator_id : $currentInProcess->operator_id,
-                'material_id' => !empty($bahan_id) ? $bahan_id : NULL
-            ];
-
-            if ($mesin_id) {
-                $update_step['mesin_id'] = $mesin_id;
-            }
-
-            $this->db->where('detail_produksi_id', $currentInProcess->detail_produksi_id);
-            $this->db->where('status_produksi', '1'); // ATOMIC CHECK: only allow completion if it's currently 1
-            $this->db->update('detail_produksi', $update_step);
-
-            if ($this->db->affected_rows() == 0) {
-                $this->db->trans_rollback();
-                echo json_encode([
-                    'success' => false,
-                    'message' => 'Langkah ini sudah diproses sebelumnya (Terjadi double-klik).',
-                    'requires_reload' => true
-                ]);
-                return;
-            }
-
-            // [REFACTORED] FLEXIBLE UNIT SYSTEM: Check product unit type
-            if (!empty($bahan_id) && ($qty_pakai_input > 0 || $qty_rusak_input > 0)) {
-                // REAL-TIME STOCK VALIDATION
-                $perusahaan = $this->session->userdata('perusahaan_id');
-                // Estimasi kasar (khusus LF area akan dihitung lebih detail di fungsi terpisah, ini saringan awal)
-                $current_stock = $this->warehouse->get_current_stock($bahan_id, $perusahaan);
-                // Hanya periksa jika stok saat ini <= 0 karena kalkulasi area kompleks
-                // Temporarily disabled due to low stock issues as requested
-                if (false && $current_stock <= 0) {
-                    $supervisor_pin = $this->input->post('supervisor_pin', true);
-                    if (empty($supervisor_pin)) {
-                        $this->db->trans_rollback();
-                        echo json_encode([
-                            'success' => false,
-                            'require_pin_override' => true,
-                            'message' => "Stok gudang kosong (Sisa: $current_stock). Silahkan ajukan produk/pengambilan barang ke Admin Gudang. Butuh PIN Otorisasi (Supervisor) untuk memaksakan/melanjutkan produksi."
-                        ]);
-                        return;
-                    } else {
-                        if (!$this->db->field_exists('pin', 'tbl_operator')) {
-                            $this->db->trans_rollback();
-                            echo json_encode(['success' => false, 'message' => 'Sistem gagal verifikasi PIN (kolom PIN tidak ada). Hubungi Admin.']);
-                            return;
-                        }
-                        $check_pin = $this->db->get_where('tbl_operator', ['pin' => $supervisor_pin])->row();
-                        if (!$check_pin) {
-                            $this->db->trans_rollback();
-                            echo json_encode(['success' => false, 'require_pin_override' => true, 'message' => "PIN Otorisasi Salah! Silakan coba lagi."]);
-                            return;
-                        }
-                    }
-                }
-
-                // Get product info to determine unit type
-                $prod_info = $this->db->select('p.*, pr.product_nama, s.satuan_nama, s.satuan_id')
-                    ->from('tbl_produksi p')
-                    ->join('tbl_product pr', 'pr.product_id = p.product_id')
-                    ->join('tbl_satuan s', 's.satuan_id = pr.satuan_id', 'left')
-                    ->where('p.produksi_id', $produksi_id)
-                    ->get()->row();
-
-                if ($prod_info) {
-                    $unit_type = strtolower($prod_info->satuan_nama ?? 'meter');
-
-                    // Determine if this is a PCS-based or Meter-based product
-                    $is_pcs_based = in_array($unit_type, ['pcs', 'unit', 'lembar', 'set']);
-
-                    if ($is_pcs_based) {
-                        // PCS-based: Calculate area from dimensions (P x L x Qty)
-                        $this->update_warehouse_stock_lf_pcs($produksi_id, $currentInProcess->detail_produksi_id, $bahan_id, ($qty_pakai_input + $qty_rusak_input), $prod_info);
-                    } else {
-                        // Meter-based: Direct meter usage
-                        $this->update_warehouse_stock_lf($produksi_id, $currentInProcess->detail_produksi_id, $bahan_id, ($qty_pakai_input + $qty_rusak_input));
-                    }
-                }
-            }
-
-            // Finalize SPK Status
-            $rem = $this->db->where(['produksi_id' => $produksi_id, 'status_produksi !=' => '2'])->count_all_results('detail_produksi');
-            if ($rem === 0) {
-                $this->db->where('produksi_id', $produksi_id)->update('tbl_produksi', [
-                    'status_produksi' => 'done',
-                    'update_time' => date('Y-m-d H:i:s')
-                ]);
-            } else {
-                $this->db->where('produksi_id', $produksi_id)->update('tbl_produksi', [
-                    'status_produksi' => 'proses',
-                    'update_time' => date('Y-m-d H:i:s')
-                ]);
-            }
-        } elseif ($action_type === 'start' && $nextPending) {
-            $mesin_id = $this->input->post('mesin_id', true);
-            $lokasi_proses = $this->input->post('lokasi_proses', true);
-
-            $update_step = [
-                'status_produksi' => '1',
-                'waktu_mulai' => date('Y-m-d H:i:s'),
-                'operator_id' => $operator_id
-            ];
-
-            if ($mesin_id)
-                $update_step['mesin_id'] = $mesin_id;
-            if ($lokasi_proses)
-                $update_step['lokasi_proses'] = $lokasi_proses;
-
-            $this->db->where('detail_produksi_id', $nextPending->detail_produksi_id)->update('detail_produksi', $update_step);
-            $this->db->where('produksi_id', $produksi_id)->update('tbl_produksi', [
-                'status_produksi' => 'proses',
-                'update_time' => date('Y-m-d H:i:s')
-            ]);
-        } elseif ($action_type === 'cancel' && $currentInProcess) {
-            // CANCEL CURRENT IN-PROCESS STEP
-            $update_step = [
-                'status_produksi' => '0',
-                'waktu_mulai' => NULL,
-                'operator_id' => NULL
-            ];
-
-            $this->db->where('detail_produksi_id', $currentInProcess->detail_produksi_id)->update('detail_produksi', $update_step);
-
-            // Check if there are any completed steps before this
-            $has_completed = false;
-            foreach ($steps as $s) {
-                if ($s->status_produksi == '2') {
-                    $has_completed = true;
-                    break;
-                }
-            }
-
-            // If no steps are completed, the whole SPK goes back to pending
-            if (!$has_completed) {
-                $this->db->where('produksi_id', $produksi_id);
-                $this->db->set('status_produksi', 'pending');
-                $this->db->set('tgl_mulai', NULL);
-                $this->db->set('update_time', date('Y-m-d H:i:s'));
-                $this->db->update('tbl_produksi');
-            }
-        }
-
-        $this->db->trans_complete();
-        echo json_encode(['success' => ($this->db->trans_status() !== FALSE)]);
+        $this->_workflow_advance();
     }
 
-    private function update_warehouse_stock_lf($produksi_id, $detail_id, $material_id, $stock_reduction)
-    {
-        if ($stock_reduction <= 0)
-            return false;
 
-        $mat = $this->db->get_where('tbl_material', ['material_id' => $material_id])->row();
-        if (!$mat)
-            return false;
-
-        $konversi = (float) $mat->konversi;
-        if ($konversi <= 0)
-            $konversi = 1;
-        $wh_reduction = (float) $stock_reduction / $konversi;
-
-        $p = $this->db->get_where('tbl_produksi', ['produksi_id' => $produksi_id])->row();
-        if (!$p)
-            return false;
-
-        $gudang_id = $p->lokasi_cetak ?: 1;
-        $catatan = "Produksi LF SPK: $p->nospk. Pakai: $stock_reduction " . ($mat->satuan_prod ?: 'm') . " (Step: $detail_id)";
-
-        return $this->M_gudang->update_stock_with_log(
-            $material_id,
-            $gudang_id,
-            -$wh_reduction,
-            'Produksi',
-            $produksi_id,
-            $catatan
-        );
-    }
-
-    /**
-     * [NEW] Warehouse Stock Update for PCS-based Large Format Products
-     * Calculates area from dimensions (P x L x Qty) then deducts from warehouse
-     * 
-     * @param int $produksi_id Production ID
-     * @param int $detail_id Detail production step ID
-     * @param int $material_id Material/Roll ID to deduct from
-     * @param float $qty_input Quantity in PCS (from operator input)
-     * @param object $prod_info Product information including dimensions
-     */
-    private function update_warehouse_stock_lf_pcs($produksi_id, $detail_id, $material_id, $qty_input, $prod_info)
-    {
-        // 1. Get dimensions from item or BOM
-        $panjang = (float) ($prod_info->panjang ?: 0);
-        $lebar = (float) ($prod_info->lebar ?: 0);
-        $qty = (int) ($prod_info->qty ?: 1);
-
-        // Get BOM to determine calc_type and BOM quantity
-        $bom = $this->db->select('quantity, calc_type')
-            ->from('bom_lines')
-            ->where('product_id', $prod_info->product_id)
-            ->where('bahan_id IS NOT NULL')
-            ->get()->row();
-
-        $calc_type = $bom ? ($bom->calc_type ?: 'fixed') : 'area'; // Default to area for LF PCS if no BOM
-        $bom_qty = $bom ? (float) $bom->quantity : 1;
-
-        // Determine qty to use (operator input overrides order qty)
-        $qty_to_use = ($qty_input > 0 && $qty_input != $qty) ? $qty_input : $qty;
-        $berat = 0; // Not available by default
-
-        $total_usage = 0;
-        switch ($calc_type) {
-            case 'area':
-                $total_usage = ($panjang * $lebar) * $bom_qty * $qty_to_use;
-                break;
-            case 'length':
-                $total_usage = $panjang * $bom_qty * $qty_to_use;
-                break;
-            case 'weight':
-                $total_usage = $berat * $bom_qty * $qty_to_use;
-                break;
-            case 'fixed':
-            default:
-                $total_usage = $bom_qty * $qty_to_use;
-                break;
-        }
-
-        // 4. Deduct from warehouse using meter-based logic
-        if ($total_usage > 0) {
-            $this->load->model('M_gudang');
-            $mat = $this->db->select('m.*, s.satuan_nama as satuan_prod')
-                ->from('tbl_material m')
-                ->join('tbl_bahan b', 'm.bahan_id = b.bahan_id', 'left')
-                ->join('tbl_satuan s', 'b.satuan_id = s.satuan_id', 'left')
-                ->where('m.material_id', $material_id)
-                ->get()->row();
-
-            if (!$mat)
-                return false;
-
-            $konversi = (float) $mat->konversi;
-            if ($konversi <= 0)
-                $konversi = 1;
-            $wh_reduction = (float) $total_usage / $konversi;
-
-            $gudang_id = $prod_info->lokasi_cetak ?: 1;
-            $catatan = "Produksi LF (PCS) SPK: {$prod_info->nospk}. {$prod_info->product_nama}. Material: {$total_usage} ({$panjang}x{$lebar}x{$qty_to_use} pcs). Step: $detail_id";
-
-            return $this->M_gudang->update_stock_with_log(
-                $material_id,
-                $gudang_id,
-                -$wh_reduction,
-                'Produksi',
-                $produksi_id,
-                $catatan
-            );
-        }
-
-        return false;
-    }
 
 
 
@@ -3890,101 +2708,15 @@ class Wip extends MY_Controller
 
     public function selesai_routing($detail_id = null)
     {
-        if (empty($detail_id))
-            redirect('wip/produksi');
-
-        $redir = $this->input->get('redir', true);
-
-        $this->db->where('detail_produksi_id', $detail_id);
-        $this->db->update('detail_produksi', [
-            'status_produksi' => '2',
-            'waktu_selesai' => date('Y-m-d H:i:s')
-        ]);
-
-        $detail = $this->db->get_where('detail_produksi', ['detail_produksi_id' => $detail_id])->row();
-        if ($detail) {
-            $produksi_id = $detail->produksi_id;
-            $all_steps = $this->db->get_where('detail_produksi', ['produksi_id' => $produksi_id])->result();
-            $is_all_done = true;
-            foreach ($all_steps as $step) {
-                if ($step->status_produksi != '2') {
-                    $is_all_done = false;
-                    break;
-                }
-            }
-            if ($is_all_done && count($all_steps) > 0) {
-                $user_id = $this->session->userdata('id_user') ?? $this->session->userdata('id') ?? 1;
-                $this->Produksi_model->change_status($produksi_id, 'done', $user_id);
-            }
-        }
-
-        $this->session->set_flashdata('message', '<div class="alert alert-success">Tahapan produksi diselesaikan.</div>');
-        if ($redir && $detail) {
-            redirect('wip/control_center/' . $detail->produksi_id);
-        } else {
-            redirect('wip/produksi');
-        }
+        $this->_workflow_legacy_rejected();
     }
 
     public function kirim_pb_spk($nospk = null)
     {
-        if (empty($nospk)) {
-            redirect('wip/produksi');
-        }
-
-        $cat_id = $this->input->get('cat', true);
-        $user_id = $this->session->userdata('id_user') ?? $this->session->userdata('id') ?? 1;
-
-        if ($cat_id) {
-            // Generate subquery subquery
-            $subquery = $this->db->select('tp.produksi_id')
-                ->from('tbl_produksi tp')
-                ->join('tbl_product tpr', 'tp.product_id = tpr.product_id')
-                ->where('tp.nospk', $nospk)
-                ->where('tpr.kategori_id', $cat_id)
-                ->get_compiled_select();
-
-            $this->db->where('status_produksi', 'done');
-            $this->db->where("produksi_id IN ($subquery)", NULL, FALSE);
-        } else {
-            $this->db->where('status_produksi', 'done');
-            $this->db->where('nospk', $nospk);
-        }
-
-        $produksis = $this->db->get('tbl_produksi')->result();
-        $affected_count = 0;
-        foreach ($produksis as $prod) {
-            if ($this->Produksi_model->change_status($prod->produksi_id, 'on_pb', $user_id, '[PB] Handover SPK Keseluruhan')) {
-                $affected_count++;
-            }
-        }
-
-        if ($affected_count > 0) {
-            $this->session->set_flashdata('message', '<div class="alert alert-success">SPK ' . $nospk . ' berhasil dikirim ke Packing Barang (PB).</div>');
-
-            // --- KIRIM WA OTOMATIS (PESANAN SELESAI) ---
-            $this->load->helper('whatsapp');
-            $pemesanan = $this->db->get_where('tbl_pemesanan', ['nospk' => $nospk])->row();
-            if ($pemesanan) {
-                $kons = $this->db->get_where('tbl_konsumen', ['konsumen_id' => $pemesanan->konsumen_id])->row();
-                if ($kons && !empty($kons->konsumen_nohp)) {
-                    $wa_msg = "*PESANAN SELESAI / SIAP AMBIL*\n\n";
-                    $wa_msg .= "Halo *" . $kons->konsumen_nama . "*,\n";
-                    $wa_msg .= "Kabar baik! Pesanan Anda dengan No. SPK *$nospk* telah selesai diproduksi dan *Siap Diambil/Dikirim*.\n\n";
-                    $link_cek = base_url('cekpesanan?spk=' . urlencode(encrypt_spk($nospk)));
-                    $wa_msg .= "Cek detail pesanan Anda di sini:\n$link_cek\n\n";
-                    $wa_msg .= "Terima kasih!\n";
-                    $wa_msg .= "_Pesan otomatis via ERP TGM Print_";
-
-                    send_wa_notif($kons->konsumen_nohp, $wa_msg, 'notif_pesanan_selesai');
-                }
-            }
-            // ------------------------------------------
-        } else {
-            $this->session->set_flashdata('message', '<div class="alert alert-warning">Tidak ada item berstatus selesai yang dipindahkan.</div>');
-        }
-
-        redirect('wip/produksi');
+        $this->_workflow_response(function () use ($nospk) {
+            $nospk = $nospk ?: $this->input->post('nospk', true);
+            return $this->_workflow_execute($this->_workflow_spk_ids($nospk, $this->input->post('cat', true), 'done'), 'handover');
+        });
     }
 
     public function verify_operator_pin()
@@ -4204,303 +2936,8 @@ class Wip extends MY_Controller
 
     public function execute_rip_batch_ajax()
     {
-        if (!$this->input->is_ajax_request())
-            show_404();
-
-        $item_ids = $this->input->post('item_ids', true); // Array of produksi_id
-        $operator_pin = $this->input->post('pin_operator', true);
-
-        // Verify PIN
-        $operator = $this->db->get_where('tbl_karyawan', [
-            'pin_produksi' => $operator_pin,
-            'perusahaan_id' => $this->session->userdata('perusahaan_id')
-        ])->row();
-
-        if (!$operator) {
-            echo json_encode(['success' => false, 'message' => 'PIN Operator tidak valid!']);
-            return;
-        }
-
-        if (empty($item_ids) || !is_array($item_ids)) {
-            echo json_encode(['success' => false, 'message' => 'Tidak ada item yang dipilih']);
-            return;
-        }
-
-        $this->db->trans_start();
-
-        $total_usage = 0;
-        $processed_items = [];
-        $failed_items = [];
-
-        foreach ($item_ids as $pid) {
-            // Get item details
-            $item = $this->db->select('p.*, pr.product_nama, pr.satuan_id, s.satuan_nama')
-                ->from('tbl_produksi p')
-                ->join('tbl_product pr', 'pr.product_id = p.product_id')
-                ->join('tbl_satuan s', 's.satuan_id = pr.satuan_id', 'left')
-                ->where('p.produksi_id', $pid)
-                ->get()->row();
-
-            if (!$item) {
-                $failed_items[] = "Item ID $pid tidak ditemukan";
-                continue;
-            }
-
-            // Find RIP step in detail_produksi
-            $rip_step = $this->db->select('dp.*')
-                ->from('detail_produksi dp')
-                ->join('routing r', 'r.routing_id = dp.routing_id')
-                ->where('dp.produksi_id', $pid)
-                ->where('r.routing_name LIKE', '%RIP%')
-                ->where('dp.status_produksi', '0') // Pending only
-                ->get()->row();
-
-            if (!$rip_step) {
-                $failed_items[] = "{$item->product_nama}: RIP step tidak ditemukan atau sudah selesai";
-                continue;
-            }
-
-            // Calculate material usage for estimation
-            $panjang = (float) ($item->panjang ?: 0);
-            $lebar = (float) ($item->lebar ?: 0);
-            $qty = (int) ($item->qty ?: 1);
-
-            // Get BOM to determine calc_type and BOM quantity
-            $bom = $this->db->select('quantity, calc_type')
-                ->from('bom_lines')
-                ->where('product_id', $item->product_id)
-                ->where('bahan_id IS NOT NULL')
-                ->get()->row();
-
-            $calc_type = $bom ? ($bom->calc_type ?: 'fixed') : 'area'; // Default to area for RIP if no BOM
-            $bom_qty = $bom ? (float) $bom->quantity : 1;
-            $berat = 0; // Not available by default
-
-            $usage = 0;
-            switch ($calc_type) {
-                case 'area':
-                    $usage = ($panjang * $lebar) * $bom_qty * $qty;
-                    break;
-                case 'length':
-                    $usage = $panjang * $bom_qty * $qty;
-                    break;
-                case 'weight':
-                    $usage = $berat * $bom_qty * $qty;
-                    break;
-                case 'fixed':
-                default:
-                    $usage = $bom_qty * $qty;
-                    break;
-            }
-
-            $total_usage += $usage;
-
-            // Mark RIP step as complete
-            $this->db->where('detail_produksi_id', $rip_step->detail_produksi_id);
-            $this->db->update('detail_produksi', [
-                'status_produksi' => '2', // Done
-                'waktu_mulai' => date('Y-m-d H:i:s'),
-                'waktu_selesai' => date('Y-m-d H:i:s'),
-                'operator_id' => $operator->karyawan_id,
-                'qty_bahan_pakai' => $usage,
-                'catatan' => 'Batch RIP - Auto calculated: ' . number_format($usage, 2) . ' m²'
-            ]);
-
-            // Update main produksi status to 'proses' (RIP done, ready for print)
-            $this->db->where('produksi_id', $pid);
-            $this->db->update('tbl_produksi', [
-                'status_produksi' => 'proses',
-                'update_time' => date('Y-m-d H:i:s')
-            ]);
-
-            $processed_items[] = [
-                'name' => $item->product_nama,
-                'qty' => $qty,
-                'area' => round($usage, 2),
-                'unit' => $item->satuan_nama
-            ];
-        }
-
-        $this->db->trans_complete();
-
-        if ($this->db->trans_status() === FALSE) {
-            echo json_encode([
-                'success' => false,
-                'message' => 'Gagal memproses RIP batch. Transaksi database error.'
-            ]);
-        } else {
-            $response = [
-                'success' => true,
-                'message' => count($processed_items) . ' item berhasil di-RIP',
-                'total_items' => count($processed_items),
-                'total_usage_m2' => round($total_usage, 2),
-                'items' => $processed_items
-            ];
-
-            if (!empty($failed_items)) {
-                $response['warnings'] = $failed_items;
-            }
-
-            echo json_encode($response);
-        }
+        $this->_workflow_legacy_rejected();
     }
 
-    function konsumsi_bahan()
-    {
-        $data['title'] = 'Rekap Konsumsi Bahan';
-
-        $start_date = $this->input->get('start_date');
-        $end_date = $this->input->get('end_date');
-
-        if (empty($start_date) || empty($end_date)) {
-            $start_date = date('Y-m-01'); // Awal bulan
-            $end_date = date('Y-m-t'); // Akhir bulan
-        }
-
-        $data['start_date'] = $start_date;
-        $data['end_date'] = $end_date;
-
-        // Kueri REKAPITULASI per material
-        $this->db->select('sl.material_id, m.varian as material_nama, m.konversi, b.bahan_nama, s.satuan_nama as satuan_gudang, s_prod.satuan_nama as satuan_produksi');
-
-        // Menghitung total_gudang dan total_produksi menggunakan SUM
-        // qty_out adalah pengurangan di satuan gudang. qty_base adalah di satuan produksi.
-        $this->db->select('SUM(CASE WHEN sl.trx_type = "Produksi" THEN ABS(sl.qty_out) ELSE -ABS(sl.qty_in) END) as total_gudang');
-
-        $this->db->select('SUM(CASE WHEN sl.trx_type = "Produksi" THEN (CASE WHEN sl.qty_base > 0 THEN sl.qty_base ELSE (ABS(sl.qty_out) * COALESCE(m.konversi, 1)) END) ELSE -(CASE WHEN sl.qty_base > 0 THEN sl.qty_base ELSE (ABS(sl.qty_in) * COALESCE(m.konversi, 1)) END) END) as total_produksi');
-
-        $this->db->select('SUM(CASE WHEN g.gudang_lokasi LIKE "%Pusat%" THEN (CASE WHEN sl.trx_type = "Produksi" THEN (CASE WHEN sl.qty_base > 0 THEN sl.qty_base ELSE (ABS(sl.qty_out) * COALESCE(m.konversi, 1)) END) ELSE -(CASE WHEN sl.qty_base > 0 THEN sl.qty_base ELSE (ABS(sl.qty_in) * COALESCE(m.konversi, 1)) END) END) ELSE 0 END) as total_produksi_pusat');
-        $this->db->select('SUM(CASE WHEN g.gudang_lokasi LIKE "%Cabang%" THEN (CASE WHEN sl.trx_type = "Produksi" THEN (CASE WHEN sl.qty_base > 0 THEN sl.qty_base ELSE (ABS(sl.qty_out) * COALESCE(m.konversi, 1)) END) ELSE -(CASE WHEN sl.qty_base > 0 THEN sl.qty_base ELSE (ABS(sl.qty_in) * COALESCE(m.konversi, 1)) END) END) ELSE 0 END) as total_produksi_cabang');
-
-        $this->db->select('COUNT(sl.log_id) as frekuensi');
-        $this->db->select('MAX(sl.created_at) as last_used');
-
-        $this->db->from('tbl_stok_log sl');
-        $this->db->join('tbl_material m', 'm.material_id = sl.material_id', 'left');
-        $this->db->join('tbl_bahan b', 'b.bahan_id = m.bahan_id', 'left');
-        $this->db->join('tbl_satuan s', 's.satuan_id = m.satuan_gudang_id', 'left');
-        $this->db->join('tbl_satuan s_prod', 's_prod.satuan_id = b.satuan_id', 'left');
-        $this->db->join('tbl_gudang g', 'g.gudang_id = sl.gudang_id', 'left');
-
-        $this->db->where_in('sl.trx_type', ['Produksi', 'Return']);
-        $this->db->where('DATE(sl.created_at) >=', $start_date);
-        $this->db->where('DATE(sl.created_at) <=', $end_date);
-        $this->db->group_by('sl.material_id');
-
-        // Sorting based on most recently used/consumed
-        $this->db->order_by('last_used', 'DESC');
-        $this->db->order_by('b.bahan_nama', 'ASC');
-
-        $data['summary'] = $this->db->get()->result();
-
-        // Cari 10 material paling sering digunakan berdasarkan frekuensi potong (count)
-        $summary_copy = $data['summary'];
-        usort($summary_copy, function ($a, $b) {
-            return $b->frekuensi <=> $a->frekuensi; // Sort descending
-        });
-        $data['top_10'] = array_slice($summary_copy, 0, 10);
-
-        $this->load_admin_view('admin/wip/konsumsi_bahan_list', $data);
-    }
-
-    function ajax_detail_konsumsi($material_id)
-    {
-        $start_date = $this->input->get('start_date');
-        $end_date = $this->input->get('end_date');
-
-        if (empty($start_date) || empty($end_date)) {
-            $start_date = date('Y-m-01');
-            $end_date = date('Y-m-t');
-        }
-
-        // Kueri persis seperti riwayat lama
-        $this->db->select('sl.*, m.varian as material_nama, m.konversi, b.bahan_nama, s.satuan_nama as satuan_gudang, s_prod.satuan_nama as satuan_produksi, p.nospk, p.metadata, hp.ket_1 as db_ket_1, pr.product_nama, k.nama_lengkap as operator_nama, g.gudang_nama');
-        $this->db->from('tbl_stok_log sl');
-        $this->db->join('tbl_material m', 'm.material_id = sl.material_id', 'left');
-        $this->db->join('tbl_bahan b', 'b.bahan_id = m.bahan_id', 'left');
-        $this->db->join('tbl_satuan s', 's.satuan_id = m.satuan_gudang_id', 'left');
-        $this->db->join('tbl_satuan s_prod', 's_prod.satuan_id = b.satuan_id', 'left');
-        $this->db->join('tbl_produksi p', 'p.produksi_id = sl.trx_id', 'left');
-        $this->db->join('tbl_harga_product hp', 'hp.harga_id = p.harga_id', 'left');
-        $this->db->join('tbl_product pr', 'pr.product_id = p.product_id', 'left');
-        $this->db->join('users u', 'u.user_id = sl.user_id', 'left');
-        $this->db->join('tbl_karyawan k', 'k.karyawan_id = COALESCE(sl.karyawan_id, u.karyawan_id)', 'left');
-        $this->db->join('tbl_gudang g', 'g.gudang_id = sl.gudang_id', 'left');
-
-        $this->db->where_in('sl.trx_type', ['Produksi', 'Return']);
-        $this->db->where('sl.material_id', $material_id);
-        $this->db->where('DATE(sl.created_at) >=', $start_date);
-        $this->db->where('DATE(sl.created_at) <=', $end_date);
-        $this->db->order_by('sl.created_at', 'DESC');
-
-        $data['logs'] = $this->db->get()->result();
-
-        // Load the partial view and return as string
-        $html = $this->load->view('admin/wip/partial_konsumsi_detail', $data, true);
-        echo json_encode(['status' => 'success', 'html' => $html]);
-    }
-
-    function cetak_konsumsi_bahan()
-    {
-        $start_date = $this->input->get('start_date');
-        $end_date = $this->input->get('end_date');
-
-        if (empty($start_date) || empty($end_date)) {
-            $start_date = date('Y-m-01');
-            $end_date = date('Y-m-t');
-        }
-
-        $data['start_date'] = $start_date;
-        $data['end_date'] = $end_date;
-
-        $this->db->select('sl.material_id, m.varian as material_nama, m.konversi, b.bahan_nama, s.satuan_nama as satuan_gudang, s_prod.satuan_nama as satuan_produksi');
-        $this->db->select('SUM(CASE WHEN sl.trx_type = "Produksi" THEN ABS(sl.qty_out) ELSE -ABS(sl.qty_in) END) as total_gudang');
-
-        $this->db->select('SUM(CASE WHEN sl.trx_type = "Produksi" THEN (CASE WHEN sl.qty_base > 0 THEN sl.qty_base ELSE (ABS(sl.qty_out) * COALESCE(m.konversi, 1)) END) ELSE -(CASE WHEN sl.qty_base > 0 THEN sl.qty_base ELSE (ABS(sl.qty_in) * COALESCE(m.konversi, 1)) END) END) as total_produksi');
-
-        $this->db->select('SUM(CASE WHEN g.gudang_lokasi LIKE "%Pusat%" THEN (CASE WHEN sl.trx_type = "Produksi" THEN (CASE WHEN sl.qty_base > 0 THEN sl.qty_base ELSE (ABS(sl.qty_out) * COALESCE(m.konversi, 1)) END) ELSE -(CASE WHEN sl.qty_base > 0 THEN sl.qty_base ELSE (ABS(sl.qty_in) * COALESCE(m.konversi, 1)) END) END) ELSE 0 END) as total_produksi_pusat');
-        $this->db->select('SUM(CASE WHEN g.gudang_lokasi LIKE "%Cabang%" THEN (CASE WHEN sl.trx_type = "Produksi" THEN (CASE WHEN sl.qty_base > 0 THEN sl.qty_base ELSE (ABS(sl.qty_out) * COALESCE(m.konversi, 1)) END) ELSE -(CASE WHEN sl.qty_base > 0 THEN sl.qty_base ELSE (ABS(sl.qty_in) * COALESCE(m.konversi, 1)) END) END) ELSE 0 END) as total_produksi_cabang');
-        $this->db->select('COUNT(sl.log_id) as frekuensi');
-
-        $this->db->from('tbl_stok_log sl');
-        $this->db->join('tbl_material m', 'm.material_id = sl.material_id', 'left');
-        $this->db->join('tbl_bahan b', 'b.bahan_id = m.bahan_id', 'left');
-        $this->db->join('tbl_satuan s', 's.satuan_id = m.satuan_gudang_id', 'left');
-        $this->db->join('tbl_satuan s_prod', 's_prod.satuan_id = b.satuan_id', 'left');
-        $this->db->join('tbl_gudang g', 'g.gudang_id = sl.gudang_id', 'left');
-
-        $this->db->where_in('sl.trx_type', ['Produksi', 'Return']);
-        $this->db->where('DATE(sl.created_at) >=', $start_date);
-        $this->db->where('DATE(sl.created_at) <=', $end_date);
-        $this->db->group_by('sl.material_id');
-        $this->db->order_by('b.bahan_nama', 'ASC');
-        $this->db->order_by('m.varian', 'ASC');
-
-        $data['summary'] = $this->db->get()->result();
-
-        $this->load->view('admin/wip/cetak_konsumsi_bahan', $data);
-    }
-
-
-    function log_stok_gudang()
-    {
-        $data['title'] = 'Log Mutasi Stok Gudang';
-
-        $this->db->select('sl.*, m.varian as material_nama, b.bahan_nama, s.satuan_nama, g.gudang_nama, p.nospk, pr.product_nama, k.nama_lengkap as operator_nama');
-        $this->db->from('tbl_stok_log sl FORCE INDEX(created_at)');
-        $this->db->join('tbl_material m', 'm.material_id = sl.material_id', 'left');
-        $this->db->join('tbl_bahan b', 'b.bahan_id = m.bahan_id', 'left');
-        $this->db->join('tbl_satuan s', 's.satuan_id = m.satuan_gudang_id', 'left');
-        $this->db->join('tbl_gudang g', 'g.gudang_id = sl.gudang_id', 'left');
-        $this->db->join('tbl_produksi p', 'p.produksi_id = sl.trx_id AND sl.trx_type = "Produksi"', 'left');
-        $this->db->join('tbl_product pr', 'pr.product_id = p.product_id', 'left');
-        $this->db->join('users u', 'u.user_id = sl.user_id', 'left');
-        $this->db->join('tbl_karyawan k', 'k.karyawan_id = u.karyawan_id', 'left');
-        $this->db->order_by('sl.created_at', 'DESC');
-        $this->db->limit(1000);
-        $data['logs'] = $this->db->get()->result();
-
-        $this->load_admin_view('admin/wip/log_stok_gudang', $data);
-    }
 
 }
