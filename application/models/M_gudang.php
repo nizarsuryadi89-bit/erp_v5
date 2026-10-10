@@ -658,23 +658,6 @@ class M_gudang extends CI_model
         return $this->db->get('stok_gudang')->result();
     }
 
-    /**
-     * Best Practice Stock Engine
-     * Updates tbl_stok_gudang and logs the transaction in tbl_stok_log
-     */
-    public function update_stock_with_log($material_id, $gudang_id, $qty, $type, $trx_id, $catatan = '', $rak_id = NULL, $karyawan_id = NULL)
-    {
-        if ($this->stock_storage_checked) return;
-        $rows = $this->db->query("SHOW TABLE STATUS WHERE Name IN ('tbl_material','tbl_stok_gudang','tbl_stok_log')")->result();
-        $found = [];
-        foreach ($rows as $row) {
-            if (strtolower((string) $row->Engine) !== 'innodb') throw new DomainException('Tabel stok belum mendukung transaksi aman.');
-            $found[] = $row->Name;
-        }
-        if (array_diff(['tbl_material', 'tbl_stok_gudang', 'tbl_stok_log'], $found)) throw new DomainException('Tabel stok belum lengkap.');
-        $this->stock_storage_checked = true;
-    }
-
     /** Checked posting for production only; existing non-production behavior is retained. */
     private function post_production_stock($material_id, $gudang_id, $qty, $trx_id, $catatan, $rak_id, $karyawan_id)
     {
