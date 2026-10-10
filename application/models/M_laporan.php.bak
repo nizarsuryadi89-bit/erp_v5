@@ -1,0 +1,121 @@
+<?php
+defined('BASEPATH') OR exit('No direct script access allowed');
+
+class M_laporan extends CI_Model
+{
+
+    /**
+     * Total pengeluaran bulanan dari tbl_pengeluaran_bulanan
+     */
+    public function total_pengeluaran_bulanan($perusahaan_id, $bulanini)
+    {
+        $this->db->select_sum('pengeluaran_jumlah', 'pengeluaran_bulanan');
+        $this->db->from('tbl_pengeluaran');
+        $this->db->where('perusahaan_id', $perusahaan_id);
+        $this->db->where("DATE_FORMAT(pengeluaran_tgl, '%Y-%m')", $bulanini);
+        return $this->db->get();
+    }
+
+    /**
+     * Menghitung laba rugi berdasarkan detail pemesanan dan pembayaran
+     */
+    public function getLabaRugi($perusahaan_id, $bulanini)
+    {
+        $sql = "SELECT 
+                    SUM(a.qty * (b.harga_1 - b.hpp)) AS laba,
+                    SUM(a.qty * b.harga_1) AS total_pendapatan,
+                    SUM(a.qty * b.hpp) AS total_hpp
+                FROM tbl_pemesanan_detail a 
+                    INNER JOIN tbl_harga_product b ON b.harga_id = a.harga_id
+                    INNER JOIN tbl_pembayaran c ON a.nospk = c.nospk
+                WHERE c.perusahaan_id = " . $this->db->escape($perusahaan_id) . " 
+                    AND DATE_FORMAT(c.tgl_bayar, '%Y-%m') = " . $this->db->escape($bulanini);
+
+        return $this->db->query($sql);
+    }
+
+    /**
+     * Total pendapatan dari detail pemesanan dan pembayaran
+     */
+    public function total_pendapatan($perusahaan_id, $bulanini)
+    {
+        $sql = "SELECT SUM(a.qty * b.harga_1) AS total_pendapatan 
+                FROM tbl_pemesanan_detail a 
+                    INNER JOIN tbl_harga_product b ON b.harga_id = a.harga_id
+                    INNER JOIN tbl_pembayaran c ON a.nospk = c.nospk
+                WHERE c.perusahaan_id = " . $this->db->escape($perusahaan_id) . " 
+                    AND DATE_FORMAT(c.tgl_bayar, '%Y-%m') = " . $this->db->escape($bulanini);
+
+        return $this->db->query($sql);
+    }
+
+    public function pengeluaran_bulanan($perusahaan_id, $bulanini)
+    {
+        $sql = "SELECT SUM(pengeluaran_jumlah) AS pengeluaran_bulanan 
+                FROM tbl_pengeluaran 
+                WHERE perusahaan_id = " . $this->db->escape($perusahaan_id) . " 
+                    AND DATE_FORMAT(pengeluaran_tgl, '%Y-%m') = " . $this->db->escape($bulanini);
+        
+        return $this->db->query($sql);
+    }
+    
+    public function pemasukan_bulanan($perusahaan_id, $bulanini)
+    {
+         $sql = "SELECT SUM(grand_total) AS total_pemasukan_bulanan 
+                FROM tbl_pembayaran 
+                WHERE perusahaan_id = " . $this->db->escape($perusahaan_id) . " 
+                    AND DATE_FORMAT(tgl_bayar, '%Y-%m') = " . $this->db->escape($bulanini);
+        
+        return $this->db->query($sql); 
+    }
+    
+    public function pengeluaran_harian($perusahaan_id)
+    {
+        $hariini = date('Y-m-d');
+         $sql = "SELECT SUM(pengeluaran_jumlah) AS pengeluaran_harian 
+                FROM tbl_pengeluaran 
+                WHERE perusahaan_id = " . $this->db->escape($perusahaan_id) . " 
+                    AND pengeluaran_tgl = " . $this->db->escape($hariini);
+        
+        return $this->db->query($sql); 
+    }
+    
+    public function pengeluaran_harian_list($perusahaan_id, $bulanini)
+    {
+        $this->db->select('*');
+        $this->db->from('tbl_pengeluaran');
+        $this->db->where('perusahaan_id', $perusahaan_id);
+        $this->db->where("DATE_FORMAT(pengeluaran_tgl, '%Y-%m')", $bulanini);
+        return $this->db->get();
+    }
+    
+    public function pengeluaran_bulanan_list($perusahaan_id, $bulanini)
+    {
+        $this->db->select('*');
+        $this->db->from('tbl_pengeluaran');
+        $this->db->where('perusahaan_id', $perusahaan_id);
+        $this->db->where("DATE_FORMAT(pengeluaran_tgl, '%Y-%m')", $bulanini);
+        return $this->db->get();
+    }
+    
+    public function pengeluaran($perusahaan_id)
+    {
+        $hariini = date('Y-m-d');
+        $this->db->select_sum('pengeluaran_jumlah', 'pengeluaran_harian');
+        $this->db->from('tbl_pengeluaran');
+        $this->db->where('perusahaan_id', $perusahaan_id);
+        $this->db->where('pengeluaran_tgl', $hariini);
+        return $this->db->get();
+    }
+
+    public function pengeluaran_bulanan_period($perusahaan_id, $tgl_awal, $tgl_akhir)
+    {
+        $this->db->select('SUM(pengeluaran_jumlah) as pengeluaran_bulanan');
+        $this->db->from('tbl_pengeluaran');
+        $this->db->where('perusahaan_id', $perusahaan_id);
+        $this->db->where('pengeluaran_tgl >=', $tgl_awal);
+        $this->db->where('pengeluaran_tgl <=', $tgl_akhir);
+        return $this->db->get();
+    }
+
+}

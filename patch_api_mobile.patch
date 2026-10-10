@@ -1,0 +1,7 @@
+--- application/controllers/Api_mobile.php
++++ application/controllers/Api_mobile.php
+@@ -680,2 +680,3 @@
+ 
+             $this->db->insert('tbl_pengajuan_izin', $data);
++            broadcast_notifikasi("Pengajuan Izin Baru", "Ada pengajuan " . $tipe . " dari ID Karyawan " . $karyawan_id, "absensi/approval_cuti");
+             $this->json_response(true, 'Pengajuan Berhasil Dikirim');

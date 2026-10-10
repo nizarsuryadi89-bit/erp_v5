@@ -1,0 +1,5 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home/tgmprin2/erp.tgmprint.com/
+    - /bin/cp -R * $DEPLOYPATH

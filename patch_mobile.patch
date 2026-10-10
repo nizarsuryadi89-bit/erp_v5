@@ -1,0 +1,6 @@
+--- application/controllers/Mobile.php
++++ application/controllers/Mobile.php
+@@ -1788,2 +1788,3 @@
+         if ($this->db->insert('tbl_pengajuan_izin', $data_pengajuan)) {
++            broadcast_notifikasi("Pengajuan Izin Baru", "Karyawan " . $req->nama_lengkap . " mengajukan " . $tipe_cuti, "absensi/approval_cuti");
+             /** @var CI_DB_query_builder $db */

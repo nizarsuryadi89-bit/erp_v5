@@ -1,0 +1,154 @@
+/* PREMIUM DESIGN SYSTEM (LEGGER THEME v2) - INCOMING MATERIAL LOG */
+:root {
+    --primary-gradient: linear-gradient(135deg, #1a1c23 0%, #2c3e50 100%);
+    --success-gradient: linear-gradient(135deg, #27ae60 0%, #1e8449 100%);
+    --info-gradient: linear-gradient(135deg, #4895ef 0%, #4cc9f0 100%);
+    --warning-gradient: linear-gradient(135deg, #f1c40f 0%, #f39c12 100%);
+    --danger-gradient: linear-gradient(135deg, #f72585 0%, #b5179e 100%);
+    --premium-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+}
+
+.report-section-card {
+    background: white;
+    border-radius: 20px;
+    border: none;
+    box-shadow: var(--premium-shadow);
+    overflow: hidden;
+    margin-bottom: 2rem;
+}
+
+.section-header {
+    background: var(--primary-gradient);
+    padding: 1.25rem 1.75rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: white;
+}
+
+.section-header h5 {
+    margin: 0;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* Stats v2 */
+.summary-stat-card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 20px;
+    border: 1px solid #f1f5f9;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.stat-v2-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+}
+
+.stat-v2-label {
+    color: #64748b;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.6rem;
+    letter-spacing: 1px;
+}
+
+.stat-v2-value {
+    font-size: 1.35rem;
+    font-weight: 900;
+    color: #1a1c23;
+    line-height: 1;
+}
+
+/* Table Styles */
+.premium-table thead th {
+    background: #f8fafc;
+    border: none;
+    color: #475569;
+    font-weight: 800;
+    text-transform: uppercase;
+    font-size: 0.65rem;
+    letter-spacing: 1px;
+    padding: 1rem 1.5rem;
+}
+
+.premium-table tbody td {
+    padding: 1rem 1.5rem;
+    vertical-align: middle;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 0.9rem;
+}
+
+.faktur-pill {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 800;
+    font-size: 0.8rem;
+    color: #1a1c23;
+    background: #f1f5f9;
+    padding: 0.3rem 0.6rem;
+    border-radius: 6px;
+}
+
+.badge-premium {
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    font-weight: 800;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+}
+
+.btn-circle-action {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s;
+    border: 1px solid #e2e8f0;
+    background: white;
+    color: #475569;
+}
+
+.btn-circle-action:hover {
+    background: #1a1c23;
+    color: white;
+    border-color: #1a1c23;
+    transform: translateY(-2px);
+}
+
+.btn-circle-delete:hover {
+    background: #f72585;
+    border-color: #f72585;
+}
+
+/* Animation */
+@keyframes slideUpFade {
+    from {
+        opacity: 0;
+        transform: translateY(15px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-up {
+    animation: slideUpFade 0.5s ease-out forwards;
+}

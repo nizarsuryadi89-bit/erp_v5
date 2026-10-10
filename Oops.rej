@@ -1,0 +1,29 @@
+@@ -194,2 +199,28 @@
+                     </a>
+                 </li>
++                
++                <!-- Notification Bell -->
++                <li class="nav-item dropdown me-2 d-flex align-items-center">
++                    <a class="nav-link btn btn-light btn-sm rounded-circle shadow-none border d-flex align-items-center justify-content-center position-relative" data-bs-toggle="dropdown" href="#" style="width: 32px; height: 32px;">
++                        <i class="bi bi-bell-fill text-dark"></i>
++                        <?php if ($notif_count > 0): ?>
++                            <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger shadow-sm" style="font-size: 0.6rem;">
++                                <?= $notif_count ?>
++                            </span>
++                        <?php endif; ?>
++                    </a>
++                    <div class="dropdown-menu dropdown-menu-lg dropdown-menu-end border-0 shadow-lg mt-2">
++                        <span class="dropdown-item dropdown-header bg-light fw-bold text-dark border-bottom"><?= $notif_count ?> Notifikasi Baru</span>
++                        <?php if (empty($my_notifs)): ?>
++                            <div class="p-3 text-center text-muted small">Tidak ada notifikasi</div>
++                        <?php else: ?>
++                            <?php foreach ($my_notifs as $ntf): ?>
++                                <div class="dropdown-divider m-0"></div>
++                                <a href="<?= base_url('notifikasi/baca/' . $ntf->id) ?>" class="dropdown-item py-2 px-3">
++                                    <div class="fw-bold small text-dark"><?= $ntf->judul ?></div>
++                                    <span class="text-muted small" style="white-space: normal;"><?= $ntf->pesan ?></span>
++                                </a>
++                            <?php endforeach; ?>
++                        <?php endif; ?>
++                    </div>
++                </li>

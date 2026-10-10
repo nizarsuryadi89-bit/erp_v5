@@ -1,0 +1,518 @@
+/* 
+    Mobile Dashboard Styles
+    Author: TGM
+*/
+
+/* --- Profile Header Styles --- */
+.profile-header {
+    text-align: center;
+    padding-bottom: 2rem;
+}
+
+.profile-avatar-wrapper {
+    position: relative;
+    width: 90px;
+    height: 90px;
+    margin: 0 auto 1rem;
+}
+
+.profile-avatar {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    border: 3px solid rgba(255, 255, 255, 0.2);
+    padding: 3px;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+}
+
+.profile-avatar img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.online-status {
+    position: absolute;
+    bottom: 5px;
+    right: 5px;
+    width: 18px;
+    height: 18px;
+    background: #22c55e;
+    border: 3px solid var(--secondary);
+    border-radius: 50%;
+}
+
+.profile-name {
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+    letter-spacing: -0.5px;
+    color: #fff;
+}
+
+.profile-role {
+    font-size: 0.85rem;
+    opacity: 0.8;
+    font-weight: 400;
+    margin-bottom: 0.5rem;
+    color: #fff;
+}
+
+.profile-badge {
+    display: inline-flex;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    padding: 0.4rem 1rem;
+    border-radius: 50px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.95);
+}
+
+/* --- Main Content Layout --- */
+.menu-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 0.75rem;
+    font-size: 1.6rem;
+    /* Slightly larger icon */
+    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.menu-item {
+    background: #fff;
+    border-radius: 20px;
+    padding: 1.25rem 0.25rem;
+    /* Reduced horizontal padding */
+    text-align: center;
+    text-decoration: none;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    border: 1px solid #f1f5f9;
+    display: block;
+    cursor: pointer;
+}
+
+.menu-item:active {
+    transform: scale(0.95);
+}
+
+.menu-item:active .menu-icon {
+    transform: scale(0.9);
+}
+
+.menu-grid {
+    display: grid;
+    /* Fitt's Law Optimization: Dynamic grid spacing, ensures minimum 75px width */
+    grid-template-columns: repeat(auto-fill, minmax(75px, 1fr));
+    gap: 0.85rem;
+    margin-bottom: 2rem;
+}
+
+/* On extremely small screens, fallback to 3 columns to prevent text overlap */
+@media (max-width: 380px) {
+    .menu-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+.menu-label {
+    font-size: 0.725rem;
+    font-weight: 600;
+    color: #475569;
+    display: block;
+    line-height: 1.2;
+    padding: 0 2px;
+}
+
+/* --- Icon Colors --- */
+.icon-red {
+    background: #fee2e2;
+    color: #ef4444;
+}
+
+.icon-blue {
+    background: #dbeafe;
+    color: #3b82f6;
+}
+
+.icon-green {
+    background: #dcfce7;
+    color: #22c55e;
+}
+
+.icon-yellow {
+    background: #fef3c7;
+    color: #f59e0b;
+}
+
+.icon-cyan {
+    background: #ecfeff;
+    color: #06b6d4;
+}
+
+.icon-purple {
+    background: #f3e8ff;
+    color: #a855f7;
+}
+
+.icon-pink {
+    background: #fce7f3;
+    color: #ec4899;
+}
+
+.icon-slate {
+    background: #f1f5f9;
+    color: #475569;
+}
+
+.icon-dark {
+    background: #1e293b;
+    color: #fff;
+}
+
+/* --- Alerts --- */
+.absen-alert {
+    background: #fff;
+    border-radius: 20px;
+    padding: 1.25rem;
+    margin-bottom: 2rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    border-left: 5px solid var(--danger);
+    box-shadow: 0 10px 15px -3px rgba(220, 53, 69, 0.1);
+}
+
+.absen-alert-icon {
+    width: 48px;
+    height: 48px;
+    background: #fee2e2;
+    color: var(--danger);
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    flex-shrink: 0;
+}
+
+.absen-alert-text h6 {
+    color: #1e293b;
+    font-size: 0.95rem;
+    margin-bottom: 0.25rem;
+}
+
+.absen-alert-text p {
+    color: #64748b;
+    font-size: 0.8rem;
+    margin: 0;
+    line-height: 1.4;
+}
+
+/* --- Misc --- */
+.custom-divider {
+    height: 1px;
+    background: radial-gradient(circle, #e2e8f0 0%, transparent 100%);
+    margin: 2rem 0;
+    opacity: 0.6;
+}
+
+.desktop-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #64748b;
+    margin: 0 auto;
+    padding: 0.75rem 1rem;
+    border-radius: 50px;
+    background: #f1f5f9;
+    text-decoration: none;
+    transition: all 0.2s;
+}
+
+.desktop-link:active {
+    background: #e2e8f0;
+    color: #334155;
+    transform: scale(0.98);
+}
+
+/* --- Gamification Section --- */
+.performance-card {
+    background: linear-gradient(135deg, #1e293b, #334155);
+    border-radius: 24px;
+    padding: 1.5rem;
+    color: #fff;
+    margin-bottom: 2rem;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.25);
+}
+
+.performance-card::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -20%;
+    width: 150px;
+    height: 150px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 50%;
+}
+
+.circular-progress {
+    position: relative;
+    width: 80px;
+    height: 80px;
+    flex-shrink: 0;
+}
+
+.circular-progress svg {
+    width: 80px;
+    height: 80px;
+    transform: rotate(-90deg);
+}
+
+.circular-progress circle {
+    fill: none;
+    stroke-width: 8;
+    stroke-linecap: round;
+}
+
+.circular-progress .bg {
+    stroke: rgba(255, 255, 255, 0.1);
+}
+
+.circular-progress .progress {
+    stroke: #22c55e;
+    transition: stroke-dashoffset 1.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.progress-value {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.1rem;
+    font-weight: 800;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.perf-info h6 {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    opacity: 0.7;
+    margin-bottom: 0.25rem;
+}
+
+.perf-info .rank-text {
+    font-size: 1.25rem;
+    font-weight: 800;
+    margin-bottom: 0.5rem;
+    display: block;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.perf-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    font-size: 0.7rem;
+    opacity: 0.9;
+}
+
+.stat-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 0.25rem 0.5rem;
+    border-radius: 8px;
+}
+
+/* --- Announcement Styles --- */
+.announcement-card {
+    background: #fff;
+    border-radius: 20px;
+    padding: 1.25rem;
+    margin-bottom: 2rem;
+    border: 1px solid #f1f5f9;
+    box-shadow: 0 4px 15px -1px rgba(0, 0, 0, 0.03);
+    position: relative;
+    overflow: hidden;
+}
+
+.announcement-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.35rem 0.85rem;
+    border-radius: 50px;
+    text-transform: uppercase;
+    margin-bottom: 0.75rem;
+    display: inline-block;
+}
+
+.badge-penting {
+    background: #fee2e2;
+    color: #ef4444;
+}
+
+.badge-info {
+    background: #dbeafe;
+    color: #3b82f6;
+}
+
+.badge-promo {
+    background: #dcfce7;
+    color: #22c55e;
+}
+
+.badge-kegiatan {
+    background: #fef3c7;
+    color: #f59e0b;
+}
+
+.announcement-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 0.5rem;
+    display: block;
+    line-height: 1.3;
+}
+
+.announcement-excerpt {
+    font-size: 0.85rem;
+    color: #64748b;
+    line-height: 1.5;
+    margin-bottom: 1rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.announcement-detail-content {
+    font-size: 0.9rem;
+    line-height: 1.6;
+    color: #334155;
+    max-height: 60vh;
+    overflow-y: auto;
+    padding-right: 5px;
+    text-align: left;
+}
+
+.announcement-detail-content::-webkit-scrollbar {
+    width: 5px;
+}
+
+.announcement-detail-content::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 10px;
+}
+
+.announcement-detail-content::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 10px;
+}
+
+.announcement-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.75rem;
+    color: #94a3b8;
+    border-top: 1px solid #f1f5f9;
+    padding-top: 0.75rem;
+}
+
+/* --- APK Download Card --- */
+.apk-download-card {
+    background: #fff;
+    border-radius: 20px;
+    padding: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    text-decoration: none !important;
+    border: 1px solid #e2e8f0;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+
+.apk-download-card:active {
+    transform: scale(0.97);
+    background: #f8fafc;
+    border-color: var(--primary);
+}
+
+.apk-icon {
+    width: 48px;
+    height: 48px;
+    background: #dbeafe;
+    color: #2563eb;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    flex-shrink: 0;
+}
+
+.apk-info {
+    flex-grow: 1;
+}
+
+.apk-info h6 {
+    margin: 0 0 0.25rem 0;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #1e293b;
+}
+
+.apk-info p {
+    margin: 0;
+    font-size: 0.75rem;
+    color: #64748b;
+    line-height: 1.4;
+}
+
+.apk-arrow {
+    color: #cbd5e1;
+    font-size: 1rem;
+}
+
+/* --- Coming Soon States --- */
+.apk-download-card.coming-soon {
+    opacity: 0.8;
+    background: #f1f5f9;
+    cursor: default;
+    border-style: dashed;
+}
+
+.apk-download-card.coming-soon .apk-icon {
+    background: #e2e8f0;
+    color: #94a3b8;
+}

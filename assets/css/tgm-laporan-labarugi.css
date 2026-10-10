@@ -1,0 +1,247 @@
+/* Laporan Laba Rugi - Integrated Dashboard Style */
+/* Ensure consistency with the main report page (dashboard.php) */
+.stats-overview {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background: white;
+    border-radius: 0;
+    padding: 1.5rem;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+    border: 1px solid #e9ecef;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #2c3e50, #34495e);
+}
+
+.stat-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+}
+
+/* Color variations for stats */
+.stat-card.success::before {
+    background: linear-gradient(90deg, #27ae60, #2ecc71);
+}
+
+.stat-card.info::before {
+    background: linear-gradient(90deg, #3498db, #2980b9);
+}
+
+.stat-card.warning::before {
+    background: linear-gradient(90deg, #f39c12, #d35400);
+}
+
+.stat-card.danger::before {
+    background: linear-gradient(90deg, #e74c3c, #c0392b);
+}
+
+.stat-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.stat-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    color: white;
+}
+
+.stat-icon.success {
+    background: linear-gradient(135deg, #27ae60, #2ecc71);
+}
+
+.stat-icon.info {
+    background: linear-gradient(135deg, #3498db, #2980b9);
+}
+
+.stat-icon.warning {
+    background: linear-gradient(135deg, #f39c12, #d35400);
+}
+
+.stat-icon.danger {
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+}
+
+.stat-info h3 {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #2c3e50;
+    margin: 0;
+    line-height: 1;
+}
+
+.stat-info h3.text-success {
+    color: #28a745 !important;
+}
+
+.stat-info h3.text-danger {
+    color: #dc3545 !important;
+}
+
+.stat-info p {
+    font-size: 0.8rem;
+    color: #6c757d;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0;
+}
+
+/* Report Card Style */
+.report-section-card {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 0;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+    margin-bottom: 2rem;
+}
+
+.section-header {
+    background: linear-gradient(135deg, #2c3e50, #34495e);
+    color: white;
+    padding: 1rem 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.section-header h5 {
+    margin: 0;
+    font-weight: 600;
+    font-size: 1.1rem;
+}
+
+.section-body {
+    padding: 1.5rem;
+}
+
+/* Table Styles */
+.table-laba-rugi {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.table-laba-rugi td {
+    padding: 1.25rem 1.5rem;
+    vertical-align: middle;
+    border-bottom: 1px solid #f1f3f5;
+}
+
+.section-divider {
+    background: #f8f9fa;
+    font-weight: 800;
+    color: #2c3e50;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-size: 0.85rem;
+    border-left: 4px solid #2c3e50;
+}
+
+.subtotal-row {
+    background: rgba(44, 62, 80, 0.02);
+    font-weight: 700;
+}
+
+.grandtotal-row {
+    background: #2c3e50;
+    color: white;
+    font-weight: 800;
+    font-size: 1.1rem;
+}
+
+.nav-card {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 12px;
+    padding: 1.5rem;
+    text-align: center;
+    transition: all 0.3s ease;
+    text-decoration: none !important;
+    display: block;
+    height: 100%;
+    position: relative;
+}
+
+.nav-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #2c3e50, #34495e);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.nav-card:hover::before {
+    opacity: 1;
+}
+
+.nav-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+    border-color: #2c3e50;
+}
+
+.nav-icon {
+    width: 60px;
+    height: 60px;
+    margin: 0 auto 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem;
+    color: #2c3e50;
+    background: #f8f9fa;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+}
+
+.nav-card:hover .nav-icon {
+    background: linear-gradient(135deg, #2c3e50, #34495e);
+    color: white;
+}
+
+.nav-title {
+    font-weight: 700;
+    color: #2c3e50;
+}
+
+@media print {
+    .app-content {
+        padding-top: 0 !important;
+    }
+
+    .no-print {
+        display: none !important;
+    }
+
+    .report-section-card {
+        border: 1px solid #eee;
+        box-shadow: none;
+    }
+}

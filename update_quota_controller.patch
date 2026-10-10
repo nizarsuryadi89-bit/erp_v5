@@ -1,0 +1,40 @@
+--- application/controllers/Absensi.php
++++ application/controllers/Absensi.php
+@@ -1562,2 +1562,37 @@
+         $this->load_admin_view('admin/absensi/sisa_cuti', $data);
+     }
++
++    public function update_quota_cuti()
++    {
++        if ($this->input->server('REQUEST_METHOD') !== 'POST') {
++            redirect('absensi/sisa_cuti');
++        }
++        
++        $karyawan_id = $this->input->post('karyawan_id', true);
++        $sisa = $this->input->post('sisa', true);
++        $menikah_sisa = $this->input->post('menikah_sisa', true);
++        $duka_sisa = $this->input->post('duka_sisa', true);
++        $sakitkel_sisa = $this->input->post('sakitkel_sisa', true);
++        $melahirkansuami_sisa = $this->input->post('melahirkansuami_sisa', true);
++        $tahun = date('Y');
++        
++        $data_update = [
++            'sisa' => $sisa,
++            'menikah_sisa' => $menikah_sisa,
++            'duka_sisa' => $duka_sisa,
++            'sakitkel_sisa' => $sakitkel_sisa,
++            'melahirkansuami_sisa' => $melahirkansuami_sisa,
++            'updated_at' => date('Y-m-d H:i:s')
++        ];
++        
++        $this->db->where('karyawan_id', $karyawan_id);
++        $this->db->where('tahun', $tahun);
++        if ($this->db->update('tbl_quota_cuti', $data_update)) {
++            $this->session->set_flashdata('success', 'Kuota cuti berhasil diupdate.');
++        } else {
++            $this->session->set_flashdata('error', 'Gagal mengupdate kuota cuti.');
++        }
++        
++        redirect('absensi/sisa_cuti');
++    }
+ 

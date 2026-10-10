@@ -1,0 +1,23 @@
+--- application/controllers/Karyawan.php
++++ application/controllers/Karyawan.php
+@@ -3451,2 +3451,21 @@
+     }
++
++    public function update_pengaturan_kedisiplinan_ajax()
++    {
++        $data = [
++            'potongan_telat' => $this->input->post('potongan_telat', true),
++            'potongan_alpha' => $this->input->post('potongan_alpha', true),
++            'potongan_izin' => $this->input->post('potongan_izin', true),
++            'potongan_sakit' => $this->input->post('potongan_sakit', true),
++            'potongan_pulang_cepat' => $this->input->post('potongan_pulang_cepat', true)
++        ];
++
++        $this->db->where('id', 1);
++        if ($this->db->update('tbl_pengaturan_kedisiplinan', $data)) {
++            $this->json_response(true, 'Pengaturan kedisiplinan berhasil diperbarui.');
++        } else {
++            $this->json_response(false, 'Gagal memperbarui pengaturan kedisiplinan.');
++        }
++    }
+ 

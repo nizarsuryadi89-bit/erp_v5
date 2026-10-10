@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cetak Invoice - TGM ERP</title>
+    <link id="favicon" rel="icon" type="image/png" href="">
+    <!-- Include Tailwind for quick utility styling, though we will use simple CSS for print layout -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            color: #000;
+            background: #fff;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .invoice-container {
+            max-width: 300px;
+            /* Typical receipt width, can be adjusted or let it flow for A4 */
+            margin: 0 auto;
+        }
+
+        @media print {
+            body {
+                padding: 0;
+            }
+
+            .no-print {
+                display: none !important;
+            }
+        }
+
+        .dashed-line {
+            border-top: 1px dashed #000;
+            margin: 10px 0;
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        .text-right {
+            text-align: right;
+        }
+
+        .text-sm {
+            font-size: 12px;
+        }
+
+        .text-xs {
+            font-size: 10px;
+        }
+
+        .font-bold {
+            font-weight: bold;
+        }
+
+        .mb-2 {
+            margin-bottom: 8px;
+        }
+
+        .mb-4 {
+            margin-bottom: 16px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 10px;
+        }
+
+        th,
+        td {
+            padding: 4px 0;
+            vertical-align: top;
+        }
+
+        th {
+            border-top: 1px dashed #000;
+            border-bottom: 1px dashed #000;
+            text-align: left;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 80px 10px 1fr;
+            font-size: 10px;
+            line-height: 1.4;
+        }
+
+        .w-full {
+            width: 100%;
+        }
+
+        .flex-between {
+            display: flex;
+            justify-content: space-between;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="text-center no-print mb-4">
+        <button onclick="window.print()"
+            class="bg-blue-600 text-white font-bold py-2 px-6 rounded shadow hover:bg-blue-700">PRINT INVOICE</button>
+        <button onclick="window.close()"
+            class="bg-gray-500 text-white font-bold py-2 px-6 rounded shadow hover:bg-gray-600 ml-2">TUTUP</button>
+    </div>
+
+    <div id="loading" class="text-center font-bold text-gray-500 my-10">Memuat Invoice...</div>
+    <div id="error-msg" class="hidden text-center font-bold text-red-500 my-10">Data pesanan tidak ditemukan.</div>
+
+    <div id="invoice-content" class="invoice-container hidden">
+        <!-- Header -->
+        <div class="text-center mb-2">
+            <img id="inv-logo" src="" alt="Logo" class="h-10 mx-auto mb-2 hidden object-contain">
+            <div id="inv-nama-perusahaan" class="font-bold text-sm">TGM MERCH & PRINT</div>
+            <div id="inv-alamat" class="text-xs">Jl. Serma Marzuki No.50D - Bekasi Selatan</div>
+            <div id="inv-email" class="text-xs">Email: -</div>
+        </div>
+
+        <div class="dashed-line"></div>
+        <div class="text-center font-bold text-sm">
+            No Invoice: <span id="inv-nospk">-</span>
+        </div>
+        <div class="dashed-line"></div>
+
+        <!-- Info -->
+        <div class="grid-2">
+            <div>Konsumen</div>
+            <div>:</div>
+            <div id="inv-konsumen">-</div>
+            <div>HP</div>
+            <div>:</div>
+            <div id="inv-hp">-</div>
+            <div>Tanggal/Jam</div>
+            <div>:</div>
+            <div id="inv-tanggal">-</div>
+            <div>Kasir</div>
+            <div>:</div>
+            <div id="inv-kasir">-</div>
+            <div>Deskprint</div>
+            <div>:</div>
+            <div id="inv-deskprint">-</div>
+        </div>
+
+        <div class="dashed-line"></div>
+
+        <!-- Table -->
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 40%">Product</th>
+                    <th class="text-center" style="width: 15%">Qty</th>
+                    <th class="text-right" style="width: 20%">Harga</th>
+                    <th class="text-right" style="width: 25%">Jumlah</th>
+                </tr>
+            </thead>
+            <tbody id="inv-items">
+                <!-- Items injected via JS -->
+            </tbody>
+        </table>
+
+        <div class="dashed-line"></div>
+
+        <!-- Totals -->
+        <div style="width: 100%; display: flex; justify-content: flex-end; font-size: 10px;">
+            <div style="width: 60%;">
+                <div class="flex-between">
+                    <div>Sub Total</div>
+                    <div id="inv-subtotal" class="text-right">-</div>
+                </div>
+                <div class="flex-between hidden" id="row-inv-diskon">
+                    <div>Diskon</div>
+                    <div id="inv-diskon" class="text-right">-</div>
+                </div>
+                <div class="flex-between hidden" id="row-inv-ongkir">
+                    <div>Ongkir</div>
+                    <div id="inv-ongkir" class="text-right">-</div>
+                </div>
+                <div class="flex-between hidden" id="row-inv-tagihan"
+                    style="border-top: 1px dashed #000; margin-top: 2px; padding-top: 2px;">
+                    <div>Total Tagihan</div>
+                    <div id="inv-total" class="text-right">-</div>
+                </div>
+                <div class="flex-between">
+                    <div>Total Bayar</div>
+                    <div id="inv-bayar" class="text-right">-</div>
+                </div>
+                <div class="flex-between">
+                    <div>Sisa / Kembali</div>
+                    <div id="inv-kembali" class="text-right">-</div>
+                </div>
+                <div class="flex-between font-bold mt-1">
+                    <div>Status</div>
+                    <div id="inv-status" class="text-right">-</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="dashed-line"></div>
+
+        <!-- Notes -->
+        <div class="text-center text-xs font-bold my-2 px-4">
+            Tidak Menerima KOMPLAIN atas Kerusakan/kesalahan PRINT DILUAR ACC atau APPROVAL
+        </div>
+
+        <div class="dashed-line"></div>
+
+        <!-- QR Code -->
+        <div class="flex justify-center mt-4">
+            <div id="qrcode" class="p-1"></div>
+        </div>
+        <div class="text-center text-xs mt-1 mb-10">
+            Scan di sini untuk cek posisi pesanan anda
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // KONFIGURASI API ERP
+        // ==========================================
+        let API_BASE_URL = 'https://erp.tgmprint.com';
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.startsWith('192.168.')) {
+            let pathSegments = window.location.pathname.split('/');
+            let folderName = pathSegments[1] ? '/' + pathSegments[1] : '/tgm_erp';
+            API_BASE_URL = window.location.origin + folderName;
+        }
+        // ==========================================
+
+        function formatRupiah(angka) {
+            return new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0 }).format(angka);
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            const urlParams = new URLSearchParams(window.location.search);
+            const spk = urlParams.get('spk');
+
+            if (!spk) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error-msg').classList.remove('hidden');
+                return;
+            }
+
+            fetch(`${API_BASE_URL}/api_tracking/spk?spk=${encodeURIComponent(spk)}`)
+                .then(response => response.json())
+                .then(res => {
+                    document.getElementById('loading').style.display = 'none';
+
+                    if (res.status === 'success') {
+                        document.getElementById('invoice-content').classList.remove('hidden');
+                        const data = res.data;
+
+                        // Perusahaan
+                        if (data.perusahaan) {
+                            if (data.perusahaan.logo) {
+                                const logoUrl = API_BASE_URL + '/assets/images/' + data.perusahaan.logo;
+                                const logoImg = document.getElementById('inv-logo');
+                                logoImg.src = logoUrl;
+                                logoImg.classList.remove('hidden');
+
+                                // Set Favicon
+                                const favicon = document.getElementById('favicon');
+                                if (favicon) favicon.href = logoUrl;
+                            }
+                            document.getElementById('inv-nama-perusahaan').innerText = data.perusahaan.nama_perusahaan || 'TGM MERCH & PRINT';
+
+                            const kotaProv = [data.perusahaan.kota, data.perusahaan.provinsi].filter(Boolean).join(' - ');
+                            const addressFull = [data.perusahaan.alamat_perusahaan, kotaProv].filter(Boolean).join(' ');
+                            document.getElementById('inv-alamat').innerText = addressFull || '-';
+                            document.getElementById('inv-email').innerText = 'Email: ' + (data.perusahaan.email || '-');
+                        }
+
+                        // Info
+                        document.getElementById('inv-nospk').innerText = data.nospk || spk;
+                        document.getElementById('inv-konsumen').innerText = data.konsumen || '-';
+                        document.getElementById('inv-hp').innerText = data.nohp || '-';
+                        document.getElementById('inv-tanggal').innerText = data.tanggal || '-';
+                        document.getElementById('inv-kasir').innerText = data.kasir || '-';
+                        document.getElementById('inv-deskprint').innerText = data.deskprint || '-';
+
+                        // Items
+                        let grandTotal = 0;
+                        const tbody = document.getElementById('inv-items');
+                        if (data.items && data.items.length > 0) {
+                            data.items.forEach(item => {
+                                const sub = parseInt(item.subtotal) || 0;
+                                grandTotal += sub;
+
+                                let badgeHtml = '';
+                                if (item.status_produksi) {
+                                    const stat = parseInt(item.status_produksi);
+                                    if (stat === 4) badgeHtml = `<span style="background-color: #4b5563; color: white; font-size: 8px; font-weight: bold; padding: 2px 4px; border-radius: 4px; margin-left: 6px; vertical-align: middle;">DIAMBIL</span>`;
+                                    else if (stat === 3) badgeHtml = `<span style="background-color: #22c55e; color: white; font-size: 8px; font-weight: bold; padding: 2px 4px; border-radius: 4px; margin-left: 6px; vertical-align: middle;">SELESAI</span>`;
+                                    else if (stat === 2 || stat === 1) badgeHtml = `<span style="background-color: #3b82f6; color: white; font-size: 8px; font-weight: bold; padding: 2px 4px; border-radius: 4px; margin-left: 6px; vertical-align: middle;">PROSES</span>`;
+                                    else badgeHtml = `<span style="background-color: #eab308; color: white; font-size: 8px; font-weight: bold; padding: 2px 4px; border-radius: 4px; margin-left: 6px; vertical-align: middle;">ANTREAN</span>`;
+                                }
+
+                                tbody.innerHTML += `
+                                    <tr>
+                                        <td class="font-bold" style="padding-right: 8px;">
+                                            <div style="display: flex; flex-wrap: wrap; align-items: center; row-gap: 4px;">
+                                                ${item.nama || item.nama_produk} ${badgeHtml}
+                                            </div>
+                                            <div style="font-weight: normal; font-size: 9px; margin-top: 2px;">
+                                                ${item.keterangan || ''}
+                                            </div>
+                                        </td>
+                                        <td class="text-center">${item.qty}</td>
+                                        <td class="text-right">${formatRupiah(item.harga)}</td>
+                                        <td class="text-right">${formatRupiah(sub)}</td>
+                                    </tr>
+                                `;
+                            });
+                        }
+
+                        // Totals
+                        const diskon = parseFloat(data.diskon || 0);
+                        const ongkir = parseFloat(data.ongkir || 0);
+                        const totalTagihan = data.total_tagihan > 0 ? data.total_tagihan : (grandTotal + ongkir - diskon);
+                        const totalBayar = data.total_bayar || 0;
+                        let sisa = totalTagihan - totalBayar;
+                        if (sisa < 0) sisa = 0;
+                        let isLunas = (data.status_pembayaran === 'paid' || data.is_lunas) ? (sisa <= 0) : (totalTagihan > 0 && sisa <= 0 && totalBayar > 0);
+
+                        document.getElementById('inv-subtotal').innerText = formatRupiah(grandTotal);
+
+                        if (diskon > 0) {
+                            document.getElementById('row-inv-diskon').classList.remove('hidden');
+                            document.getElementById('inv-diskon').innerText = '-' + formatRupiah(diskon);
+                        }
+
+                        if (ongkir > 0) {
+                            document.getElementById('row-inv-ongkir').classList.remove('hidden');
+                            document.getElementById('inv-ongkir').innerText = '+' + formatRupiah(ongkir);
+                        }
+
+                        if (diskon > 0 || ongkir > 0 || (data.total_tagihan > 0 && data.total_tagihan != grandTotal)) {
+                            document.getElementById('row-inv-tagihan').classList.remove('hidden');
+                            document.getElementById('inv-total').innerText = formatRupiah(totalTagihan);
+                        }
+
+                        document.getElementById('inv-bayar').innerText = formatRupiah(totalBayar);
+                        document.getElementById('inv-kembali').innerText = formatRupiah(sisa);
+                        document.getElementById('inv-status').innerText = isLunas ? 'LUNAS' : (totalBayar > 0 ? 'BELUM LUNAS (DP)' : 'BELUM LUNAS');
+
+                        // QR Code
+                        const trackingUrl = window.location.origin + window.location.pathname.replace('invoice.html', 'index.html') + '?spk=' + (data.nospk || spk);
+                        new QRCode(document.getElementById("qrcode"), {
+                            text: trackingUrl,
+                            width: 100,
+                            height: 100,
+                            colorDark: "#000000",
+                            colorLight: "#ffffff",
+                            correctLevel: QRCode.CorrectLevel.M
+                        });
+
+                        // Auto print logic can be enabled if desired
+                        // setTimeout(() => window.print(), 500);
+                    } else {
+                        document.getElementById('error-msg').classList.remove('hidden');
+                        document.getElementById('error-msg').innerText = res.message || 'Terjadi kesalahan.';
+                    }
+                })
+                .catch(err => {
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('error-msg').classList.remove('hidden');
+                    document.getElementById('error-msg').innerText = 'Gagal terhubung ke server ERP.';
+                });
+        });
+    </script>
+</body>
+
+</html>

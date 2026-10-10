@@ -1,0 +1,120 @@
+HTTP/1.1 200 OK
+Date: Sun, 19 Jul 2026 06:37:34 GMT
+Server: Apache/2.4.54 (Unix) OpenSSL/1.1.1s PHP/7.4.33 mod_perl/2.0.12 Perl/v5.34.1
+X-Powered-By: PHP/7.4.33
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: GET, POST, OPTIONS, PUT, DELETE
+Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Origin, Accept, Access-Control-Allow-Origin, Cache-Control, Pragma
+Access-Control-Allow-Credentials: true
+Access-Control-Max-Age: 86400
+Set-Cookie: ci_session=caa600cc1276aa65667233eff76c502bbd5d846a; expires=Sun, 19-Jul-2026 08:37:34 GMT; Max-Age=7200; path=/; HttpOnly
+Expires: Thu, 19 Nov 1981 08:52:00 GMT
+Cache-Control: max-age=0
+Pragma: no-cache
+Content-Disposition: attachment;filename="test_export.xlsx"
+Content-Length: 2079
+Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+
+
+<div style="border:1px solid #990000;padding-left:20px;margin:0 0 10px 0;">
+
+<h4>A PHP Error was encountered</h4>
+
+<p>Severity: Warning</p>
+<p>Message:  ZipArchive::close(): Failure to create temporary file: No such file or directory</p>
+<p>Filename: Writer/Excel2007.php</p>
+<p>Line Number: 388</p>
+
+
+	<p>Backtrace:</p>
+	
+		
+	
+		
+	
+		
+	
+		
+			<p style="margin-left:10px">
+			File: /Applications/XAMPP/xamppfiles/htdocs/tgm_erp/application/third_party/PHPExcel/PHPExcel/Writer/Excel2007.php<br />
+			Line: 388<br />
+			Function: close			</p>
+
+		
+	
+		
+			<p style="margin-left:10px">
+			File: /Applications/XAMPP/xamppfiles/htdocs/tgm_erp/application/controllers/Test.php<br />
+			Line: 22<br />
+			Function: save			</p>
+
+		
+	
+		
+	
+		
+			<p style="margin-left:10px">
+			File: /Applications/XAMPP/xamppfiles/htdocs/tgm_erp/index.php<br />
+			Line: 334<br />
+			Function: require_once			</p>
+
+		
+	
+
+</div>
+<div style="border:1px solid #990000;padding-left:20px;margin:0 0 10px 0;">
+
+<h4>A PHP Error was encountered</h4>
+
+<p>Severity: Warning</p>
+<p>Message:  Cannot modify header information - headers already sent by (output started at /Applications/XAMPP/xamppfiles/htdocs/tgm_erp/system/core/Exceptions.php:271)</p>
+<p>Filename: core/Common.php</p>
+<p>Line Number: 570</p>
+
+
+	<p>Backtrace:</p>
+	
+		
+	
+		
+	
+		
+	
+		
+	
+		
+	
+		
+	
+
+</div>
+<div style="border:1px solid #990000;padding-left:20px;margin:0 0 10px 0;">
+
+<h4>An uncaught Exception was encountered</h4>
+
+<p>Type: PHPExcel_Writer_Exception</p>
+<p>Message: Could not close zip file php://output.</p>
+<p>Filename: /Applications/XAMPP/xamppfiles/htdocs/tgm_erp/application/third_party/PHPExcel/PHPExcel/Writer/Excel2007.php</p>
+<p>Line Number: 389</p>
+
+
+	<p>Backtrace:</p>
+	
+		
+			<p style="margin-left:10px">
+			File: /Applications/XAMPP/xamppfiles/htdocs/tgm_erp/application/controllers/Test.php<br />
+			Line: 22<br />
+			Function: save			</p>
+		
+	
+		
+	
+		
+			<p style="margin-left:10px">
+			File: /Applications/XAMPP/xamppfiles/htdocs/tgm_erp/index.php<br />
+			Line: 334<br />
+			Function: require_once			</p>
+		
+	
+
+</div>

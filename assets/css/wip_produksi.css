@@ -1,0 +1,354 @@
+/* ==========================================================================
+   PREMIUM DESIGN SYSTEM (LEGGER THEME v2) - PRODUCTION MODULE
+   ========================================================================== */
+:root {
+    --primary-gradient: linear-gradient(135deg, #1a1c23 0%, #2c3e50 100%);
+    --accent-gradient: linear-gradient(135deg, #f39c12 0%, #d35400 100%);
+    --info-gradient: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+    --success-gradient: linear-gradient(135deg, #27ae60 0%, #1e8449 100%);
+    --warning-gradient: linear-gradient(135deg, #f1c40f 0%, #f39c12 100%);
+    --danger-gradient: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+    --premium-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+.report-section-card {
+    background: white;
+    border-radius: 20px;
+    box-shadow: var(--premium-shadow);
+    overflow: hidden;
+    margin-bottom: 2rem;
+    border: none;
+}
+
+.section-header {
+    background: var(--primary-gradient);
+    padding: 1.25rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: white;
+}
+
+.section-header h5 {
+    margin: 0;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* Stats v2 */
+.summary-stat-card {
+    background: white;
+    padding: 1.25rem;
+    border-radius: 20px;
+    border: 1px solid #f1f5f9;
+    transition: all 0.3s ease;
+}
+
+.summary-stat-card:hover {
+    transform: translateY(-5px);
+    box-shadow: var(--premium-shadow);
+}
+
+.stat-v2-icon {
+    width: 45px;
+    height: 45px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+}
+
+.stat-v2-label {
+    color: #64748b;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.65rem;
+    letter-spacing: 1px;
+}
+
+.stat-v2-value {
+    font-size: 1.5rem;
+    font-weight: 900;
+    color: #1a1c23;
+    line-height: 1.2;
+}
+
+/* Table & Components */
+.premium-table thead th {
+    background: #f8fafc;
+    color: #475569;
+    font-weight: 800;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    letter-spacing: 0.5px;
+    padding: 1rem 1.5rem;
+    border: none;
+}
+
+.premium-table tbody td {
+    padding: 1rem 1.5rem;
+    vertical-align: middle;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.spk-code {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 900;
+    font-size: 1rem;
+    color: #000;
+    background: #f8fafc;
+    padding: 0.4rem 0.8rem;
+    border-radius: 8px;
+    border: 2px solid #e2e8f0;
+    letter-spacing: -0.5px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+.company-pill {
+    padding: 0.3rem 0.7rem;
+    border-radius: 50px;
+    font-weight: 700;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(0, 0, 0, 0.03);
+}
+
+.company-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+/* Action Buttons */
+.btn-action-premium {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    border: 1px solid #e2e8f0;
+    background: white;
+    color: #64748b;
+}
+
+.btn-action-premium:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    color: white;
+}
+
+.btn-primary-p:hover {
+    background: var(--primary-gradient) !important;
+    border-color: transparent;
+}
+
+.btn-success-p:hover {
+    background: var(--success-gradient) !important;
+    border-color: transparent;
+}
+
+.btn-warning-p:hover {
+    background: var(--warning-gradient) !important;
+    border-color: transparent;
+    color: #1a1c23;
+}
+
+.btn-info-p:hover {
+    background: var(--info-gradient) !important;
+    border-color: transparent;
+}
+
+/* Modals & Badges */
+.modal-premium {
+    border-radius: 20px !important;
+    overflow: hidden;
+    border: none !important;
+}
+
+.modal-premium .modal-header {
+    background: var(--primary-gradient);
+    padding: 1.25rem 2rem;
+    border: none;
+    color: white;
+}
+
+.status-badge-premium {
+    padding: 0.4rem 0.8rem;
+    border-radius: 50px;
+    font-weight: 800;
+    font-size: 0.6rem;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    border: 1px solid transparent;
+}
+
+.nav-tabs-premium {
+    border: none;
+    gap: 8px;
+    padding: 8px;
+    background: #f1f5f9;
+    border-radius: 15px;
+    display: inline-flex;
+}
+
+.nav-tabs-premium .nav-link {
+    border: none !important;
+    border-radius: 10px !important;
+    padding: 10px 20px;
+    font-weight: 800;
+    font-size: 0.7rem;
+    color: #64748b;
+    background: transparent;
+    transition: all 0.2s ease;
+}
+
+.nav-tabs-premium .nav-link.active {
+    background: var(--primary-gradient) !important;
+    color: white !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.cat-badge {
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 0.55rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    opacity: 0.85;
+}
+
+.tr-spk-row {
+    border-top: 3px solid #f8fafc !important;
+    transition: background 0.2s;
+}
+
+.tr-spk-row:hover {
+    background-color: #fcfdfe;
+}
+
+/* Reprint Highlight */
+.tr-reprint {
+    background-color: rgba(231, 76, 60, 0.05) !important;
+}
+
+.tr-reprint td {
+    border-bottom: 1px solid rgba(231, 76, 60, 0.2) !important;
+}
+
+.reprint-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    background: var(--danger-gradient);
+    color: white;
+    border-radius: 4px;
+    font-size: 0.6rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 4px rgba(231, 76, 60, 0.2);
+}
+
+/* Switch View Styled Buttons */
+.view-switch-container {
+    display: inline-flex;
+    background: #f1f5f9;
+    padding: 4px;
+    border-radius: 12px;
+    gap: 4px;
+}
+
+.btn-view-switch {
+    border: none;
+    background: transparent;
+    padding: 6px 16px;
+    border-radius: 9px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    color: #64748b;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    text-transform: uppercase;
+}
+
+.btn-view-switch.active {
+    background: white;
+    color: var(--primary-gradient);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+/* Nesting Styles */
+.nesting-stat .small {
+    font-size: 0.65rem;
+}
+
+#visualRollSuggestion option {
+    background-color: #ffffff;
+    color: #1a1c23;
+    font-weight: 700;
+}
+
+/* Font Utilities */
+.fw-700 { font-weight: 700 !important; }
+.fw-800 { font-weight: 800 !important; }
+.fw-900 { font-weight: 900 !important; }
+.ls-1 { letter-spacing: 1px !important; }
+.ls-n1 { letter-spacing: -1px !important; }
+.line-height-1 { line-height: 1.1 !important; }
+
+/* Transitions */
+.tr-item-row {
+    transition: all 0.2s ease-in-out !important;
+}
+
+.tr-item-row:hover {
+    background-color: #f8fafc !important;
+    transform: scale(1.002);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+}
+
+/* Animations */
+@keyframes pulse-red {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.7); }
+    70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(231, 76, 60, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(231, 76, 60, 0); }
+}
+
+@keyframes pulse-orange {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(243, 156, 18, 0.7); }
+    70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(243, 156, 18, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(243, 156, 18, 0); }
+}
+
+.pulse-red {
+    animation: pulse-red 2s infinite;
+}
+
+.pulse-orange {
+    animation: pulse-orange 2s infinite;
+}
+
+/* Custom Table Overrides */
+.premium-table tbody tr td {
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.check-item-nesting:checked {
+    background-color: #1a1c23;
+    border-color: #1a1c23;
+}

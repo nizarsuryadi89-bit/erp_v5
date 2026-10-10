@@ -1,0 +1,193 @@
+/* Legger-Inspired Theme Consistency */
+:root {
+    --primary-gradient: linear-gradient(135deg, #2c3e50, #34495e);
+    --secondary-gradient: linear-gradient(135deg, #1a1c23, #2c3e50);
+    --success-gradient: linear-gradient(135deg, #28a745, #20c997);
+    --warning-gradient: linear-gradient(135deg, #f39c12, #e67e22);
+    --info-gradient: linear-gradient(135deg, #3498db, #2980b9);
+    --danger-gradient: linear-gradient(135deg, #e74c3c, #c0392b);
+}
+
+.report-section-card {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+    margin-bottom: 2rem;
+}
+
+.section-header {
+    background: var(--primary-gradient);
+    color: white;
+    padding: 1.25rem 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.section-header h5 {
+    margin: 0;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-size: 1rem;
+}
+
+.info-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #7f8c8d;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+    display: block;
+}
+
+.info-value {
+    font-weight: 600;
+    color: #2c3e50;
+    font-size: 0.95rem;
+}
+
+.summary-box {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 1.5rem;
+    border: 1px dashed #dee2e6;
+    text-align: center;
+}
+
+.price-large {
+    font-size: 2rem;
+    font-weight: 800;
+    color: #27ae60;
+    letter-spacing: -1px;
+}
+
+.table thead th {
+    background: #f8f9fa;
+    color: #2c3e50;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.5px;
+    border-bottom: 2px solid #edf2f7;
+    padding: 15px;
+}
+
+.btn-premium {
+    border-radius: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 0.8rem 1.5rem;
+    transition: all 0.3s ease;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.btn-premium-primary {
+    background: var(--info-gradient);
+    color: white;
+}
+
+.btn-premium-success {
+    background: var(--success-gradient);
+    color: white;
+}
+
+.btn-premium-warning {
+    background: var(--warning-gradient);
+    color: white;
+}
+
+.btn-premium:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+    color: white;
+}
+
+.form-section {
+    background: white;
+    border-radius: 15px;
+    padding: 1.75rem;
+    border: 1px solid #edf2f7;
+    position: relative;
+}
+
+.form-section h6 {
+    font-weight: 800;
+    color: #1a1c23;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    letter-spacing: 1px;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #f8f9fa;
+}
+
+.form-section h6 i {
+    font-size: 1.1rem;
+    background: var(--info-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.premium-input-group {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 0.5rem 1rem;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+}
+
+.premium-input-group:focus-within {
+    border-color: #3498db;
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+    background: white;
+}
+
+.premium-input-group input {
+    border: none;
+    background: transparent;
+    font-weight: 700;
+    color: #1a1c23;
+    width: 100%;
+    padding: 0.5rem;
+}
+
+.premium-input-group input:focus {
+    outline: none;
+}
+
+.premium-input-group i {
+    color: #94a3b8;
+    font-size: 1rem;
+    width: 20px;
+}
+
+.grand-total-box {
+    background: var(--secondary-gradient);
+    border-radius: 12px;
+    padding: 1.5rem;
+    color: white;
+    text-align: center;
+    margin-top: 2rem;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+}
+
+.payment-method-card {
+    border: 2px solid #f1f5f9;
+    border-radius: 12px;
+    padding: 2rem;
+    background: #fcfdfe;
+    min-height: 250px;
+    transition: all 0.3s ease;
+}

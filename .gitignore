@@ -1,0 +1,44 @@
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Environments / Configs
+.env
+.vscode/
+node_modules/
+
+# User Uploads
+uploads/*
+!uploads/index.html
+!uploads/default.png
+
+# Application Logs & Temp
+error_log
+application/logs/*
+!application/logs/index.html
+application/cache/*
+!application/cache/index.html
+.temp/
+.agent/
+.kiro/
+scratch/
+migration_log.txt
+debug_db.txt
+
+# Backup & ZIP files
+*.zip
+*.tar.gz
+mobile_folder_backup/
+
+# Test scripts
+test_*.php
+scratch_*.php
+ci_test.php
+db_test.php
+flutter_example/
+portal/
