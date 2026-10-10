@@ -1,0 +1,6 @@
+06/10/2026, 08.00 - Pesan dan panggilan dienkripsi secara end-to-end.
+06/10/2026, 08.10 - Operator Demo: Mesin A3 hasil cetaknya bergaris. SPK DEMO-001 tertunda.
+Sudah dibersihkan, tetapi garis masih muncul.
+06/10/2026, 08.15 - Customer Demo: Komplain warna cetak tidak sesuai untuk SPK DEMO-002.
+06/10/2026, 08.20 - Teknisi Demo: Mesin A3 sudah diperbaiki dan sudah normal.
+06/10/2026, 08.25 - Kasir Demo: Terima kasih, laporan diterima.
