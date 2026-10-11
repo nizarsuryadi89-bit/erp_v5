@@ -374,12 +374,21 @@ $buildPageUrl = function ($pageNumber) use ($pagination_base_params) {
                                             }
                                             ?>
                                             <div class="setup-status-group">
-                                                <span class="setup-status-pill" style="background: <?= $setup_bg ?>; color: <?= $setup_color ?>;">
+                                                <span class="setup-status-pill" style="background: <?= $setup_bg ?>; color: <?= $setup_color ?>;" title="Status Data (Master, Routing, BOM)">
                                                     <?= $setup_text ?>
                                                 </span>
-                                                <span class="setup-status-pill" style="background: <?= $meta_bg ?>; color: <?= $meta_color ?>;">
+                                                <span class="setup-status-pill" style="background: <?= $meta_bg ?>; color: <?= $meta_color ?>;" title="Status Harga & Metadata">
                                                     <?= $meta_text ?>
                                                 </span>
+                                                <?php if (($dt->status ?? 0) == 1): ?>
+                                                    <span class="setup-status-pill" style="background: #4f46e5; color: #ffffff;" title="Produk sudah aktif / launching">
+                                                        <i class="bi bi-rocket-takeoff-fill me-1"></i>LAUNCHED
+                                                    </span>
+                                                <?php else: ?>
+                                                    <span class="setup-status-pill" style="background: #e2e8f0; color: #475569;" title="Produk masih draft / belum aktif">
+                                                        <i class="bi bi-pencil-square me-1"></i>DRAFT
+                                                    </span>
+                                                <?php endif; ?>
                                             </div>
                                     </td>
                                     <td>

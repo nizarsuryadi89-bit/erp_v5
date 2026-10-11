@@ -705,6 +705,20 @@ class Manufaktur extends MY_Controller
         $data['list_bom'] = $this->M_master->getbomkode('product_id', $id)->result();
         $data['segment2'] = $this->uri->segment(2); // Added for universal_pricing view compatibility
 
+        $data['nextProduct'] = $this->db->select('product_id, product_nama')
+            ->from('tbl_product')
+            ->where('product_id >', $id)
+            ->order_by('product_id', 'ASC')
+            ->limit(1)
+            ->get()->row_array();
+
+        $data['prevProduct'] = $this->db->select('product_id, product_nama')
+            ->from('tbl_product')
+            ->where('product_id <', $id)
+            ->order_by('product_id', 'DESC')
+            ->limit(1)
+            ->get()->row_array();
+
         $this->load_admin_view('admin/product/detail', $data);
     }
 
@@ -1666,7 +1680,7 @@ class Manufaktur extends MY_Controller
 
         $operator_table = $this->db->table_exists('tbl_operator') ? 'tbl_operator' : 'operator';
 
-        $result = $this->db->select('r.*, hp.detail_product as variasi_nama, o.operator_nama as operator_name, b.bahan_nama as bom_material_name')
+        $result = $this->db->select('r.*, hp.detail_product as variasi_nama, o.operator_nama as operator_name, b.bahan_nama as bom_material_name, bl.harga_id as bom_harga_id')
             ->from('routing r')
             ->join('tbl_harga_product hp', 'hp.harga_id = r.harga_id', 'left')
             ->join($operator_table . ' o', 'o.operator_id = r.operator_id', 'left')
@@ -1709,10 +1723,43 @@ class Manufaktur extends MY_Controller
         }
         unset($v);
 
+        // Fetch dynamic boms to map bom_material_name if r.bom_line_id is dyn_*
+        $dyn_boms_map = [];
+        $dyn_boms_var_map = [];
+        $dyn_boms = $this->db->select('dm.id, dm.attribute_key, dm.attribute_value, b.bahan_nama, m.varian, s.satuan_nama')
+            ->from('tbl_bom_dynamic_mapping dm')
+            ->join('tbl_material m', 'm.material_id = dm.bahan_id', 'left')
+            ->join('tbl_bahan b', 'b.bahan_id = m.bahan_id', 'left')
+            ->join('tbl_satuan s', 's.satuan_id = b.satuan_id', 'left')
+            ->where('dm.product_id', $product_id)
+            ->get()->result();
+
+        foreach ($dyn_boms as $dbom) {
+            $mat_nama = trim(($dbom->bahan_nama ?: '') . ($dbom->varian ? ' - ' . $dbom->varian : ''));
+            if (empty($mat_nama)) {
+                $mat_nama = 'Material #' . $dbom->id;
+            }
+            $attr_label = ucfirst($dbom->attribute_key) . ': ' . $dbom->attribute_value;
+            $dyn_boms_map['dyn_' . $dbom->id] = "[BOM Variasi] " . $mat_nama . " [Var: " . $attr_label . "]";
+            $dyn_boms_var_map['dyn_' . $dbom->id] = $attr_label;
+        }
+
         if ($result) {
             foreach ($result as &$r) {
                 if (!empty($r->harga_id) && isset($variation_map[$r->harga_id])) {
                     $r->variasi_nama = $variation_map[$r->harga_id];
+                }
+                if (!empty($r->bom_line_id) && isset($dyn_boms_map[$r->bom_line_id])) {
+                    $r->bom_material_name = $dyn_boms_map[$r->bom_line_id];
+                }
+
+                // If variasi_nama is empty, derive from linked BOM
+                if (empty($r->variasi_nama)) {
+                    if (!empty($r->bom_line_id) && isset($dyn_boms_var_map[$r->bom_line_id])) {
+                        $r->variasi_nama = $dyn_boms_var_map[$r->bom_line_id];
+                    } else if (!empty($r->bom_harga_id) && isset($variation_map[$r->bom_harga_id])) {
+                        $r->variasi_nama = $variation_map[$r->bom_harga_id];
+                    }
                 }
             }
         }
@@ -1867,6 +1914,8 @@ class Manufaktur extends MY_Controller
             $var_map[$v->harga_id] = $var_name;
         }
 
+        $this->_check_routing_bom_column();
+
         $boms = $this->db->select('bl.bom_line_id as id, bl.harga_id, bl.keterangan, b.bahan_nama, m.varian, bl.quantity, s.satuan_nama')
             ->from('bom_lines bl')
             ->join('tbl_material m', 'm.material_id = bl.bahan_id', 'left')
@@ -1881,8 +1930,54 @@ class Manufaktur extends MY_Controller
         foreach ($boms as $bom) {
             $var_text = ($bom->harga_id && isset($var_map[$bom->harga_id])) ? " [Var: " . $var_map[$bom->harga_id] . "]" : " [Var: Global]";
             $ket_text = !empty($bom->keterangan) ? " - " . $bom->keterangan : "";
-            $text = $bom->bahan_nama . ' - ' . $bom->varian . ' (' . $bom->quantity . ' ' . $bom->satuan_nama . ')' . $ket_text . $var_text;
-            $result[] = (object) ['id' => $bom->id, 'text' => $text];
+            $mat_nama = trim(($bom->bahan_nama ?: '') . ($bom->varian ? ' - ' . $bom->varian : ''));
+            $text = $mat_nama . ' (' . $bom->quantity . ' ' . $bom->satuan_nama . ')' . $ket_text . $var_text;
+            $result[] = (object) [
+                'id' => (string) $bom->id,
+                'text' => $text,
+                'harga_id' => $bom->harga_id,
+                'var_name' => ($bom->harga_id && isset($var_map[$bom->harga_id])) ? $var_map[$bom->harga_id] : ''
+            ];
+        }
+
+        // 2. Dynamic BOMs (Variasi BOM)
+        $dyn_boms = $this->db->select('dm.id, dm.attribute_key, dm.attribute_value, dm.calc_type, dm.divider_factor, b.bahan_nama, m.varian, s.satuan_nama')
+            ->from('tbl_bom_dynamic_mapping dm')
+            ->join('tbl_material m', 'm.material_id = dm.bahan_id', 'left')
+            ->join('tbl_bahan b', 'b.bahan_id = m.bahan_id', 'left')
+            ->join('tbl_satuan s', 's.satuan_id = b.satuan_id', 'left')
+            ->where('dm.product_id', $product_id)
+            ->order_by('dm.attribute_key', 'ASC')
+            ->order_by('dm.attribute_value', 'ASC')
+            ->get()->result();
+
+        foreach ($dyn_boms as $dbom) {
+            $mat_nama = trim(($dbom->bahan_nama ?: '') . ($dbom->varian ? ' - ' . $dbom->varian : ''));
+            if (empty($mat_nama)) {
+                $mat_nama = 'Material #' . $dbom->id;
+            }
+            $satuan = !empty($dbom->satuan_nama) ? ' (' . $dbom->satuan_nama . ')' : '';
+            $attr_label = ucfirst($dbom->attribute_key) . ': ' . $dbom->attribute_value;
+            $text = "[BOM Variasi] " . $mat_nama . $satuan . " [Var: " . $attr_label . "]";
+            $result[] = (object) [
+                'id' => 'dyn_' . $dbom->id,
+                'text' => $text,
+                'attr_key' => $dbom->attribute_key,
+                'attr_val' => $dbom->attribute_value,
+                'var_name' => $attr_label
+            ];
+        }
+
+        // Filter by term if provided
+        $term = trim($this->input->get('term', true) ?? '');
+        if (!empty($term)) {
+            $filtered = [];
+            foreach ($result as $item) {
+                if (stripos($item->text, $term) !== false) {
+                    $filtered[] = $item;
+                }
+            }
+            $result = $filtered;
         }
 
         // Add 'No Material' option
@@ -1891,10 +1986,25 @@ class Manufaktur extends MY_Controller
         echo json_encode(['results' => $result]);
     }
 
+    private function _check_routing_bom_column()
+    {
+        try {
+            $fields = $this->db->field_data('routing');
+            foreach ($fields as $field) {
+                if ($field->name === 'bom_line_id' && ($field->type === 'int' || $field->type === 'integer')) {
+                    $this->db->query("ALTER TABLE routing MODIFY bom_line_id VARCHAR(50) NULL DEFAULT NULL");
+                    break;
+                }
+            }
+        } catch (Exception $e) {
+        }
+    }
+
     public function add_routing()
     {
         header('Content-Type: application/json');
         try {
+            $this->_check_routing_bom_column();
             $product_id = $this->input->post('product_id', true);
             $routing_name = $this->input->post('routing_name', true);
             $bom_line_id = $this->input->post('bom_line_id', true);
@@ -1930,6 +2040,35 @@ class Manufaktur extends MY_Controller
 
             foreach ($harga_ids as $hid) {
                 $hid = ($hid === '' || $hid === 'null' || $hid === '0' || $hid === null) ? null : $hid;
+
+                // Auto-detect variation from bom_line_id if harga_id is not specified
+                if (empty($hid) && !empty($bom_line_id)) {
+                    if (is_numeric($bom_line_id)) {
+                        $bl = $this->db->get_where('bom_lines', ['bom_line_id' => $bom_line_id])->row();
+                        if ($bl && !empty($bl->harga_id)) {
+                            $hid = $bl->harga_id;
+                        }
+                    } else if (strpos($bom_line_id, 'dyn_') === 0) {
+                        $dyn_id = substr($bom_line_id, 4);
+                        $dyn = $this->db->get_where('tbl_bom_dynamic_mapping', ['id' => $dyn_id])->row();
+                        if ($dyn) {
+                            $vars = $this->db->get_where('tbl_harga_product', ['product_id' => $product_id])->result();
+                            foreach ($vars as $v) {
+                                if (!empty($v->metadata)) {
+                                    $m = json_decode($v->metadata, true);
+                                    if (is_array($m) && isset($m[$dyn->attribute_key]) && strcasecmp((string)$m[$dyn->attribute_key], (string)$dyn->attribute_value) === 0) {
+                                        $hid = $v->harga_id;
+                                        break;
+                                    }
+                                }
+                                if (stripos($v->detail_product, $dyn->attribute_value) !== false) {
+                                    $hid = $v->harga_id;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
 
                 // Check for duplicates
                 $existing = $this->db->get_where('routing', [
@@ -1982,6 +2121,7 @@ class Manufaktur extends MY_Controller
     {
         header('Content-Type: application/json');
         try {
+            $this->_check_routing_bom_column();
             $routing_id = $this->input->post('routing_id', true);
             $routing_name = $this->input->post('routing_name', true);
             $bom_line_id = $this->input->post('bom_line_id', true);
@@ -1998,6 +2138,41 @@ class Manufaktur extends MY_Controller
             if (!$routing_id || !$routing_name || !$routing_urutan || !$operator_id) {
                 echo json_encode(['success' => false, 'message' => 'Lengkapilah data yang wajib diisi (Urutan, Nama Operasi, Operator)']);
                 return;
+            }
+
+            if ($bom_line_id == '99999' || empty($bom_line_id)) {
+                $bom_line_id = NULL;
+            }
+
+            // Auto-detect variation from bom_line_id if harga_id is not specified
+            if (empty($harga_id) && !empty($bom_line_id)) {
+                $existing_r = $this->db->get_where('routing', ['routing_id' => $routing_id])->row();
+                $pid = $existing_r ? $existing_r->product_id : 0;
+                if (is_numeric($bom_line_id)) {
+                    $bl = $this->db->get_where('bom_lines', ['bom_line_id' => $bom_line_id])->row();
+                    if ($bl && !empty($bl->harga_id)) {
+                        $harga_id = $bl->harga_id;
+                    }
+                } else if (strpos($bom_line_id, 'dyn_') === 0) {
+                    $dyn_id = substr($bom_line_id, 4);
+                    $dyn = $this->db->get_where('tbl_bom_dynamic_mapping', ['id' => $dyn_id])->row();
+                    if ($dyn && $pid) {
+                        $vars = $this->db->get_where('tbl_harga_product', ['product_id' => $pid])->result();
+                        foreach ($vars as $v) {
+                            if (!empty($v->metadata)) {
+                                $m = json_decode($v->metadata, true);
+                                if (is_array($m) && isset($m[$dyn->attribute_key]) && strcasecmp((string)$m[$dyn->attribute_key], (string)$dyn->attribute_value) === 0) {
+                                    $harga_id = $v->harga_id;
+                                    break;
+                                }
+                            }
+                            if (stripos($v->detail_product, $dyn->attribute_value) !== false) {
+                                $harga_id = $v->harga_id;
+                                break;
+                            }
+                        }
+                    }
+                }
             }
 
             $data = [
@@ -2109,6 +2284,29 @@ class Manufaktur extends MY_Controller
             return $this->output
                 ->set_content_type('application/json')
                 ->set_output(json_encode(['status' => 'error', 'message' => 'Gagal memperbarui produk']));
+        }
+    }
+
+    public function rename_product_ajax()
+    {
+        $product_id = $this->input->post('product_id', true);
+        $product_nama = $this->input->post('product_nama', true);
+
+        if (!$product_id || !$product_nama) {
+            return $this->output
+                ->set_content_type('application/json')
+                ->set_output(json_encode(['status' => 'error', 'message' => 'Data tidak lengkap']));
+        }
+
+        $this->db->where('product_id', $product_id);
+        if ($this->db->update('tbl_product', ['product_nama' => $product_nama])) {
+            return $this->output
+                ->set_content_type('application/json')
+                ->set_output(json_encode(['status' => 'success', 'message' => 'Nama produk berhasil diperbarui']));
+        } else {
+            return $this->output
+                ->set_content_type('application/json')
+                ->set_output(json_encode(['status' => 'error', 'message' => 'Gagal memperbarui nama produk']));
         }
     }
 
@@ -2295,14 +2493,30 @@ class Manufaktur extends MY_Controller
     public function search_product()
     {
         header('Content-Type: application/json');
-        $keyword = $this->input->get('term', true);
-        $products = $this->M_master->search_product($keyword);
+        $keyword = trim($this->input->get('term', true) ?? '');
+
+        $this->db->select('p.product_id, p.product_nama, k.kategori_nama');
+        $this->db->from('tbl_product p');
+        $this->db->join('tbl_kategori k', 'k.kategori_id = p.kategori_id', 'left');
+
+        if (!empty($keyword)) {
+            $this->db->group_start();
+            $this->db->like('p.product_nama', $keyword);
+            $this->db->or_like('p.product_id', $keyword);
+            $this->db->or_like('k.kategori_nama', $keyword);
+            $this->db->group_end();
+        }
+
+        $this->db->order_by('p.product_nama', 'ASC');
+        $this->db->limit(35);
+        $products = $this->db->get()->result();
 
         $results = [];
         foreach ($products as $p) {
+            $cat_info = !empty($p->kategori_nama) ? ' (' . $p->kategori_nama . ')' : '';
             $results[] = [
                 'id' => $p->product_id,
-                'text' => $p->product_nama
+                'text' => '#' . $p->product_id . ' - ' . $p->product_nama . $cat_info
             ];
         }
 

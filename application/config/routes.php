@@ -135,6 +135,7 @@ $route['konsumen/search_ajax'] = 'konsumen/search_ajax';
 $route['manufaktur/get_subkategori'] = 'manufaktur/get_subkategori';
 $route['manufaktur/get_product_detail/(:any)'] = 'manufaktur/get_product_detail/$1';
 $route['manufaktur/update_product_ajax'] = 'manufaktur/update_product_ajax';
+$route['manufaktur/rename_product_ajax'] = 'manufaktur/rename_product_ajax';
 
 $route['manufaktur/routing/(:any)'] = 'manufaktur/routing/$1';
 $route['manufaktur/bom/(:any)'] = 'manufaktur/bom/$1';

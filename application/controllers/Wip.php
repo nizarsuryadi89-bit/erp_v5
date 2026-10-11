@@ -183,9 +183,17 @@ class Wip extends MY_Controller
     {
         if (empty($step->bom_line_id) || stripos($step->routing_name ?? '', 'rip') !== false)
             return;
-        $bom = $this->db->get_where('bom_lines', ['bom_line_id' => $step->bom_line_id])->row();
-        if ($bom && !empty($bom->bahan_id) && (float) ($bom->quantity ?? 0) > 0 && $usage <= 0) {
-            throw new DomainException('Tahap ini membutuhkan bahan. Isi pemakaian bahan aktual sebelum mencatat hasil.');
+        if (strpos((string)$step->bom_line_id, 'dyn_') === 0) {
+            $dyn_id = (int) substr($step->bom_line_id, 4);
+            $bom = $this->db->get_where('tbl_bom_dynamic_mapping', ['id' => $dyn_id])->row();
+            if ($bom && !empty($bom->bahan_id) && $usage <= 0) {
+                throw new DomainException('Tahap ini membutuhkan bahan. Isi pemakaian bahan aktual sebelum mencatat hasil.');
+            }
+        } else {
+            $bom = $this->db->get_where('bom_lines', ['bom_line_id' => $step->bom_line_id])->row();
+            if ($bom && !empty($bom->bahan_id) && (float) ($bom->quantity ?? 0) > 0 && $usage <= 0) {
+                throw new DomainException('Tahap ini membutuhkan bahan. Isi pemakaian bahan aktual sebelum mencatat hasil.');
+            }
         }
     }
 
@@ -1812,21 +1820,6 @@ class Wip extends MY_Controller
 
         $ids = explode(',', $ids_str);
 
-        // Cari nospk unik dari ids yang diberikan
-        $this->db->select('DISTINCT(nospk) as nospk');
-        $this->db->from('tbl_produksi');
-        $this->db->where_in('produksi_id', $ids);
-        $spk_rows = $this->db->get()->result();
-
-        $nospks = [];
-        foreach ($spk_rows as $row) {
-            $nospks[] = $row->nospk;
-        }
-
-        if (empty($nospks)) {
-            show_404();
-        }
-
         $this->db->select('tbl_produksi.*, tbl_product.product_nama, tbl_product.kategori_id, tbl_kategori.kategori_nama, tbl_konsumen.konsumen_nama, tbl_satuan.satuan_nama, (CASE WHEN tbl_product.kategori_id = 1 THEN tbl_harga_product.jenisprint_id ELSE tbl_harga_product.ket_1 END) as sisi, tbl_harga_product.ket_1 as db_ket_1, tbl_harga_product.jenisprint_id as db_jenisprint_id, tbl_perusahaan.nama_perusahaan as cabang_asal, tbl_perusahaan.tag_paper, tbl_perusahaan.tag_font_size, tbl_perusahaan.tag_font_family, tbl_perusahaan.tag_show_logo, tbl_perusahaan.tag_logo_width, tbl_perusahaan.tag_show_qr, tbl_perusahaan.tag_qr_width, tbl_perusahaan.tag_footer_note, tbl_perusahaan.tag_section_spacing, tbl_perusahaan.invoice_font_size, tbl_perusahaan.invoice_font_family, tbl_perusahaan.invoice_section_spacing, tbl_pemesanan.created_at as tgl_spk, tbl_pemesanan.status_pembayaran, dk.nama_lengkap as deskprint_nama, tbl_jenis_transaksi.nama_jenis_transaksi, tbl_pemesanan.resi_marketplace, tbl_product.form_schema as product_schema, tbl_kategori.form_schema as kategori_schema');
         $this->db->select('(SELECT mesin_nama FROM tbl_mesin m JOIN detail_produksi dp ON dp.mesin_id = m.mesin_id WHERE dp.produksi_id = tbl_produksi.produksi_id AND dp.mesin_id IS NOT NULL LIMIT 1) as mesin_nama');
         $this->db->select('(SELECT nama_lengkap FROM tbl_karyawan k JOIN detail_produksi dp ON dp.operator_id = k.karyawan_id WHERE dp.produksi_id = tbl_produksi.produksi_id AND dp.operator_id IS NOT NULL AND dp.status_produksi = \'2\' ORDER BY dp.detail_produksi_id DESC LIMIT 1) as nama_operator');
@@ -1844,7 +1837,7 @@ class Wip extends MY_Controller
         // Get Deskprint from SPK Number (2nd segment is user_id)
         $this->db->join('users u_dk', "SUBSTRING_INDEX(SUBSTRING_INDEX(tbl_produksi.nospk, '-', 2), '-', -1) = u_dk.user_id", 'left', FALSE);
         $this->db->join('tbl_karyawan dk', 'dk.karyawan_id = u_dk.karyawan_id', 'left');
-        $this->db->where_in('tbl_produksi.nospk', $nospks);
+        $this->db->where_in('tbl_produksi.produksi_id', $ids);
 
         $items = $this->db->get()->result();
 
@@ -2145,9 +2138,10 @@ class Wip extends MY_Controller
             $this->db->select('dp.*, r.routing_name, m.mesin_nama, o.operator_nama, tm.bahan_id as routing_material_id, ts.satuan_nama as routing_material_satuan');
             $this->db->from('detail_produksi dp');
             $this->db->join('routing r', 'dp.routing_id = r.routing_id', 'left');
-            $this->db->join('bom_lines bl1', 'bl1.bom_line_id = r.bom_line_id', 'left');
+            $this->db->join('bom_lines bl1', 'bl1.bom_line_id = r.bom_line_id AND r.bom_line_id NOT LIKE "dyn_%"', 'left');
             $this->db->join('bom_lines bl2', 'bl2.bom_line_id = ' . $fallback_bom_line_id, 'left');
-            $this->db->join('tbl_material tm', 'tm.material_id = COALESCE(bl1.bahan_id, bl2.bahan_id)', 'left');
+            $this->db->join('tbl_bom_dynamic_mapping dm1', 'CONCAT("dyn_", dm1.id) = r.bom_line_id', 'left');
+            $this->db->join('tbl_material tm', 'tm.material_id = COALESCE(dm1.bahan_id, bl1.bahan_id, bl2.bahan_id)', 'left');
             $this->db->join('tbl_bahan bh', 'bh.bahan_id = tm.bahan_id', 'left');
             $this->db->join('tbl_satuan ts', 'ts.satuan_id = bh.satuan_id', 'left');
             $this->db->join('tbl_mesin m', 'm.mesin_id = dp.mesin_id', 'left');
@@ -2457,9 +2451,10 @@ class Wip extends MY_Controller
             $this->db->join('tbl_karyawan k', 'k.karyawan_id = dp.operator_id', 'left');
 
             // Join with BOM and Material to get Material Name and Base Bahan ID
-            $this->db->join('bom_lines bl1', 'bl1.bom_line_id = r.bom_line_id', 'left');
+            $this->db->join('bom_lines bl1', 'bl1.bom_line_id = r.bom_line_id AND r.bom_line_id NOT LIKE "dyn_%"', 'left');
             $this->db->join('bom_lines bl2', 'bl2.bom_line_id = ' . $fallback_bom_line_id, 'left');
-            $this->db->join('tbl_material tm', 'tm.material_id = COALESCE(bl1.bahan_id, bl2.bahan_id)', 'left');
+            $this->db->join('tbl_bom_dynamic_mapping dm1', 'CONCAT("dyn_", dm1.id) = r.bom_line_id', 'left');
+            $this->db->join('tbl_material tm', 'tm.material_id = COALESCE(dm1.bahan_id, bl1.bahan_id, bl2.bahan_id)', 'left');
             $this->db->join('tbl_bahan bh', 'bh.bahan_id = tm.bahan_id', 'left');
             $this->db->join('tbl_satuan ts', 'ts.satuan_id = bh.satuan_id', 'left');
 

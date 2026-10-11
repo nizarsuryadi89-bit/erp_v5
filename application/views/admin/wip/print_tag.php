@@ -223,15 +223,7 @@ $print_time = date('d/m/Y H:i');
         // Data Extraction from the first item
         $first_item = $spk_items[0];
         
-        $nospk_parts = explode('-', $nospk);
-        $spk_cabang_id = isset($nospk_parts[0]) ? (int)$nospk_parts[0] : 1;
-        $store = 'TGM OFFICIAL (PUSAT)';
-        if ($spk_cabang_id == 3) {
-            $store = 'TGM MERCH (CABANG)';
-        } elseif ($spk_cabang_id > 3) {
-            $store = 'CABANG LAIN';
-        }
-        $store = strtoupper($store);
+        $store = strtoupper($first_item->cabang_asal ?? 'TGM OFFICIAL (PUSAT)');
         $work_center = strtoupper($first_item->kategori_nama ?: 'LAIN-LAIN');
         $pelanggan = strtoupper($first_item->konsumen_nama);
 
@@ -245,15 +237,8 @@ $print_time = date('d/m/Y H:i');
         $produksi_name = isset($first_item->nama_perusahaan) ? strtoupper($first_item->nama_perusahaan) : strtoupper(isset($company_name) ? $company_name : 'TGM PRINT (PUSAT)');
 
         // Lokasi Pesanan
-        $lokasi_cetak = $first_item->lokasi_cetak ?? 0;
-        $lokasi_nama = 'CABANG LAIN';
-        if ($lokasi_cetak == 2) {
-            $lokasi_nama = 'TGM OFFICIAL (PUSAT)';
-        } elseif ($lokasi_cetak == 3) {
-            $lokasi_nama = 'TGM MERCH (CABANG)';
-        } else {
-            $lokasi_nama = 'OFFLINE/CABANG';
-        }
+        $lokasi_cetak = clone $first_item;
+        $lokasi_nama = strtoupper($lokasi_cetak->cabang_asal ?? 'OFFLINE/CABANG'); // fallback if needed
 
 
         $logo_url = base_url('assets/images/default-logo.png');

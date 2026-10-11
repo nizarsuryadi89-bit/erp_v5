@@ -21,7 +21,10 @@
                         <th width="24%">Bahan Baku (Gudang)</th>
                         <th width="12%">Tipe Rumus</th>
                         <th width="12%">Pengali (Ops)</th>
-                        <th width="8%">Pembagi</th>
+                        <th width="8%">
+                            Pembagi
+                            <i class="fas fa-question-circle text-muted ms-1" style="cursor: pointer;" title="Faktor pembagi. Berapa banyak produk yang bisa dihasilkan dari 1 satuan bahan baku ini."></i>
+                        </th>
                         <th width="6%">Waste %</th>
                         <th width="8%">Aksi</th>
                     </tr>
@@ -229,8 +232,18 @@
                                 tr.append($('<td></td>').append(multWrapper));
 
                                 // Divider
-                                var inpDiv = $('<input type="number" class="form-control form-control-sm text-center border-0 bg-light shadow-none" min="1" step="any" value="' + (sd ? sd.divider_factor : '1') + '" style="font-size: 0.8rem; padding: 0.25rem;">');
-                                tr.append($('<td></td>').append(inpDiv));
+                                var inpDiv = $('<input type="number" class="form-control form-control-sm text-center border-0 bg-light shadow-none divider-input" min="1" step="any" value="' + (sd ? sd.divider_factor : '1') + '" style="font-size: 0.8rem; padding: 0.25rem;">');
+                                var hintDiv = $('<div class="text-muted mt-1 text-center" style="font-size: 0.65rem; line-height: 1.2;"></div>');
+                                
+                                function updateDividerHint() {
+                                    var val = parseFloat(inpDiv.val()) || 1;
+                                    hintDiv.html('<i class="fas fa-info-circle text-info"></i> 1 bhn = <b>' + val + '</b> produk');
+                                }
+                                inpDiv.on('input', updateDividerHint);
+                                updateDividerHint();
+
+                                var tdDiv = $('<td class="align-middle"></td>').append(inpDiv).append(hintDiv);
+                                tr.append(tdDiv);
 
                                 // Scrap
                                 var inpScrap = $('<input type="number" class="form-control form-control-sm text-center border-0 bg-light shadow-none" min="0" step="any" value="' + (sd ? sd.scrap_factor : '0') + '" style="font-size: 0.8rem; padding: 0.25rem;">');

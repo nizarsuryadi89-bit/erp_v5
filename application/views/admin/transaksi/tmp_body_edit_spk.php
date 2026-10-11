@@ -127,7 +127,13 @@ if ($total_rows > 0 && !empty($items)) {
                                 $label = 'HIDDEN_LABEL_' . $key;
                             } else {
                                 $label = strtoupper(str_replace('_', ' ', $key));
-                                if ($key === 'jenisprint') $label = 'MESIN';
+                                if ($key === 'jenisprint') {
+                                    if (($dt->kategori_id ?? 0) == 1) {
+                                        $label = 'PILIHAN SISI';
+                                    } else {
+                                        $label = 'MESIN';
+                                    }
+                                }
                             }
                         }
                         

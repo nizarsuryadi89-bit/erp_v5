@@ -376,6 +376,17 @@ async function loadRoutingData() {
                 globalRoutingData = res.data;
                 displayRoutingData(res.data);
                 $('#statRoutingCount').text(res.data.length);
+
+                if (res.variations && res.variations.length > 0) {
+                    let optHtml = '<option value="">-- Semua Variasi (Global) --</option>';
+                    res.variations.forEach(v => {
+                        optHtml += `<option value="${v.harga_id}">${v.display_name || v.detail_product || ('Variasi #' + v.harga_id)}</option>`;
+                    });
+                    const curAdd = $('#routing_harga_id').val();
+                    $('#routing_harga_id').html(optHtml).val(curAdd || '');
+                    const curEdit = $('#edit_harga_id_routing').val();
+                    $('#edit_harga_id_routing').html(optHtml).val(curEdit || '');
+                }
             } else {
                 displayRoutingData([]);
                 $('#statRoutingCount').text('0');
@@ -436,6 +447,22 @@ function initializeRoutingSelect2() {
         ajax: { url: `${BASE_URL}manufaktur/get_bom_options`, dataType: 'json', delay: 250, data: p => ({ term: p.term, product_id: PRODUCT_ID }), processResults: d => ({ results: d.results || [] }) }
     }));
 
+    // Auto-select variation on selecting BOM in Add Form
+    $('#bom_line_id').off('select2:select').on('select2:select', function (e) {
+        const d = e.params.data;
+        if (d && d.harga_id) {
+            $('#routing_harga_id').val(d.harga_id);
+        } else if (d && d.attr_val) {
+            const targetVal = d.attr_val.toLowerCase();
+            $('#routing_harga_id option').each(function () {
+                if ($(this).val() && $(this).text().toLowerCase().includes(targetVal)) {
+                    $('#routing_harga_id').val($(this).val());
+                    return false;
+                }
+            });
+        }
+    });
+
     // Select2 for Edit Modal
     ['#edit_operator_id'].forEach(s => $(s).select2({
         placeholder: '-- Pilih --', allowClear: true, width: '100%',
@@ -447,6 +474,22 @@ function initializeRoutingSelect2() {
         dropdownParent: $('#modalEditRouting'),
         ajax: { url: `${BASE_URL}manufaktur/get_bom_options`, dataType: 'json', delay: 250, data: p => ({ term: p.term, product_id: PRODUCT_ID }), processResults: d => ({ results: d.results || [] }) }
     }));
+
+    // Auto-select variation on selecting BOM in Edit Modal
+    $('#edit_bom_line_id_routing').off('select2:select').on('select2:select', function (e) {
+        const d = e.params.data;
+        if (d && d.harga_id) {
+            $('#edit_harga_id_routing').val(d.harga_id);
+        } else if (d && d.attr_val) {
+            const targetVal = d.attr_val.toLowerCase();
+            $('#edit_harga_id_routing option').each(function () {
+                if ($(this).val() && $(this).text().toLowerCase().includes(targetVal)) {
+                    $('#edit_harga_id_routing').val($(this).val());
+                    return false;
+                }
+            });
+        }
+    });
 }
 
 $(document).on('submit', '#addRoutingForm', function (e) {
@@ -479,7 +522,27 @@ $(document).on('submit', '#addRoutingForm', function (e) {
 
 function openEditRoutingModal(item) {
     $('#edit_routing_id').val(item.routing_id);
-    $('#edit_harga_id_routing').val(item.harga_id || '');
+
+    // Handle Variation Selection
+    if (item.harga_id) {
+        $('#edit_harga_id_routing').val(item.harga_id);
+    } else if (item.variasi_nama) {
+        let matched = false;
+        const targetVar = item.variasi_nama.toLowerCase().replace(/^[a-z_]+:\s*/i, '').trim();
+        $('#edit_harga_id_routing option').each(function () {
+            if ($(this).val() && $(this).text().toLowerCase().includes(targetVar)) {
+                $('#edit_harga_id_routing').val($(this).val());
+                matched = true;
+                return false;
+            }
+        });
+        if (!matched) {
+            $('#edit_harga_id_routing').val('');
+        }
+    } else {
+        $('#edit_harga_id_routing').val('');
+    }
+
     $('#edit_routing_urutan').val(item.routing_urutan);
     $('#edit_routing_name').val(item.routing_name);
     $('#edit_est_time').val(item.est_time);
@@ -513,7 +576,6 @@ function openEditRoutingModal(item) {
     }
 
     $('#modalEditRouting').modal('show');
-    // setTimeout(() => initializeRoutingSelect2(), 200); // Removed as it might re-init incorrectly
 }
 
 $(document).on('submit', '#editRoutingForm', function (e) {

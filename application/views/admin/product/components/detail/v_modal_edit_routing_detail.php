@@ -17,8 +17,19 @@
             <form id="editRoutingForm">
                 <div class="modal-body p-4">
                     <input type="hidden" name="routing_id" id="edit_routing_id">
-                    <input type="hidden" name="harga_id" id="edit_harga_id_routing" value="">
                     <div class="row g-4">
+                        <div class="col-12">
+                            <label class="form-label fw-bold small text-primary"><i class="bi bi-tag me-1"></i>TERAPKAN KE VARIASI</label>
+                            <select name="harga_id" id="edit_harga_id_routing" class="form-select shadow-none">
+                                <option value="">-- Semua Variasi (Global) --</option>
+                                <?php if (!empty($variations)): ?>
+                                    <?php foreach ($variations as $v): ?>
+                                        <option value="<?= $v->harga_id ?>"><?= htmlspecialchars($v->display_name ?? $v->detail_product) ?></option>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </select>
+                            <div class="form-text text-muted small">Pilih variasi jika proses kerja ini spesifik untuk variasi tertentu, atau biarkan Global jika berlaku umum.</div>
+                        </div>
                         <div class="col-md-3">
                             <label class="form-label fw-bold small text-muted">SEQUENCE</label>
                             <input type="number" name="routing_urutan" id="edit_routing_urutan"
