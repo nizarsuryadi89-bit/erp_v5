@@ -531,6 +531,7 @@
 </div>
 
 <div class="container-fluid px-5">
+    <?php $this->load->view('admin/warehouse/components/legacy_drafts', ['legacy_drafts' => $legacy_drafts ?? [], 'draft_kind' => 'dispatch']); ?>
     <!-- 6-STEP CORE WORKFLOW (SOP) -->
     <div id="workflowContainer">
         <?php $this->load->view('admin/warehouse/components/sop_stepper', ['active_step' => 4]); ?>

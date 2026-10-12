@@ -138,7 +138,7 @@
                     }
 
                     // Determine which timestamp to use for group sorting
-                    if ($filter_status_view === 'ready_pb' || $filter_status_view === 'proses') {
+                    if ($filter_status_view === 'proses') {
                         $ts = !empty($item->update_time) ? strtotime($item->update_time) : 0;
                     } elseif ($filter_status_view === 'pb') {
                         $ts = !empty($item->tgl_kirim_pb) ? strtotime($item->tgl_kirim_pb) : 0;
@@ -206,6 +206,7 @@
                     // Determine active and last step operators for this item
                     $active_step_operator_id = 0;
                     $last_step_operator_id = 0;
+                    $active_step_status_item = '';
                     if (!empty($itm->routing_steps)) {
                         $last_step = end($itm->routing_steps);
                         $last_step_operator_id = (int)($last_step->routing_operator_id ?? 0);
@@ -214,6 +215,7 @@
                         foreach ($itm->routing_steps as $step) {
                             if ($step->status_produksi == '1' || $step->status_produksi == '0') {
                                 $active_step_operator_id = (int)$step->routing_operator_id;
+                                $active_step_status_item = (string)$step->status_produksi;
                                 break;
                             }
                         }
@@ -222,17 +224,18 @@
                     $is_auth_active = ($check_op_global === 0 || $check_op_global === $active_step_operator_id);
                     $is_auth_pb = ($check_op_global === 0 || $check_op_global === $last_step_operator_id);
 
-                    if (in_array($stKey, ['approved', 'pending', '', '0'])) {
-                        $groupStates[$gk]['pending']++;
-                        if ($is_auth_active) $groupStates[$gk]['auth_pending']++;
+                    if (in_array($stKey, ['done', 'on_pb', 'on_costumer'], true)) {
+                        $groupStates[$gk]['done']++;
+                        if ($is_auth_pb) $groupStates[$gk]['auth_done']++;
                     }
-                    elseif (in_array($stKey, ['proses', 'finishing'], true)) {
+                    elseif ($active_step_status_item === '1' || $stKey === 'proses') {
                         $groupStates[$gk]['proses']++;
                         if ($is_auth_active) $groupStates[$gk]['auth_proses']++;
                     }
-                    elseif ($stKey === 'done') {
-                        $groupStates[$gk]['done']++;
-                        if ($is_auth_pb) $groupStates[$gk]['auth_done']++;
+                    else {
+                        // Belum mulai (active_step_status '0', pending, approved, finishing yang belum mulai)
+                        $groupStates[$gk]['pending']++;
+                        if ($is_auth_active) $groupStates[$gk]['auth_pending']++;
                     }
                 }
             }
@@ -344,20 +347,13 @@
                                         <?php endif; ?>
                                         <?php if ($gMeta['done'] > 0): ?>
                                             <span class="badge bg-success opacity-75 fw-bold"
-                                                style="font-size: 0.55rem;"><?= $gMeta['done'] ?> SIAP KIRIM</span>
+                                                style="font-size: 0.55rem;"><?= $gMeta['done'] ?> SELESAI / PB</span>
                                         <?php endif; ?>
                                     </div>
                                 </div>
                                 <div class="d-flex gap-1 flex-wrap justify-content-end">
                                     <?php if ($can_execute): ?>
-                                        <?php if ($gMeta['auth_done'] > 0): ?>
-                                            <button type="button"
-                                                class="btn btn-outline-success fw-900 rounded-pill px-4 py-2 shadow-sm"
-                                                style="font-size: 0.75rem;"
-                                                onclick="ProductionApp.sendGroupToPB('<?= htmlspecialchars(addslashes($currentGroupKey), ENT_QUOTES, 'UTF-8') ?>')">
-                                                <i class="fas fa-truck-loading me-1"></i> KE PB (<?= $gMeta['auth_done'] ?>)
-                                            </button>
-                                        <?php endif; ?>
+
 
                                         <?php if ($gMeta['auth_proses'] > 0): ?>
                                             <button type="button"
@@ -370,7 +366,10 @@
                                         <?php endif; ?>
 
                                         <?php if ($gMeta['auth_pending'] > 0): ?>
-                                            <?php if (isset($view_mode) && $view_mode === 'finishing'): ?>
+                                            <?php 
+                                            $is_finishing_view_mode = (isset($view_mode) && $view_mode === 'finishing') || !empty($is_finishing_workcenter) || (($filter_status_view ?? '') === 'finishing');
+                                            ?>
+                                            <?php if ($is_finishing_view_mode): ?>
                                                 <button type="button" class="btn btn-primary fw-900 rounded-pill px-4 py-2 shadow-sm"
                                                     style="font-size: 0.75rem;"
                                                     onclick="ProductionApp.startGroupBatch('<?= htmlspecialchars(addslashes($currentGroupKey), ENT_QUOTES, 'UTF-8') ?>')">
@@ -502,7 +501,9 @@
                                 data-bom-p="<?= (float) ($active_bom->panjang ?? 0) ?>"
                                 data-bom-l="<?= (float) ($active_bom->lebar ?? 0) ?>"
                                 data-bom-qty="<?= (float) ($active_bom->quantity ?? $active_bom->bom_qty ?? 1) ?>"
-                                data-status="<?= $item->status_produksi ?>" data-kategori-id="<?= $item->kategori_id ?>"
+                                data-status="<?= $item->status_produksi ?>" data-step-status="<?= $active_step_status ?>" data-kategori-id="<?= $item->kategori_id ?>"
+                                data-is-finishing="<?= !empty($item->workflow_is_finishing) ? 1 : 0 ?>"
+                                data-product-name="<?= htmlspecialchars($item->product_nama ?? '', ENT_QUOTES, 'UTF-8') ?>"
                                 data-tipe-id="<?= $item->tipe_id ?? 1 ?>"
                                 data-satuan="<?= htmlspecialchars($active_bom->satuan_nama ?? 'UNIT') ?>"
                                 data-satuan-produk="<?= htmlspecialchars($item->satuan_nama ?? 'UNIT') ?>"
@@ -515,7 +516,7 @@
                                 data-bom-lines="<?= htmlspecialchars(json_encode($filtered_bom_lines), ENT_QUOTES, 'UTF-8') ?>"
                                 data-ripping-group="<?= htmlspecialchars($item->ripping_group ?? '') ?>"
                                 data-item-title="<?= htmlspecialchars($itemTitle, ENT_QUOTES, 'UTF-8') ?>"
-                                style="width: 1.1rem; height: 1.1rem; cursor: pointer;" <?= ($item->status_produksi === 'done' || !$can_execute || $is_waiting_upstream) ? 'disabled' : '' ?>>
+                                style="width: 1.1rem; height: 1.1rem; cursor: pointer;" <?= (in_array($item->status_produksi, ['done', 'on_pb', 'on_costumer'], true) || !$can_execute || $is_waiting_upstream || !empty($item->bom_error)) ? 'disabled' : '' ?>>
                         </div>
                     </td>
                     <td class="text-center fw-semibold text-muted" style="vertical-align: middle; font-size: 0.95rem;">
@@ -672,6 +673,9 @@
                                         <div class="text-muted fw-bold" style="font-size: 0.75rem;">Dari: <?= $item->product_nama ?></div>
                                     <?php else: ?>
                                         <div class="fw-bold text-dark fs-6 ls-n1 lh-sm"><?= $item->product_nama ?></div>
+                                        <?php if (!empty($item->bom_error)): ?>
+                                            <div class="small text-danger mt-1">BOM: <?= htmlspecialchars($item->bom_error, ENT_QUOTES, 'UTF-8') ?></div>
+                                        <?php endif; ?>
                                         <?php
                                         $finishing_steps = [];
                                         if (!empty($item->routing_steps)) {
@@ -914,13 +918,13 @@
                             $status_text = 'Belum di Proses';
                             $status_class = 'bg-secondary bg-opacity-10 text-secondary border-secondary';
                             
-                            if (in_array($st, ['proses', 'finishing'], true)) {
+                            if (!empty($item->workflow_is_finishing) && !$is_waiting_upstream && !in_array($st, ['done', 'on_pb', 'on_costumer'], true)) {
+                                $status_text = ($active_step_status === '1') ? 'Proses Finishing' : 'Antrian Finishing';
+                                $status_class = ($active_step_status === '1') ? 'bg-warning bg-opacity-10 text-warning border-warning' : 'bg-info bg-opacity-10 text-info border-info';
+                            } elseif (in_array($st, ['proses', 'finishing'], true)) {
                                 $status_text = 'Proses Produksi';
                                 $status_class = 'bg-warning bg-opacity-10 text-warning border-warning';
-                            } elseif ($st === 'done') {
-                                $status_text = 'Selesai Produksi';
-                                $status_class = 'bg-success bg-opacity-10 text-success border-success';
-                            } elseif ($st === 'on_pb') {
+                            } elseif ($st === 'done' || $st === 'on_pb') {
                                 $status_text = 'Selesai (Barang di PB)';
                                 $status_class = 'bg-success bg-opacity-10 text-success border-success';
                             } elseif ($st === 'on_costumer') {
@@ -961,7 +965,7 @@
                                         <i class="fas fa-play-circle me-1"></i> Mulai:
                                         <?= date('H:i', strtotime($item->tgl_mulai)) ?> WIB
                                     </div>
-                                    <?php if (!empty($item->tgl_selesai) && $item->status_produksi == 'done'): ?>
+                                    <?php if (!empty($item->tgl_selesai) && in_array($item->status_produksi, ['done', 'on_pb', 'on_costumer'], true)): ?>
                                         <div class="text-success fw-bold" style="white-space: nowrap;">
                                             <i class="fas fa-check-circle me-1"></i> Selesai:
                                             <?= date('H:i', strtotime($item->tgl_selesai)) ?> WIB
@@ -1001,21 +1005,21 @@
                                         disabled title="Menunggu proses <?= $active_step_name ?>">
                                         <i class="fas fa-hourglass-half"></i> <span>MENUNGGU</span>
                                     </button>
-                                <?php elseif ($active_step_status === '0' || $st === 'approved' || $st === 'pending' || $st === '0' || $st === ''): ?>
+                                <?php elseif ($active_step_status === '0' || $st === 'approved' || $st === 'pending' || $st === '0' || $st === '' || ($st === 'finishing' && $active_step_status !== '1')): ?>
                                     <button type="button"
                                         class="btn shadow-sm rounded-pill px-4 py-2 d-flex align-items-center justify-content-center gap-2 animate__animated animate__pulse animate__infinite"
                                         style="background-color: #2b3a4a; color: white; font-weight: 900; font-size: 0.85rem; letter-spacing: 0.5px; border: 2px solid transparent; min-width: 120px;"
                                         onmouseover="this.style.transform='scale(1.05)'; this.classList.remove('animate__infinite')"
                                         onmouseout="this.style.transform='scale(1)'; this.classList.add('animate__infinite')"
-                                        onclick="ProductionApp.advanceStep(<?= $item->produksi_id ?>, 'start', 'Produksi', 0, 0, 0, '<?= $item->satuan_nama ?>', <?= $item->kategori_id ?>)">
+                                        onclick="ProductionApp.advanceStep(<?= $item->produksi_id ?>, 'start', '<?= addslashes($active_step_name ?: 'Produksi') ?>', 0, 0, 0, '<?= $item->satuan_nama ?>', <?= $item->kategori_id ?>, <?= !empty($item->workflow_is_finishing) ? 1 : 0 ?>)">
                                         <i class="fas fa-play"></i> <span>MULAI</span>
                                     </button>
-                                <?php elseif ($active_step_status === '1'): ?>
+                                <?php elseif ($active_step_status === '1' || $st === 'proses'): ?>
                                     <button type="button"
                                         class="btn shadow-sm rounded-pill px-3 py-2 d-flex align-items-center justify-content-center gap-2"
                                         style="background-color: #dc3545; color: white; font-weight: 700; font-size: 0.85rem; letter-spacing: 0.5px; border: 2px solid transparent;"
                                         title="Batal Proses"
-                                        onclick="ProductionApp.advanceStep(<?= $item->produksi_id ?>, 'cancel', 'Produksi', 0, 0, 0, '<?= $item->satuan_nama ?>', <?= $item->kategori_id ?>)">
+                                        onclick="ProductionApp.advanceStep(<?= $item->produksi_id ?>, 'cancel', '<?= addslashes($active_step_name ?: 'Produksi') ?>', 0, 0, 0, '<?= $item->satuan_nama ?>', <?= $item->kategori_id ?>, <?= !empty($item->workflow_is_finishing) ? 1 : 0 ?>)">
                                         <i class="fas fa-times"></i>
                                     </button>
                                     <button type="button"
@@ -1033,19 +1037,12 @@
                                         disabled title="Telah Diserahkan ke Konsumen">
                                         <i class="fas fa-check-circle"></i> <span>SELESAI</span>
                                     </button>
-                                <?php elseif ($st === 'on_pb'): ?>
+                                <?php elseif ($st === 'on_pb' || $st === 'done'): ?>
                                     <button type="button"
                                         class="btn shadow-sm rounded-pill px-4 py-2 d-flex align-items-center justify-content-center gap-2"
                                         style="background-color: #198754; color: white; font-weight: 700; font-size: 0.75rem; letter-spacing: 0.5px; border: 2px solid transparent; min-width: 120px; cursor: default;"
                                         disabled title="Barang Sedang di Pengambilan Barang (PB)">
                                         <i class="fas fa-box"></i> <span>DI PB</span>
-                                    </button>
-                                <?php elseif ($st === 'done' && !$can_execute): ?>
-                                    <button type="button"
-                                        class="btn shadow-sm rounded-pill px-4 py-2 d-flex align-items-center justify-content-center gap-2"
-                                        style="background-color: #0d6efd; color: white; font-weight: 700; font-size: 0.75rem; letter-spacing: 0.5px; border: 2px solid transparent; min-width: 120px; cursor: default;"
-                                        disabled title="Produksi Selesai, Menunggu PB">
-                                        <i class="fas fa-check"></i> <span>SLS PRODUKSI</span>
                                     </button>
                                 <?php endif; ?>
                             <?php endif; ?>
@@ -1053,16 +1050,7 @@
 
 
                             <!-- KE PB button -->
-                            <?php if ($st === 'done' && $can_execute): ?>
-                                <button type="button"
-                                    class="btn shadow-sm rounded-pill px-4 py-2 d-flex align-items-center justify-content-center gap-2 animate__animated animate__pulse animate__infinite"
-                                    style="background-color: #00c0ef; color: white; font-weight: 900; font-size: 0.85rem; letter-spacing: 0.5px; border: 2px solid transparent; min-width: 120px;"
-                                    onmouseover="this.style.transform='scale(1.05)'; this.classList.remove('animate__infinite')"
-                                    onmouseout="this.style.transform='scale(1)'; this.classList.add('animate__infinite')"
-                                    onclick="moveToPB(<?= $item->produksi_id ?>)">
-                                    <i class="fas fa-paper-plane"></i> <span>KIRIM PB</span>
-                                </button>
-                            <?php endif; ?>
+
                         </div>
                     </td>
                 </tr>

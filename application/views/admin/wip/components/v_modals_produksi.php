@@ -118,19 +118,19 @@ $operators = $operators ?? [];
             </div>
             <div class="modal-body p-4">
                 <div class="row g-4">
-                    <!-- Left Column: Input Form (PIN, Mesin side-by-side) -->
+                    <!-- Left Column: Operator verification -->
                     <div class="col-lg-7 col-md-12">
                         <div class="row g-3 mb-3">
-                            <div class="col-md-6" id="sectionFinMesin">
-                                <div class="p-3 bg-light rounded-3 border border-primary border-opacity-10 h-100 shadow-sm d-flex flex-column justify-content-between">
-                                    <label class="form-label fw-bold text-primary mb-2" style="font-size: 0.85rem;"><i class="fas fa-cog me-1"></i> Pilih Mesin Finishing <span class="badge bg-secondary ms-2" id="finMesinBadge">Opsional</span></label>
-                                    <select class="form-select form-select-lg premium-input border-primary border-opacity-25" id="finMesinId">
+                            <div class="col-12" id="sectionFinMesin" hidden>
+                                <div class="p-3 bg-light rounded-3 border border-primary border-opacity-10 shadow-sm">
+                                    <label for="finMesinId" class="form-label fw-bold text-primary"><i class="fas fa-cog me-1"></i> Mesin Cutting / Potong <span class="badge bg-danger ms-1">Wajib</span></label>
+                                    <select id="finMesinId" class="form-select form-select-lg premium-input" disabled>
                                         <option value="">-- Pilih Mesin --</option>
                                     </select>
-                                    <div class="form-text small text-primary opacity-75 mt-2" style="font-size: 0.7rem;">Pilih mesin yang Anda gunakan untuk finishing.</div>
+                                    <div class="form-text small">Pilih mesin aktual untuk cutting/potong di luar A3.</div>
                                 </div>
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-12">
                                 <div class="p-3 bg-light rounded-3 border border-primary border-opacity-10 h-100 shadow-sm d-flex flex-column justify-content-between">
                                     <label class="form-label fw-bold text-primary mb-2" style="font-size: 0.85rem;"><i class="fas fa-key me-1"></i> PIN Verifikasi Petugas</label>
                                     <input type="password" class="form-control form-control-lg premium-input text-center fw-bold border-primary border-opacity-25"
@@ -299,13 +299,29 @@ $operators = $operators ?? [];
 
                             <!-- Section 3: Operator PIN Verifikasi (Centered Card) -->
                             <div class="p-3 bg-light rounded-4 border border-primary border-opacity-10 text-center shadow-sm">
-                                <label class="form-label fw-bold text-dark small text-uppercase mb-1 d-block"><i class="fas fa-key text-primary me-1"></i> PIN Verifikasi Petugas (Operator)</label>
+                                <label for="compOperatorPin" class="form-label fw-bold text-dark small text-uppercase mb-1 d-block"><i class="fas fa-key text-primary me-1"></i> PIN Verifikasi Petugas (Operator)</label>
                                 <div class="d-flex justify-content-center">
                                     <input type="password" class="form-control form-control-lg premium-input text-center fw-900 shadow-sm border-primary border-opacity-25"
                                         id="compOperatorPin" placeholder="PIN 4-6 Digit" maxlength="6"
-                                        style="letter-spacing: 0.5rem; font-size: 1.4rem; max-width: 280px;" inputmode="numeric">
+                                        style="letter-spacing: 0.5rem; font-size: 1.4rem; max-width: 280px;" inputmode="numeric" autocomplete="off">
                                 </div>
-                                <div class="form-text small text-muted mt-1" style="font-size: 0.7rem;">Gunakan PIN Anda untuk menyelesaikan pengerjaan.</div>
+                                <div class="mt-2">
+                                    <button type="button" id="compScanPinQr" class="btn btn-outline-primary btn-sm rounded-pill px-3" aria-controls="compPinQrPanel" aria-expanded="false">
+                                        <i class="fas fa-qrcode me-1"></i> Scan QR PIN Petugas
+                                    </button>
+                                </div>
+                                <div class="form-text small text-muted mt-2">Ketik PIN atau scan QR berisi PIN produksi 4–6 digit.</div>
+                                <div id="compPinQrStatus" class="small mt-2" role="status" aria-live="polite"></div>
+                                <div id="compPinQrPanel" class="bg-white border rounded-3 p-3 mt-3" hidden
+                                    data-scanner-src="<?= base_url('assets/vendor/html5-qrcode/html5-qrcode.min.js') ?>">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <span class="small fw-bold">Arahkan QR PIN ke kamera</span>
+                                        <button type="button" id="compStopPinQr" class="btn btn-sm btn-outline-secondary">Tutup Scanner</button>
+                                    </div>
+                                    <div id="compPinQrReader" style="width: 100%; max-width: 360px; margin: 0 auto;"></div>
+                                    <label for="compPinQrFile" class="form-label small mt-3 mb-1">Atau pilih gambar QR dari perangkat</label>
+                                    <input type="file" id="compPinQrFile" class="form-control form-control-sm" accept="image/*">
+                                </div>
                             </div>
                         </div>
 
@@ -340,6 +356,7 @@ $operators = $operators ?? [];
         </div>
     </div>
 </div>
+<script src="<?= base_url('assets/js/wip_pin_qr.js?v=' . (file_exists(FCPATH . 'assets/js/wip_pin_qr.js') ? filemtime(FCPATH . 'assets/js/wip_pin_qr.js') : '1.0')) ?>"></script>
 
 
 <!-- Preview Modals -->

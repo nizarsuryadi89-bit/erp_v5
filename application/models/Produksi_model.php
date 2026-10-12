@@ -41,7 +41,7 @@ class Produksi_model extends CI_Model
         $this->db->join('tbl_konsumen k', 'p.konsumen_id = k.konsumen_id', 'left');
         $this->db->join('tbl_product pr', 'p.product_id = pr.product_id', 'left');
         $this->db->join('tbl_satuan s', 'pr.satuan_id = s.satuan_id', 'left');
-        $this->db->where('p.status_produksi', 'on_pb');
+        $this->db->where($this->pb_ready_condition('p'), null, false);
         
         $this->db->order_by('p.produksi_id', 'DESC');
         return $this->db->get()->result();
@@ -91,7 +91,7 @@ class Produksi_model extends CI_Model
             COUNT(DISTINCT CASE WHEN p.status_produksi = "proses" THEN p.nospk END) as processing,
             COUNT(DISTINCT CASE WHEN p.status_produksi = "on_pb" THEN p.nospk END) as on_pb,
             COUNT(DISTINCT CASE WHEN p.status_produksi = "on_costumer" THEN p.nospk END) as done,
-            COUNT(DISTINCT CASE WHEN p.status_produksi = "done" AND DATE(p.update_time) = CURDATE() THEN p.nospk END) as done_today
+            COUNT(DISTINCT CASE WHEN p.status_produksi IN ("done", "on_pb", "on_costumer") AND DATE(COALESCE(p.tgl_selesai, p.update_time)) = CURDATE() THEN p.nospk END) as done_today
         ');
         $this->db->from('tbl_produksi p');
         $this->db->join('tbl_pemesanan pm', 'p.nospk = pm.nospk', 'inner');
@@ -166,7 +166,7 @@ class Produksi_model extends CI_Model
         $this->db->join('tbl_konsumen k', 'p.konsumen_id = k.konsumen_id', 'left');
         $this->db->join('tbl_product pr', 'p.product_id = pr.product_id', 'left');
         $this->db->join('tbl_satuan s', 'pr.satuan_id = s.satuan_id', 'left');
-        $this->db->where('p.status_produksi', 'on_pb');
+        $this->db->where($this->pb_ready_condition('p'), null, false);
 
 
         $this->db->group_by('p.produksi_id');
@@ -175,6 +175,12 @@ class Produksi_model extends CI_Model
     }
 
     // Daftar detail_produksi yang berstatus PB (status_produksi = '3')
+    private function pb_ready_condition($alias = 'p')
+    {
+        if (!class_exists('Production_workflow', false)) $this->load->library('Production_workflow');
+        return Production_workflow::pb_ready_sql($alias);
+    }
+
     public function get_detail_pb()
     {
         $this->db->select('p.produksi_id, p.nospk, k.konsumen_nama, pem.status_pembayaran, pem.created_at as tgl_spk, p.tgl_kirim_pb, p.perusahaan_id, tp.nama_perusahaan as asal_cabang');
@@ -190,7 +196,7 @@ class Produksi_model extends CI_Model
                                 )
                             )
                             FROM tbl_produksi p_inner
-                            WHERE p_inner.nospk = p.nospk
+                            WHERE p_inner.nospk = p.nospk AND ' . $this->pb_ready_condition('p_inner') . '
                            ) as total_qty_output', FALSE);
         $this->db->from('tbl_produksi p');
         $this->db->join('tbl_konsumen k', 'p.konsumen_id = k.konsumen_id', 'left');
@@ -199,7 +205,7 @@ class Produksi_model extends CI_Model
         $this->db->join('tbl_marketplace tm', 'tm.marketplace_id = pem.marketplace_id', 'left');
         $this->db->join('tbl_piutang pi', 'pi.nospk = p.nospk', 'left');
         $this->db->join('tbl_perusahaan tp', 'tp.id_perusahaan = p.perusahaan_id', 'left');
-        $this->db->where('p.status_produksi', 'on_pb');
+        $this->db->where($this->pb_ready_condition('p'), null, false);
 
 
         $this->db->group_by('p.nospk');
@@ -275,9 +281,9 @@ class Produksi_model extends CI_Model
         $this->db->join('routing r', 'dp.routing_id = r.routing_id', 'left');
         $this->db->join('bom_lines bl', 'bl.bom_line_id = r.bom_line_id', 'left');
         $this->db->join('tbl_material bh', 'bh.material_id = bl.bahan_id', 'left');
+        $this->db->join('tbl_produksi prod', 'dp.produksi_id = prod.produksi_id', 'left');
         $this->db->join('tbl_product pr', 'pr.product_id = prod.product_id', 'left');
         $this->db->join('tbl_perusahaan p', 'p.id_perusahaan = dp.lokasi_proses', 'left');
-        $this->db->join('tbl_produksi prod', 'dp.produksi_id = prod.produksi_id', 'left');
         $this->db->join('tbl_konsumen k', 'prod.konsumen_id = k.konsumen_id', 'left');
         $this->db->where('dp.detail_produksi_id', $detail_produksi_id);
         return $this->db->get()->row();
@@ -321,6 +327,7 @@ class Produksi_model extends CI_Model
         $this->db->join('tbl_product pr', 'p.product_id = pr.product_id', 'left');
         $this->db->join('tbl_satuan s', 'pr.satuan_id = s.satuan_id', 'left');
         $this->db->where('p.nospk', $nospk);
+        $this->db->where($this->pb_ready_condition('p'), null, false);
         $this->db->group_by('p.product_id'); // Group by Product to show distinct items
         $this->db->order_by('total_qty', 'DESC');
         return $this->db->get()->result();
@@ -348,6 +355,7 @@ class Produksi_model extends CI_Model
         $this->db->join('tbl_product pr', 'p.product_id = pr.product_id', 'left');
         $this->db->join('tbl_satuan s', 'pr.satuan_id = s.satuan_id', 'left');
         $this->db->where_in('p.nospk', $nospk_array);
+        $this->db->where($this->pb_ready_condition('p'), null, false);
         $this->db->group_by('p.nospk');
         $this->db->group_by('p.product_id');
         $this->db->order_by('p.nospk', 'DESC');

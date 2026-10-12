@@ -18,6 +18,13 @@
 
     function updateWipFilter(key, value) {
         const locationUrl = new URL(window.location.href);
+        // Keep the displayed date range when changing a filter or one date.
+        [['date_start', 'filterDateStart'], ['date_end', 'filterDateEnd']].forEach(([param, id]) => {
+            const input = document.getElementById(id);
+            if (!locationUrl.searchParams.has(param) && input) {
+                locationUrl.searchParams.set(param, input.value);
+            }
+        });
         if (key !== 'page') locationUrl.searchParams.set('page', '1');
         locationUrl.searchParams.set(key, value);
         window.location.href = locationUrl.toString();
@@ -95,32 +102,13 @@
         </div>
 
         <?php
-        $has_pb = (!empty($stats['ready_to_pb']) && $stats['ready_to_pb'] > 0);
         $has_proses = (!empty($stats['produksi']) && $stats['produksi'] > 0);
         ?>
-        <?php if ($has_pb || $has_proses): ?>
+        <?php if ($has_proses): ?>
             <div class="d-none d-flex flex-column flex-md-row border-bottom w-100 animate__animated animate__fadeInDown">
-                <?php if ($has_pb): ?>
-                    <div
-                        class="flex-fill bg-warning bg-opacity-10 px-4 py-3 d-flex align-items-center justify-content-between <?= $has_proses ? 'border-end border-warning border-opacity-25' : 'border-bottom border-warning' ?>">
-                        <div class="d-flex align-items-center gap-3">
-                            <div class="bg-warning text-dark rounded-circle d-flex align-items-center justify-content-center shadow-sm"
-                                style="width: 40px; height: 40px;">
-                                <i class="fas fa-truck-loading fa-lg"></i>
-                            </div>
-                            <div>
-                                <h6 class="mb-0 fw-bold text-dark"><?= $stats['ready_to_pb'] ?> SPK Siap Dikirim ke PB!</h6>
-                                <p class="small mb-0 text-muted opacity-75">Klik tombol PB pada daftar untuk serah terima.</p>
-                            </div>
-                        </div>
-                        <button class="btn btn-sm btn-warning rounded-pill px-4 fw-bold shadow-sm ms-3 text-nowrap"
-                            onclick="filterSiapPB()">Lihat Daftarnya</button>
-                    </div>
-                <?php endif; ?>
-
                 <?php if ($has_proses): ?>
                     <div
-                        class="flex-fill bg-primary bg-opacity-10 px-4 py-3 d-flex align-items-center justify-content-between <?= !$has_pb ? 'border-bottom border-primary' : '' ?>">
+                        class="flex-fill bg-primary bg-opacity-10 px-4 py-3 d-flex align-items-center justify-content-between border-bottom border-primary">
                         <div class="d-flex align-items-center gap-3">
                             <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center shadow-sm"
                                 style="width: 40px; height: 40px;">
@@ -532,7 +520,7 @@
     let autoRefreshInterval;
     let wipRefreshBusy = false;
     function wipCanRefresh(ownRequest = false) {
-        return !document.hidden && !wipRefreshBusy && $.active <= (ownRequest ? 1 : 0)
+        return !document.hidden && (!wipRefreshBusy || ownRequest) && $.active <= (ownRequest ? 1 : 0)
             && $('.modal.show, .swal2-container').length === 0
             && $('input:focus, textarea:focus, select:focus').length === 0
             && $('.check-item-nesting:checked').length === 0
@@ -541,38 +529,25 @@
     function startAutoRefresh() {
         clearInterval(autoRefreshInterval);
         autoRefreshInterval = setInterval(() => {
-            // JANGAN refresh jika ada modal (bootstrap/sweetalert) yang sedang terbuka
-            if ($('.modal.show').length > 0 || $('.swal2-container').length > 0) {
-                return;
-            }
-            // JANGAN refresh jika operator sedang mengetik sesuatu di input/search
-            if ($('input:focus, textarea:focus, select:focus').length > 0) {
-                return;
-            }
-
-            // Lakukan Silent Refresh (AJAX) tanpa reload halaman utuh
+            if (!wipCanRefresh()) return;
+            wipRefreshBusy = true;
             $.ajax({
                 url: window.location.href,
-                type: 'GET',
-                success: function(html) {
-                    var $parsed = $(html);
-                    
-                    // Update Tabel SPK View
-                    var newSpk = $parsed.find('#container-view-spk').html();
-                    if (newSpk !== undefined) $('#container-view-spk').html(newSpk);
-                    
-                    // Update Tabel Item View
-                    var newItem = $parsed.find('#container-view-item').html();
-                    if (newItem !== undefined) $('#container-view-item').html(newItem);
-                    
-                    // Update Badge Angka pada Tabs
-                    var newTabs = $parsed.find('.bg-white.px-4.py-3.border-bottom').html();
-                    if (newTabs !== undefined) $('.bg-white.px-4.py-3.border-bottom').html(newTabs);
-
-                    // Update Banner Need Action (SPK Siap PB, dll)
-                    var newBanners = $parsed.find('.animate__fadeInDown').html();
-                    if (newBanners !== undefined) $('.animate__fadeInDown').html(newBanners);
-                }
+                type: 'GET'
+            }).done(function(html) {
+                // Selection or typing can begin while the refresh request is running.
+                if (!wipCanRefresh(true)) return;
+                var $parsed = $('<div>').append($.parseHTML(html));
+                if (!$parsed.find('#container-view-spk, #container-view-item').length) return;
+                [
+                    '#container-view-spk', '#container-view-item', '#wip-pagination',
+                    '.status-tabs-container', '.bg-white.px-4.py-3.border-bottom', '.animate__fadeInDown'
+                ].forEach(function(selector) {
+                    var updated = $parsed.find(selector).first().html();
+                    if (updated !== undefined) $(selector).html(updated);
+                });
+            }).always(function() {
+                wipRefreshBusy = false;
             });
         }, 15000); // 15 detik
     }

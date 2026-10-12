@@ -213,9 +213,24 @@
               <label class="form-label small fw-bold">Alamat Lengkap</label>
               <textarea class="form-control" name="konsumen_alamat" rows="2" required></textarea>
             </div>
-            <div class="col-md-4">
-              <label class="form-label small fw-bold">Kode Pos</label>
-              <input type="text" class="form-control" name="kode_pos">
+            <div class="col-12">
+              <div class="p-3 rounded-3 border border-danger border-opacity-25 bg-danger bg-opacity-10">
+                <div class="d-flex align-items-center justify-content-between">
+                  <div>
+                    <label class="form-label small fw-bold text-danger mb-0">
+                      <i class="fas fa-exclamation-triangle me-1"></i> Perhatian Khusus / Pengawasan Kasir
+                    </label>
+                    <div class="text-muted small" style="font-size: 0.75rem;">Tandai jika konsumen nakal/bermasalah agar kasir mendapat peringatan saat transaksi.</div>
+                  </div>
+                  <div class="form-check form-switch fs-5">
+                    <input class="form-check-input" type="checkbox" name="is_blacklist" id="add_is_blacklist" value="1" onchange="toggleBlacklistNotes('add')">
+                  </div>
+                </div>
+                <div id="wrapper_catatan_blacklist_add" class="mt-2" style="display: none;">
+                  <label class="form-label small fw-bold text-danger">Catatan Alasan Pengawasan / Kasir</label>
+                  <textarea name="catatan_blacklist" id="add_catatan_blacklist" class="form-control form-control-sm" rows="2" placeholder="Contoh: Sering menolak pelunasan sisa, komplain fiktif, riwayat piutang macet"></textarea>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -309,6 +324,25 @@
                 <option value="0">Tidak Aktif (Di-Suspend)</option>
               </select>
             </div>
+            <div class="col-12">
+              <div class="p-3 rounded-3 border border-danger border-opacity-25 bg-danger bg-opacity-10">
+                <div class="d-flex align-items-center justify-content-between">
+                  <div>
+                    <label class="form-label small fw-bold text-danger mb-0">
+                      <i class="fas fa-exclamation-triangle me-1"></i> Perhatian Khusus / Pengawasan Kasir
+                    </label>
+                    <div class="text-muted small" style="font-size: 0.75rem;">Tandai jika konsumen nakal/bermasalah agar kasir mendapat peringatan saat transaksi.</div>
+                  </div>
+                  <div class="form-check form-switch fs-5">
+                    <input class="form-check-input" type="checkbox" name="is_blacklist" id="edit_is_blacklist" value="1" onchange="toggleBlacklistNotes('edit')">
+                  </div>
+                </div>
+                <div id="wrapper_catatan_blacklist_edit" class="mt-2" style="display: none;">
+                  <label class="form-label small fw-bold text-danger">Catatan Alasan Pengawasan / Kasir</label>
+                  <textarea name="catatan_blacklist" id="edit_catatan_blacklist" class="form-control form-control-sm" rows="2" placeholder="Contoh: Sering menolak pelunasan sisa, komplain fiktif, riwayat piutang macet"></textarea>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <div class="modal-footer bg-light">
@@ -381,15 +415,25 @@
             data: "konsumen_nama",
             render: function (data, type, row) {
               const init = data ? data.substring(0, 2).toUpperCase() : 'NA';
+              let badgeBlacklist = '';
+              if (row.is_blacklist == 1) {
+                const noteTitle = (row.catatan_blacklist || 'Perhatian Khusus').replace(/"/g, '&quot;');
+                badgeBlacklist = `
+                  <span class="badge bg-danger text-white ms-2" style="font-size: 0.65rem;" title="${noteTitle}">
+                    <i class="fas fa-exclamation-triangle text-warning me-1"></i>Pengawasan Kasir
+                  </span>
+                `;
+              }
               return `
-                            <div class="d-flex align-items-center">
-                                <div class="bg-light rounded-circle d-flex align-items-center justify-content-center text-primary fw-bold me-2" style="width: 35px; height: 35px;">${init}</div>
-                                <div>
-                                    <div class="fw-bold text-dark">${data}</div>
-                                    <small class="text-muted">ID: ${row.konsumen_id}</small>
-                                </div>
-                            </div>
-                        `;
+                <div class="d-flex align-items-center">
+                    <div class="bg-light rounded-circle d-flex align-items-center justify-content-center text-primary fw-bold me-2" style="width: 35px; height: 35px;">${init}</div>
+                    <div>
+                        <div class="fw-bold text-dark d-flex align-items-center flex-wrap">${data} ${badgeBlacklist}</div>
+                        <small class="text-muted">ID: ${row.konsumen_id}</small>
+                        ${row.is_blacklist == 1 && row.catatan_blacklist ? `<br><small class="text-danger fw-bold"><i class="fas fa-info-circle me-1"></i>${row.catatan_blacklist}</small>` : ''}
+                    </div>
+                </div>
+              `;
             }
           },
           {
@@ -437,6 +481,8 @@
                                     data-kredit="${row.kredit_limit || '0'}"
                                     data-top="${row.top_hari || '0'}"
                                     data-kodepos="${row.kode_pos || ''}"
+                                    data-blacklist="${row.is_blacklist || 0}"
+                                    data-catatan="${(row.catatan_blacklist || '').replace(/"/g, '&quot;')}"
                                     data-bs-toggle="modal"
                                     data-bs-target="#modalEditKonsumen">
                                     <i class="fas fa-pencil-alt"></i>
@@ -481,6 +527,11 @@
       $('#edit_pic_nama').val($(this).data('pic'));
       $('#edit_kredit_limit').val($(this).data('kredit'));
       $('#edit_top_hari').val($(this).data('top'));
+
+      const isBlacklist = $(this).data('blacklist') == 1;
+      $('#edit_is_blacklist').prop('checked', isBlacklist);
+      $('#edit_catatan_blacklist').val($(this).data('catatan') || '');
+      toggleBlacklistNotes('edit');
 
       toggleB2BFields('edit');
     });
@@ -572,6 +623,14 @@
       b2bFields.forEach(el => el.style.display = 'block');
     } else {
       b2bFields.forEach(el => el.style.display = 'none');
+    }
+  }
+
+  function toggleBlacklistNotes(mode) {
+    const chk = document.getElementById(mode === 'add' ? 'add_is_blacklist' : 'edit_is_blacklist');
+    const wrapper = document.getElementById('wrapper_catatan_blacklist_' + mode);
+    if (chk && wrapper) {
+      wrapper.style.display = chk.checked ? 'block' : 'none';
     }
   }
 </script>

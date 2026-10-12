@@ -768,7 +768,10 @@
 <?php $this->load->view('admin/product/components/detail/v_modal_edit_routing_detail'); ?>
 
 
-<?php $this->load->view('admin/product/components/detail/v_modal_copy_setup'); ?>
+<?php $this->load->view('admin/product/components/detail/v_modal_copy_setup', [
+    'variations' => isset($variations) ? $variations : [],
+    'getProduct' => isset($getProduct) ? $getProduct : []
+]); ?>
 <?php $this->load->view('admin/product/components/v_modal_sop_produk'); ?>
 
 <!-- Modal Edit Nama Produk -->

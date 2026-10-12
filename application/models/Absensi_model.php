@@ -46,7 +46,7 @@ class Absensi_model extends CI_Model
         $this->db->from('tbl_karyawan k');
         $this->db->join('tbl_perusahaan p', 'p.id_perusahaan = k.perusahaan_id', 'left');
         $this->db->join("users u", "u.karyawan_id = k.karyawan_id", "left");
-        $this->db->join($this->table . ' a', 'k.karyawan_id = a.karyawan_id' . (!empty($tanggal) ? ' AND a.tanggal = "' . $tanggal . '"' : ''), 'left');
+        $this->db->join($this->table . ' a', 'k.karyawan_id = a.karyawan_id' . (!empty($tanggal) ? ' AND a.tanggal = ' . $this->db->escape($tanggal) : ''), 'left');
         $this->db->join('tbl_jam_kerja jk', 'jk.urutan = (DAYOFWEEK(a.tanggal) + 5) % 7 + 1', 'left');
 
         $this->db->where('k.status_karyawan !=', 'Tidak Aktif');
@@ -200,7 +200,7 @@ class Absensi_model extends CI_Model
         $this->db->from('tbl_karyawan k');
         $this->db->join('tbl_jabatan j', 'j.jabatan_id = k.jabatan_id', 'left');
         $this->db->join('tbl_divisi d', 'd.divisi_id = k.divisi_id', 'left');
-        $this->db->join($this->table . ' a', 'k.karyawan_id = a.karyawan_id AND a.tanggal >= "' . $start_date . '" AND a.tanggal <= "' . $end_date . '"', 'left');
+        $this->db->join($this->table . ' a', 'k.karyawan_id = a.karyawan_id AND a.tanggal >= ' . $this->db->escape($start_date) . ' AND a.tanggal <= ' . $this->db->escape($end_date), 'left');
         $this->db->join('tbl_jam_kerja jk', 'jk.urutan = (DAYOFWEEK(a.tanggal) + 5) % 7 + 1', 'left');
         $this->db->join('users u', 'u.karyawan_id = k.karyawan_id', 'left');
         $this->db->where('k.divisi_id !=', 8);
@@ -344,7 +344,7 @@ class Absensi_model extends CI_Model
         $this->db->where('k.nama_lengkap NOT LIKE', '%A3+%');
         $this->db->where('k.nik NOT LIKE', 'STATION-%');
         $this->db->where('k.nik NOT LIKE', 'TERM%');
-        $this->db->where('k.karyawan_id NOT IN (SELECT karyawan_id FROM ' . $this->table . ' WHERE tanggal = "' . $tanggal . '")');
+        $this->db->where('k.karyawan_id NOT IN (SELECT karyawan_id FROM ' . $this->table . ' WHERE tanggal = ' . $this->db->escape($tanggal) . ')');
         $this->db->order_by('k.nama_lengkap ASC');
         return $this->db->get()->result();
     }
@@ -491,7 +491,7 @@ class Absensi_model extends CI_Model
         $this->db->from('tbl_karyawan k');
         $this->db->join('tbl_divisi d', 'd.divisi_id = k.divisi_id', 'left');
         $this->db->join('users u', 'u.karyawan_id = k.karyawan_id', 'left');
-        $this->db->join($this->table . ' a', 'k.karyawan_id = a.karyawan_id AND a.tanggal = \'' . $tanggal . '\'', 'left');
+        $this->db->join($this->table . ' a', 'k.karyawan_id = a.karyawan_id AND a.tanggal = ' . $this->db->escape($tanggal), 'left');
 
         $this->db->where('k.divisi_id !=', 8);
         $this->db->where_not_in('k.jabatan_id', [1, 2, 3]);
@@ -505,6 +505,11 @@ class Absensi_model extends CI_Model
         $this->db->where('u.role_id !=', 17);
         $this->db->or_where('u.role_id IS NULL');
         $this->db->group_end();
+
+        $ci =& get_instance();
+        if (!empty($ci->session->userdata('perusahaan_id')) && (int)$ci->session->userdata('perusahaan_id') !== 1) {
+            $this->db->where('k.perusahaan_id', $ci->session->userdata('perusahaan_id'));
+        }
 
         $this->db->order_by('k.nama_lengkap ASC');
         return $this->db->get()->result();

@@ -121,8 +121,20 @@
     function initializeSelect2() {
         $('#konsumenSelect1').select2({
             theme: 'bootstrap-5', placeholder: 'Ketik Nama / WA / Email...', minimumInputLength: 1, width: '100%',
-            ajax: { url: '<?= site_url("Transaksi/search_konsumen") ?>', dataType: 'json', delay: 250, data: (params) => ({ q: params.term || '' }), processResults: (data) => ({ results: $.map(data, (item) => ({ id: item.konsumen_id || item.id, text: (item.konsumen_nama || item.nama) + ' (' + item.konsumen_nohp + ')' + (item.konsumen_email ? ' - ' + item.konsumen_email : '') })) }), cache: true }
-        }).on('select2:select', () => $('#submitBtn').prop('disabled', false).addClass('btn-premium-primary animate__animated animate__pulse'));
+            ajax: { url: '<?= site_url("Transaksi/search_konsumen") ?>', dataType: 'json', delay: 250, data: (params) => ({ q: params.term || '' }), processResults: (data) => ({ results: $.map(data, (item) => ({ id: item.konsumen_id || item.id, text: (item.is_blacklist == 1 ? '[⚠️ PENGAWASAN KASIR] ' : '') + (item.konsumen_nama || item.nama) + ' (' + item.konsumen_nohp + ')' + (item.konsumen_email ? ' - ' + item.konsumen_email : ''), is_blacklist: item.is_blacklist, catatan_blacklist: item.catatan_blacklist })) }), cache: true }
+        }).on('select2:select', (e) => {
+            $('#submitBtn').prop('disabled', false).addClass('btn-premium-primary animate__animated animate__pulse');
+            if (e.params && e.params.data && e.params.data.is_blacklist == 1) {
+                const catatan = e.params.data.catatan_blacklist || 'Konsumen ini dalam daftar pengawasan kasir/perhatian khusus.';
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'PERHATIAN KHUSUS',
+                    html: `<b>Konsumen dalam Pengawasan Kasir:</b><br><span class="text-danger fw-bold">${catatan}</span><br><br><small class="text-muted">Harap lebih waspada terhadap pembayaran dan verifikasi data transaksi.</small>`,
+                    confirmButtonText: 'Saya Mengerti',
+                    confirmButtonColor: '#d33'
+                });
+            }
+        });
 
         $('#productSelect').select2({
             theme: 'bootstrap-5', placeholder: 'Scan Barcode / Nama Produk...', allowClear: true, width: '100%',

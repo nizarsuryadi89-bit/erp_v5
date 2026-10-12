@@ -10,7 +10,7 @@
             </div>
             <div class="modal-body p-4 bg-light">
                 <div class="mb-4 text-center">
-                    <p class="text-muted small mb-0">Cari berdasarkan Nomor SPK atau Nama Konsumen di seluruh data produksi</p>
+                    <p class="text-muted small mb-0">Cari berdasarkan Nomor SPK, Nama Produk, atau Nama Konsumen di seluruh data produksi</p>
                 </div>
                 
                 <div class="form-group mb-0 position-relative">
@@ -31,7 +31,7 @@
             $('#globalSpkSelect').select2({
                 theme: 'bootstrap-5',
                 dropdownParent: $('#globalSpkSearchModal'),
-                placeholder: 'Ketik Nomor SPK atau Nama Konsumen...',
+                placeholder: 'Ketik Nomor SPK, Nama Produk, atau Nama Konsumen...',
                 minimumInputLength: 2,
                 language: {
                     inputTooShort: function() { return 'Ketik minimal 2 huruf/angka...'; },
@@ -55,15 +55,20 @@
                     if (repo.is_show_all) {
                         return $(`<div class="fw-bold text-primary py-2"><i class="fas fa-search me-2"></i>${repo.text}</div>`);
                     }
+                    if (repo.is_product) {
+                        return $(`<div class="fw-bold text-dark py-1"><i class="fas fa-box me-2 text-primary"></i>${repo.text} <span class="badge bg-primary bg-opacity-10 text-primary border ms-1" style="font-size:0.6rem;">Data Produk</span></div>`);
+                    }
                     if (repo.is_consumer) {
                         return $(`<div class="fw-bold text-dark py-1"><i class="fas fa-user-circle me-2 text-secondary"></i>${repo.text} <span class="badge bg-light text-dark border ms-1" style="font-size:0.6rem;">Data Konsumen</span></div>`);
                     }
+                    var prodHtml = repo.product_nama ? `<div class="small text-secondary fw-semibold"><i class="fas fa-box-open me-1"></i> ${repo.product_nama}</div>` : '';
                     var markup = `
                         <div class="d-flex justify-content-between align-items-center py-1">
                             <div>
                                 <div class="fw-bold text-dark">
                                     <span class="text-primary">[${repo.nospk}]</span> ${repo.konsumen}
                                 </div>
+                                ${prodHtml}
                                 <div class="small text-muted">
                                     <i class="fas fa-industry me-1"></i> ${repo.kategori}
                                 </div>
@@ -83,7 +88,18 @@
             $('#globalSpkSelect').on('select2:select', function(e) {
                 var data = e.params.data;
                 if(data && data.nospk) {
-                    window.location.href = '<?= site_url('wip/produksi') ?>?page=1&operator=1&group_mode=spk&status_view=all_active&search_spk=' + encodeURIComponent(data.nospk);
+                    var u = new URL('<?= site_url('wip/produksi') ?>', window.location.origin);
+                    u.searchParams.set('page', '1');
+                    u.searchParams.set('status_view', 'all_active');
+                    u.searchParams.set('search_spk', data.nospk);
+                    var currentUrl = new URL(window.location.href);
+                    if (currentUrl.searchParams.get('operator')) {
+                        u.searchParams.set('operator', currentUrl.searchParams.get('operator'));
+                    }
+                    if (currentUrl.searchParams.get('group_mode')) {
+                        u.searchParams.set('group_mode', currentUrl.searchParams.get('group_mode'));
+                    }
+                    window.location.href = u.toString();
                 }
             });
             

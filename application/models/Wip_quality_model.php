@@ -65,7 +65,7 @@ class Wip_quality_model extends CI_Model
     {
         if (!$this->assert_storage()) return;
         $qc = $this->query('SELECT * FROM tbl_wip_qc WHERE produksi_id = ? FOR UPDATE', [(int) $item->produksi_id])->row();
-        if ($qc && $qc->status !== 'passed') throw new DomainException('Item belum lulus QC. Buka Pemeriksaan QC sebelum serah terima PB.');
+        if ($qc && $qc->status !== 'passed') throw new DomainException('Item belum lulus QC. Buka Pemeriksaan QC sebelum menyerahkan barang ke konsumen.');
     }
 
     private function accessible_item($id, $actor, $lock = false)
@@ -109,7 +109,7 @@ class Wip_quality_model extends CI_Model
                 $started = false;
                 return ['success' => true, 'status' => true, 'message' => 'Hasil QC sudah tercatat.', 'duplicate' => true];
             }
-            if ($item->status_produksi !== 'done') throw new DomainException('QC hanya dapat dicatat setelah seluruh proses selesai dan sebelum serah terima PB.');
+            if (!in_array($item->status_produksi, ['done', 'on_pb'], true)) throw new DomainException('QC hanya dapat dicatat setelah seluruh proses selesai dan sebelum barang diserahkan ke konsumen.');
             if ((int) $qc->version !== (int) $version) throw new DomainException('Hasil QC telah berubah. Muat ulang sebelum menyimpan.');
             if (!in_array($qc->status, ['pending', 'hold'], true)) throw new DomainException('QC sudah lulus. Hasil yang disetujui tidak dapat ditimpa.');
             if ($qc->status === 'hold' && $note === '') throw new DomainException('Isi penjelasan tindak lanjut untuk pemeriksaan ulang.');
@@ -124,7 +124,7 @@ class Wip_quality_model extends CI_Model
             $this->query('INSERT INTO tbl_produksi_log (produksi_id, user_id, status_asal, status_tujuan, catatan) VALUES (?, ?, ?, ?, ?)', [$id, $actor['user_id'], $item->status_produksi, $item->status_produksi, $audit]);
             if (!$this->db->trans_status() || !$this->db->trans_commit()) throw new RuntimeException('Transaksi QC gagal.');
             $started = false;
-            return ['success' => true, 'status' => true, 'message' => $decision === 'passed' ? 'QC lulus. Item siap diserahterimakan ke PB.' : 'Hasil QC ditahan. Catatan dan permintaan tindak lanjut tersimpan.'];
+            return ['success' => true, 'status' => true, 'message' => $decision === 'passed' ? 'QC lulus. Item di PB siap diserahkan ke konsumen.' : 'Hasil QC ditahan. Catatan dan permintaan tindak lanjut tersimpan.'];
         } catch (Exception $e) {
             if ($started) $this->db->trans_rollback();
             if (!($e instanceof DomainException)) log_message('error', 'QC: ' . $e->getMessage());

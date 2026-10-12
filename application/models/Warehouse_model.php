@@ -16,6 +16,42 @@ class Warehouse_model extends CI_Model
     /**
      * Get all warehouses
      */
+    public function ensure_integrity_schema()
+    {
+        $this->load->dbforge();
+        foreach (['tbl_temp_beli', 'tbl_temp_pengambilan'] as $table) {
+            foreach (['user_id', 'perusahaan_id'] as $column) {
+                if (!$this->db->field_exists($column, $table) && !$this->dbforge->add_column($table, [
+                    $column => ['type' => 'INT', 'null' => true]])) throw new RuntimeException('Migrasi pemilik keranjang gagal.');
+            }
+        }
+        foreach (['tbl_temp_beli' => ['qty', 'harga'], 'tbl_pengambilan_detail' => ['qty'], 'tbl_stok_opname' => ['son_real', 'son_aplikasi']] as $table => $columns) {
+            $types = []; foreach ($this->db->field_data($table) as $field) $types[$field->name] = strtolower($field->type);
+            foreach ($columns as $column) {
+                if (isset($types[$column]) && strpos($types[$column], 'int') !== false) {
+                    if (!$this->dbforge->modify_column($table, [$column => ['type' => 'DECIMAL', 'constraint' => '15,2', 'null' => false, 'default' => 0]])) throw new RuntimeException('Migrasi satuan pecahan gagal.');
+                }
+            }
+        }
+    }
+
+    public function get_unowned_drafts($kind)
+    {
+        if (!in_array($kind, ['purchase', 'dispatch'], true)) return [];
+        $this->db->select('tp.*, m.varian, b.bahan_nama');
+        $this->db->from(($kind === 'purchase' ? 'tbl_temp_beli' : 'tbl_temp_pengambilan') . ' tp');
+        $this->db->join('tbl_material m', 'm.material_id = tp.material_id', 'left');
+        $this->db->join('tbl_bahan b', 'b.bahan_id = m.bahan_id', 'left');
+        return $this->db->where('tp.user_id', null)->order_by('tp.temp_id', 'ASC')->get()->result();
+    }
+
+    private function scope_cart($alias = '')
+    {
+        $prefix = $alias ? $alias . '.' : '';
+        $this->db->where($prefix . 'user_id', $this->session->userdata('id'));
+        $this->db->where($prefix . 'perusahaan_id', $this->session->userdata('perusahaan_id'));
+    }
+
     public function get_all_warehouses()
     {
         return $this->db->get('tbl_gudang')->result();
@@ -131,7 +167,7 @@ class Warehouse_model extends CI_Model
         // Aggregate stock per material to avoid duplicate material rows when multiple racks exist
         $this->db->select((int)$warehouse_id . ' as gudang_id, m.material_id');
         $this->db->select('IFNULL(SUM(sg.qty), 0) as qty_base');
-        $this->db->select('(IFNULL(SUM(sg.qty), 0) / IFNULL(m.konversi, 1)) as qty_stock');
+        $this->db->select('(IFNULL(SUM(sg.qty), 0) / COALESCE(NULLIF(m.konversi, 0), 1)) as qty_stock');
         $this->db->select('b.bahan_nama, b.jenis_barang, m.varian, m.konversi, m.barcode, m.stok_min, s.satuan_nama, sp.satuan_nama as satuan_produksi, g.gudang_nama');
         $this->db->select('GROUP_CONCAT(DISTINCT r.rak_kode ORDER BY r.rak_kode SEPARATOR ", ") as rack_codes');
         $this->db->select('GROUP_CONCAT(DISTINCT r.rak_nama ORDER BY r.rak_nama SEPARATOR ", ") as rack_names');
@@ -211,20 +247,10 @@ class Warehouse_model extends CI_Model
      */
     public function get_current_stock($material_id, $warehouse_id)
     {
-        $stock = $this->db->get_where('tbl_stok_gudang', [
-            'material_id' => $material_id,
-            'gudang_id' => $warehouse_id
-        ])->row();
-
-        if ($stock) {
-            return (float) $stock->qty;
-        }
-        return 0;
+        $row = $this->db->select_sum('qty')->get_where('tbl_stok_gudang', ['material_id' => $material_id, 'gudang_id' => $warehouse_id])->row();
+        return $row ? (float)$row->qty : 0;
     }
 
-    /**
-     * Update stock
-     */
     public function update_stock($material_id, $warehouse_id, $qty_change, $reason = '')
     {
         $this->load->model('M_gudang');
@@ -344,11 +370,11 @@ class Warehouse_model extends CI_Model
     public function get_stock_summary_by_warehouse()
     {
         $this->db->select('g.gudang_id, g.gudang_nama, 
-                          COUNT(sg.material_id) as total_materials,
+                          COUNT(DISTINCT sg.material_id) as total_materials,
                           SUM(sg.qty) as total_stock,
-                          SUM(CASE WHEN sg.qty <= m.stok_min THEN 1 ELSE 0 END) as low_stock_count');
+                          SUM(CASE WHEN sg.qty <= (m.stok_min * COALESCE(NULLIF(m.konversi, 0), 1)) THEN 1 ELSE 0 END) as low_stock_count');
         $this->db->from('tbl_gudang g');
-        $this->db->join('tbl_stok_gudang sg', 'g.gudang_id = sg.gudang_id', 'left');
+        $this->db->join('(SELECT material_id, gudang_id, SUM(qty) as qty FROM tbl_stok_gudang GROUP BY material_id, gudang_id) sg', 'g.gudang_id = sg.gudang_id', 'left');
         $this->db->join('tbl_material m', 'sg.material_id = m.material_id', 'left');
         $this->db->group_by('g.gudang_id, g.gudang_nama');
         $this->db->order_by('g.gudang_id');
@@ -360,13 +386,13 @@ class Warehouse_model extends CI_Model
      */
     public function get_low_stock_materials($warehouse_id = 1)
     {
-        $this->db->select('sg.*, b.bahan_nama, m.varian, b.barcode, s.satuan_nama, g.gudang_nama, m.stok_min, m.konversi, (m.stok_min * IFNULL(m.konversi, 1)) as stok_min_base');
-        $this->db->from('tbl_stok_gudang sg');
+        $this->db->select('sg.*, b.bahan_nama, m.varian, b.barcode, s.satuan_nama, g.gudang_nama, m.stok_min, m.konversi, (m.stok_min * COALESCE(NULLIF(m.konversi, 0), 1)) as stok_min_base');
+        $this->db->from('(SELECT material_id, gudang_id, SUM(qty) as qty FROM tbl_stok_gudang GROUP BY material_id, gudang_id) sg');
         $this->db->join('tbl_material m', 'sg.material_id = m.material_id');
         $this->db->join('tbl_bahan b', 'm.bahan_id = b.bahan_id');
         $this->db->join('tbl_satuan s', 'm.satuan_gudang_id = s.satuan_id', 'left');
         $this->db->join('tbl_gudang g', 'sg.gudang_id = g.gudang_id');
-        $this->db->where('sg.qty <= (m.stok_min * IFNULL(m.konversi, 1))');
+        $this->db->where('sg.qty <= (m.stok_min * COALESCE(NULLIF(m.konversi, 0), 1))');
         $this->db->where('m.stok_min >', 0); // Sync logic with get_critical_stock()
 
         if ($warehouse_id) {
@@ -534,7 +560,7 @@ class Warehouse_model extends CI_Model
             COUNT(sl.log_id) as frekuensi,
             SUM(sl.qty_out) as total_qty_keluar,
             COALESCE(sg.qty, 0) as qty_base,
-            (COALESCE(sg.qty, 0) / IFNULL(m.konversi, 1)) as qty_stock,
+            (COALESCE(sg.qty, 0) / COALESCE(NULLIF(m.konversi, 0), 1)) as qty_stock,
             m.stok_min
         ');
         $this->db->from('tbl_stok_log sl');
@@ -567,7 +593,7 @@ class Warehouse_model extends CI_Model
                 COUNT(sl.log_id) as frekuensi,
                 SUM(sl.qty_out) as total_qty_keluar,
                 COALESCE(sg.qty, 0) as qty_base,
-                (COALESCE(sg.qty, 0) / IFNULL(m.konversi, 1)) as qty_stock,
+                (COALESCE(sg.qty, 0) / COALESCE(NULLIF(m.konversi, 0), 1)) as qty_stock,
                 m.stok_min
             ');
             $this->db->from('tbl_stok_log sl');
@@ -621,12 +647,12 @@ class Warehouse_model extends CI_Model
     {
         $this->db->select('
             b.bahan_nama, m.varian, s.satuan_nama,
-            sg.qty as stok_aktif,
-            (SELECT pd.harga_beli 
+            (sg.qty / COALESCE(NULLIF(m.konversi, 0), 1)) as stok_aktif,
+            (SELECT pd.harga_beli
              FROM tbl_pembelian_detail pd 
              WHERE pd.material_id = m.material_id 
              ORDER BY pd.pembelian_id DESC LIMIT 1) as harga_beli_terakhir,
-            (sg.qty * (SELECT pd.harga_beli 
+            ((sg.qty / COALESCE(NULLIF(m.konversi, 0), 1)) * (SELECT pd.harga_beli
              FROM tbl_pembelian_detail pd 
              WHERE pd.material_id = m.material_id 
              ORDER BY pd.pembelian_id DESC LIMIT 1)) as nilai_stok,
@@ -647,7 +673,7 @@ class Warehouse_model extends CI_Model
      */
     public function get_total_inventory_value()
     {
-        $this->db->select('SUM(sg.qty * (SELECT pd.harga_beli 
+        $this->db->select('SUM((sg.qty / COALESCE(NULLIF(m.konversi, 0), 1)) * (SELECT pd.harga_beli
              FROM tbl_pembelian_detail pd 
              WHERE pd.material_id = m.material_id 
              ORDER BY pd.pembelian_id DESC LIMIT 1)) as total_value', FALSE);
@@ -668,8 +694,8 @@ class Warehouse_model extends CI_Model
             "Gudang Utama" as gudang_nama,
             IFNULL(SUM(sg.qty), 0) as stok_aktif_base,
             m.stok_min,
-            (m.stok_min * IFNULL(m.konversi, 1)) as stok_min_base,
-            ((m.stok_min * IFNULL(m.konversi, 1)) - IFNULL(SUM(sg.qty), 0)) as kekurangan_base,
+            (m.stok_min * COALESCE(NULLIF(m.konversi, 0), 1)) as stok_min_base,
+            ((m.stok_min * COALESCE(NULLIF(m.konversi, 0), 1)) - IFNULL(SUM(sg.qty), 0)) as kekurangan_base,
             m.konversi,
             sp.satuan_nama as satuan_produksi
         ');
@@ -695,7 +721,7 @@ class Warehouse_model extends CI_Model
         $this->db->select('
             b.bahan_nama, m.varian, s.satuan_nama,
             g.gudang_nama,
-            sg.qty as stok_aktif,
+            (sg.qty / COALESCE(NULLIF(m.konversi, 0), 1)) as stok_aktif,
             MAX(sl.created_at) as last_movement
         ');
         $this->db->from('tbl_stok_gudang sg');
@@ -836,6 +862,7 @@ class Warehouse_model extends CI_Model
         $this->db->join('tbl_material m', 'tp.material_id = m.material_id');
         $this->db->join('tbl_bahan b', 'm.bahan_id = b.bahan_id');
         $this->db->join('tbl_satuan s', 'm.satuan_gudang_id = s.satuan_id');
+        $this->scope_cart('tp');
         return $this->db->get()->result();
     }
 
@@ -845,6 +872,7 @@ class Warehouse_model extends CI_Model
     public function get_purchase_temp_total()
     {
         $this->db->select('SUM(qty * harga) as total');
+        $this->scope_cart();
         $res = $this->db->get('tbl_temp_beli')->row();
         return $res ? (float) $res->total : 0;
     }
@@ -859,6 +887,7 @@ class Warehouse_model extends CI_Model
         $this->db->join('tbl_material m', 'tp.material_id = m.material_id');
         $this->db->join('tbl_bahan b', 'm.bahan_id = b.bahan_id');
         $this->db->join('tbl_satuan s', 'm.satuan_gudang_id = s.satuan_id');
+        $this->scope_cart('tp');
         return $this->db->get()->result();
     }
 
@@ -869,8 +898,11 @@ class Warehouse_model extends CI_Model
     {
         $this->db->select('pm.*, k.nama_lengkap as karyawan_nama, g.gudang_nama');
         $this->db->from('tbl_pengajuan_material pm');
+        if ((int)$this->session->userdata('perusahaan_id') !== 1) $this->db->where('pm.perusahaan_id', $this->session->userdata('perusahaan_id'));
         $this->db->join('tbl_karyawan k', 'pm.karyawan_id = k.karyawan_id', 'left');
         $this->db->join('tbl_gudang g', 'pm.gudang_id = g.gudang_id', 'left');
+
+        if (!empty($filters['current_month'])) $this->db->where('pm.pengajuan_tgl >=', date('Y-m-01'))->where('pm.pengajuan_tgl <=', date('Y-m-t'));
 
         if (isset($filters['status'])) {
             $this->db->where('pm.status', $filters['status']);
@@ -887,6 +919,8 @@ class Warehouse_model extends CI_Model
     {
         $this->db->select('pd.*, m.varian, m.konversi, b.bahan_nama, s.satuan_nama, s2.satuan_nama as satuan_dasar_nama');
         $this->db->from('tbl_pengajuan_material_detail pd');
+        $this->db->join('tbl_pengajuan_material pm', 'pm.pengajuan_id = pd.pengajuan_id');
+        if ((int)$this->session->userdata('perusahaan_id') !== 1) $this->db->where('pm.perusahaan_id', $this->session->userdata('perusahaan_id'));
         $this->db->join('tbl_material m', 'pd.material_id = m.material_id');
         $this->db->join('tbl_bahan b', 'm.bahan_id = b.bahan_id');
         $this->db->join('tbl_satuan s', 'm.satuan_gudang_id = s.satuan_id');
@@ -915,6 +949,7 @@ class Warehouse_model extends CI_Model
     {
         $this->db->select('pm.*, g.gudang_nama');
         $this->db->from('tbl_pengajuan_material pm');
+        if ((int)$this->session->userdata('perusahaan_id') !== 1) $this->db->where('pm.perusahaan_id', $this->session->userdata('perusahaan_id'));
         $this->db->join('tbl_gudang g', 'pm.gudang_id = g.gudang_id', 'left');
         $this->db->join('users u', 'pm.karyawan_id = u.karyawan_id', 'left');
         $this->db->where('u.user_id', $user_id);
@@ -931,6 +966,7 @@ class Warehouse_model extends CI_Model
     {
         $this->db->select('pm.*, k.nama_lengkap, g.gudang_nama');
         $this->db->from('tbl_pengajuan_material pm');
+        if ((int)$this->session->userdata('perusahaan_id') !== 1) $this->db->where('pm.perusahaan_id', $this->session->userdata('perusahaan_id'));
         $this->db->join('tbl_karyawan k', 'pm.karyawan_id = k.karyawan_id', 'left');
         $this->db->join('tbl_gudang g', 'pm.gudang_id = g.gudang_id', 'left');
         $this->db->where('pm.status', 0); // 0 = Pending
@@ -961,55 +997,26 @@ class Warehouse_model extends CI_Model
      */
     public function factory_reset()
     {
-        $this->db->trans_start();
-
-        // Disable foreign key checks
-        $this->db->query("SET FOREIGN_KEY_CHECKS = 0");
-
-        $tables_to_truncate = [
-            'tbl_bayar_hutang',
-            'tbl_hutang',
-            'tbl_pembelian',
-            'tbl_pembelian_detail',
-            'tbl_return_pembelian',
-            'tbl_return_pembelian_detail',
-            'tbl_stok_gudang',
-            'stok_gudang',
-            'tbl_stok_log',
-            'tbl_stok_opname',
-            'tbl_pengambilan',
-            'tbl_pengambilan_detail',
-            'tbl_temp_beli',
-            'tbl_temp_pengambilan',
-            'tbl_temp_pengajuan',
-            'tbl_pengajuan_material',
-            'tbl_pengajuan_material_detail',
-            'tbl_stok_bahan'
-        ];
-
-        foreach ($tables_to_truncate as $table) {
-            if ($this->db->table_exists($table)) {
-                $this->db->query("TRUNCATE TABLE $table");
+        $tables = ['tbl_hutang_pembayaran','tbl_bayar_hutang','tbl_return_pembelian_detail','tbl_return_pembelian',
+            'tbl_hutang','tbl_pembelian_detail','tbl_pembelian','tbl_pengambilan_detail','tbl_pengambilan',
+            'tbl_pengajuan_material_detail','tbl_pengajuan_material','tbl_temp_beli','tbl_temp_pengambilan','tbl_temp_pengajuan',
+            'tbl_stok_opname','tbl_stok_log','tbl_stok_gudang','stok_gudang','tbl_stok_bahan'];
+        $debug = $this->db->db_debug; $this->db->db_debug = false;
+        try {
+            foreach ($tables as $table) {
+                if (!$this->db->table_exists($table)) continue;
+                $status = $this->db->query('SHOW TABLE STATUS WHERE Name = ?', [$table])->row();
+                if (!$status || strtolower($status->Engine) !== 'innodb') throw new RuntimeException('Tabel tidak mendukung reset atomik.');
             }
-        }
-
-        // Additional: Clean financial logs specifically for Material Purchases (Kategori 1)
-        if ($this->db->table_exists('tbl_pengeluaran')) {
-            $this->db->where('kategori_pengeluaran_id', 1);
-            $this->db->delete('tbl_pengeluaran');
-        }
-
-        // Re-enable foreign key checks
-        $this->db->query("SET FOREIGN_KEY_CHECKS = 1");
-
-        $this->db->trans_complete();
-
-        return $this->db->trans_status();
+            if (!$this->db->trans_begin()) throw new RuntimeException('Transaksi reset tidak tersedia.');
+            foreach ($tables as $table) if ($this->db->table_exists($table) && !$this->db->empty_table($table)) throw new RuntimeException('Reset gagal.');
+            if ($this->db->table_exists('tbl_pengeluaran') && !$this->db->delete('tbl_pengeluaran', ['kategori_pengeluaran_id' => 1])) throw new RuntimeException('Reset pengeluaran gagal.');
+            if (!$this->db->trans_status() || !$this->db->trans_commit()) throw new RuntimeException('Reset gagal.');
+            return true;
+        } catch (Throwable $e) { $this->db->trans_rollback(); log_message('error', 'Reset gudang dibatalkan: ' . $e->getMessage()); return false; }
+        finally { $this->db->db_debug = $debug; }
     }
 
-    /**
-     * Get recent stock mutations for all materials
-     */
     public function get_recent_stock_mutations($limit = 50)
     {
         return $this->get_stock_mutations_filtered([], $limit);

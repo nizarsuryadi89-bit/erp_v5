@@ -84,6 +84,10 @@ class Transaksi extends MY_Controller
             return (float) $item->unit_price;
         }
 
+        if (isset($item->snapshot_harga) && is_numeric($item->snapshot_harga)) {
+            return (float) $item->snapshot_harga;
+        }
+
         return (float) ($item->harga_1 ?? 0);
     }
 
@@ -97,6 +101,10 @@ class Transaksi extends MY_Controller
 
         if (isset($item->subtotal) && $item->subtotal !== null && $item->subtotal !== '' && is_numeric($item->subtotal)) {
             return (float) $item->subtotal;
+        }
+
+        if (isset($item->snapshot_subtotal) && is_numeric($item->snapshot_subtotal)) {
+            return (float) $item->snapshot_subtotal;
         }
 
         if ($harga_satuan === null) {
@@ -183,20 +191,51 @@ class Transaksi extends MY_Controller
     }
     public function search_konsumen()
     {
-        $term = $this->input->get('q', true);
+        $term = trim((string) ($this->input->get('q', true) ?? ''));
+        if ($term === '') {
+            echo json_encode([]);
+            return;
+        }
 
-        $this->db->select('konsumen_id, konsumen_nama, konsumen_nohp, konsumen_email');
+        // Pecah kata kunci berdasarkan spasi agar pencarian multi-kata / fleksibel
+        $keywords = array_filter(preg_split('/\s+/', $term));
+        $clean_phone = preg_replace('/[^0-9]/', '', $term);
+
+        $this->db->select('konsumen_id, konsumen_nama, konsumen_nohp, konsumen_email, is_blacklist, catatan_blacklist');
         $this->db->from('tbl_konsumen');
-        $this->db->group_start();
-        $this->db->like('LOWER(konsumen_nama)', strtolower($term));
-        $this->db->or_like('konsumen_nohp', $term); // nomor tidak perlu strtolower
-        $this->db->or_like('LOWER(konsumen_email)', strtolower($term));
-        $this->db->group_end();
+
+        if (!empty($keywords)) {
+            $this->db->group_start();
+            foreach ($keywords as $kw) {
+                $kw_clean = strtolower($kw);
+                $this->db->group_start();
+                $this->db->like('LOWER(konsumen_nama)', $kw_clean);
+                $this->db->or_like('LOWER(konsumen_nohp)', $kw_clean);
+                $this->db->or_like('LOWER(konsumen_email)', $kw_clean);
+                if (strlen($clean_phone) >= 3) {
+                    $this->db->or_like("REPLACE(REPLACE(konsumen_nohp, ' ', ''), '-', '')", $clean_phone);
+                }
+                $this->db->group_end();
+            }
+            $this->db->group_end();
+        }
+
         // Sembunyikan data satu-kali-pakai dari Marketplace berdasarkan flag khusus di No. HP
         $this->db->where('konsumen_nohp !=', 'MARKETPLACE');
 
+        // Prioritas hasil: yang namanya berawalan kata kunci diletakkan di urutan paling atas
+        $first_kw = strtolower(reset($keywords) ?: $term);
+        $escaped_kw = $this->db->escape_like_str($first_kw);
+        $this->db->order_by("CASE WHEN LOWER(konsumen_nama) LIKE '{$escaped_kw}%' THEN 1 ELSE 2 END", 'ASC', FALSE);
+        $this->db->order_by('konsumen_nama', 'ASC');
+        $this->db->limit(35);
+
         $query = $this->db->get();
-        echo json_encode($query->result());
+        if ($query) {
+            echo json_encode($query->result());
+        } else {
+            echo json_encode([]);
+        }
     }
 
     public function get_transaksi_by_konsumen_ajax()
@@ -652,6 +691,7 @@ class Transaksi extends MY_Controller
         if (!$is_owner && !$is_admin && !$is_kasir) {
             $this->session->set_flashdata('error', 'Akses ditolak. Kalender Penjualan hanya dapat diakses oleh Owner, Administrator, dan Kasir.');
             redirect('dashboard');
+            return;
         }
 
         // Get current year and month for calendar
@@ -664,14 +704,14 @@ class Transaksi extends MY_Controller
         $calendar_events = [];
         foreach ($calendar_data as $event) {
             $calendar_events[] = [
-                'title' => 'Rp ' . number_format($event->total_penjualan) . ' (' . $event->jumlah_transaksi . ' transaksi)',
+                'title' => 'Rp ' . number_format($event->total_amount) . ' (' . $event->total_transactions . ' transaksi)',
                 'date' => $event->tanggal,
-                'backgroundColor' => ($event->total_penjualan > 0) ? '#28a745' : '#6c757d',
-                'borderColor' => ($event->total_penjualan > 0) ? '#28a745' : '#6c757d',
+                'backgroundColor' => ($event->total_amount > 0) ? '#28a745' : '#6c757d',
+                'borderColor' => ($event->total_amount > 0) ? '#28a745' : '#6c757d',
                 'textColor' => '#ffffff',
                 'extendedProps' => [
-                    'total' => $event->total_penjualan,
-                    'count' => $event->jumlah_transaksi
+                    'total' => $event->total_amount,
+                    'count' => $event->total_transactions
                 ]
             ];
         }
@@ -773,7 +813,7 @@ class Transaksi extends MY_Controller
             $combined_data[$date]['total_transactions'] += $unpaid->jumlah_transaksi;
         }
 
-        return array_values($combined_data);
+        return array_map(function ($row) { return (object) $row; }, array_values($combined_data));
     }
 
     /**
@@ -992,8 +1032,13 @@ class Transaksi extends MY_Controller
         $lebar_field = $is_temp ? 'temp_lebar' : 'lebar';
 
         $this->db->select("t.$qty_field as qty, t.$panjang_field as panjang, t.$lebar_field as lebar, t.metadata, h.harga_1, h.harga_minimal, h.ket_1, p.kategori_id, p.satuan_id");
+        if (!$is_temp) {
+            foreach (['unit_price', 'subtotal'] as $field) {
+                if ($this->db->field_exists($field, $table)) { $this->db->select("t.$field"); }
+            }
+        }
         $this->db->from("$table t");
-        $this->db->join('tbl_harga_product h', 't.harga_id = h.harga_id');
+        $this->db->join('tbl_harga_product h', 't.harga_id = h.harga_id', 'left');
         $this->db->join('tbl_product p', 'p.product_id = t.product_id', 'left');
         $this->db->where("t.$where_field", $nospk);
         $query = $this->db->get()->result();
@@ -1030,18 +1075,19 @@ class Transaksi extends MY_Controller
         $product_data = $this->M_master->getProductByIdComplete($product_id);
         if (!$product_data) return;
 
-        $raw_schema = $product_data['product_form_schema'] ?? $product_data['subcategory_form_schema'] ?? $product_data['category_form_schema'] ?? '';
-        if (empty($raw_schema)) return;
-
-        $schema = json_decode($raw_schema, true);
-        if (!is_array($schema)) return;
+        $schema = [];
+        foreach (['product_form_schema', 'subcategory_form_schema', 'category_form_schema'] as $field) {
+            $candidate = $this->decode_metadata_array($product_data[$field] ?? null);
+            if ($candidate) { $schema = $candidate; break; }
+        }
+        if (!$schema) { return; }
 
         $key_dim1 = 'ket_1';
         $key_dim2 = 'jenisprint_id';
         $unmapped_names = [];
 
         foreach ($schema as $field) {
-            if (isset($field['options']) && !empty($field['options']) && in_array($field['type'], ['select', 'radio'])) {
+            if (is_array($field) && is_array($field['options'] ?? null) && !empty($field['options']) && in_array($field['type'] ?? '', ['select', 'radio'])) {
                 $name = $field['name'] ?? '';
                 $labelLower = strtolower($field['label'] ?? '');
 
@@ -1076,41 +1122,64 @@ class Transaksi extends MY_Controller
         $inputs['jenisprint_id'] = 0;
 
         if ($key_dim1 && $this->input->post($key_dim1) !== null) {
-            $inputs['ket_1'] = $this->input->post($key_dim1, true);
+            $value = $this->input->post($key_dim1, true);
+            $inputs['ket_1'] = is_scalar($value) ? $value : 0;
         }
         if ($key_dim2 && $this->input->post($key_dim2) !== null) {
-            $inputs['jenisprint_id'] = $this->input->post($key_dim2, true);
+            $value = $this->input->post($key_dim2, true);
+            $inputs['jenisprint_id'] = is_scalar($value) ? $value : 0;
         }
     }
     /**
      * Estimate price without inserting - for live preview in SPK form
      */
-    public function estimate_price()
+    private function validate_item_inputs(array &$inputs)
     {
-        $inputs = [
-            'product' => $this->input->post('product_id', true),
-            'qty' => $this->input->post('qty', true),
-            'panjang' => $this->input->post('panjang', true) ?? 0,
-            'lebar' => $this->input->post('lebar', true) ?? 0,
-            'kategori' => $this->input->post('kategori_id', true),
-            'ket_1' => $this->input->post('ket_1', true) ?? 0,
-            'jenisprint_id' => $this->input->post('jenisprint_id', true) ?? 0,
-        ];
-
-        if (empty($inputs['product']) || empty($inputs['qty'])) {
-            return $this->output->set_content_type('application/json')
-                ->set_output(json_encode(['status' => 'empty']));
+        if (!is_scalar($inputs['product']) || !ctype_digit((string) $inputs['product']) || (int) $inputs['product'] <= 0 ||
+            !is_numeric($inputs['qty']) || !is_finite((float) $inputs['qty']) || (float) $inputs['qty'] <= 0) {
+            $this->output->set_content_type('application/json')->set_output(json_encode(['status' => 'error', 'message' => 'Produk dan quantity tidak valid.']));
+            return false;
         }
+        foreach (['panjang', 'lebar'] as $field) {
+            $value = $inputs[$field] ?? 0;
+            if ($value === '') { $value = 0; }
+            if (!is_numeric($value) || !is_finite((float) $value) || (float) $value < 0) {
+                $this->output->set_content_type('application/json')->set_output(json_encode(['status' => 'error', 'message' => 'Ukuran harus berupa angka nonnegatif.']));
+                return false;
+            }
+            $inputs[$field] = (float) $value;
+        }
+        foreach (['ket_1', 'jenisprint_id'] as $field) {
+            if (isset($inputs[$field]) && !is_scalar($inputs[$field])) {
+                $this->output->set_content_type('application/json')->set_output(json_encode(['status' => 'error', 'message' => 'Spesifikasi produk tidak valid.']));
+                return false;
+            }
+        }
+        return true;
+    }
 
-        // Resolve dynamic pricing keys
-        $this->_resolve_dynamic_pricing_keys($inputs['product'], $inputs);
+    private function validate_item_spk($nospk, $draft)
+    {
+        $table = $draft ? 'tbl_spk' : 'tbl_pemesanan';
+        $row = is_string($nospk) && $nospk !== '' ? $this->db->get_where($table, ['nospk' => $nospk])->row() : null;
+        $owner = $row ? ($draft ? $row->user_id : $row->deskprint_id) : null;
+        $privileged = in_array((int) $this->session->userdata('level'), [1, 17], true);
+        if (!$row || (!$privileged && ($owner != $this->session->userdata('id') ||
+                (int) $row->perusahaan_id !== (int) $this->session->userdata('perusahaan_id'))) ||
+            (!$draft && ($row->status_pembayaran !== 'pending' || $this->db->get_where('tbl_pembayaran', ['nospk' => $nospk])->row()))) {
+            $this->output->set_content_type('application/json')->set_output(json_encode([
+                'status' => 'error', 'message' => 'SPK tidak dapat diubah: tidak ditemukan, di luar akses Anda, atau sudah diproses kasir.'
+            ]));
+            return false;
+        }
+        return true;
+    }
 
-        $product_info = $this->db->select('satuan_id')->get_where('tbl_product', ['product_id' => $inputs['product']])->row();
-        $satuan_id = $product_info ? $product_info->satuan_id : 0;
-
-        // Calculate Pricing Quantity based on Category (same logic as action_add_temp)
+    private function pricing_quantity(array &$inputs, $satuan_id)
+    {
         $pricing_qty = floatval($inputs['qty']);
-        if (in_array($inputs['kategori'], [2, 3, 5, 6, 8, 9])) {
+        // Area/meter units also apply to finishing, including laminasi in category 16.
+        if (in_array($inputs['kategori'], [2, 3, 5, 6, 8, 9]) || in_array((int) $satuan_id, [2, 11], true)) {
             $panjang = floatval($inputs['panjang'] ?? 0);
             $lebar = floatval($inputs['lebar'] ?? 0);
 
@@ -1148,6 +1217,46 @@ class Transaksi extends MY_Controller
                 $pricing_qty = $panjang * $inputs['qty'];
             }
         }
+
+        return $pricing_qty;
+    }
+
+    private function priced_subtotal($price, $pricing_qty)
+    {
+        return max((float) ($price['harga_minimal'] ?? 0), (float) ($price['harga_1'] ?? 0) * $pricing_qty);
+    }
+
+    public function estimate_price()
+    {
+        $inputs = [
+            'product' => $this->input->post('product_id', true),
+            'qty' => $this->input->post('qty', true),
+            'panjang' => $this->input->post('panjang', true) ?? 0,
+            'lebar' => $this->input->post('lebar', true) ?? 0,
+            'kategori' => $this->input->post('kategori_id', true),
+            'ket_1' => $this->input->post('ket_1', true) ?? 0,
+            'jenisprint_id' => $this->input->post('jenisprint_id', true) ?? 0,
+        ];
+
+        if (empty($inputs['product']) || empty($inputs['qty'])) {
+            return $this->output->set_content_type('application/json')
+                ->set_output(json_encode(['status' => 'empty']));
+        }
+
+        if (!$this->validate_item_inputs($inputs)) { return; }
+
+        // Resolve dynamic pricing keys
+        $this->_resolve_dynamic_pricing_keys($inputs['product'], $inputs);
+
+        $product_info = $this->db->select('satuan_id, kategori_id')->get_where('tbl_product', ['product_id' => $inputs['product']])->row();
+        if (!$product_info) {
+            $this->output->set_content_type('application/json')->set_output(json_encode(['status' => 'error', 'message' => 'Produk tidak ditemukan.']));
+            return;
+        }
+        $satuan_id = $product_info->satuan_id;
+        $inputs['kategori'] = $product_info->kategori_id;
+
+        $pricing_qty = $this->pricing_quantity($inputs, $satuan_id);
 
         $hargaQuery = $this->M_transaksi->get_product_price($inputs['product'], $pricing_qty, [
             'ket_1' => $inputs['ket_1'],
@@ -1202,67 +1311,21 @@ class Transaksi extends MY_Controller
             'lokasi_cetak' => $this->input->post('lokasi_cetak', true)
         ];
 
+        if (!$this->validate_item_inputs($inputs) || !$this->validate_item_spk($inputs['nospk'], true)) { return; }
+
         // Ensure dynamic pricing keys match schema definitions
         $this->_resolve_dynamic_pricing_keys($inputs['product'], $inputs);
 
-        $product_info = $this->db->select('satuan_id')->get_where('tbl_product', ['product_id' => $inputs['product']])->row();
-        $satuan_id = $product_info ? $product_info->satuan_id : 0;
+        $product_info = $this->db->select('satuan_id, kategori_id')->get_where('tbl_product', ['product_id' => $inputs['product']])->row();
+        if (!$product_info) {
+            $this->output->set_content_type('application/json')->set_output(json_encode(['status' => 'error', 'message' => 'Produk tidak ditemukan.']));
+            return;
+        }
+        $satuan_id = $product_info->satuan_id;
+        $inputs['kategori'] = $product_info->kategori_id;
 
         // Logic Penentuan Harga - Universal
-        // Calculate Pricing Quantity based on Category
-        $pricing_qty = floatval($inputs['qty']);
-        if (in_array($inputs['kategori'], [2, 3, 5, 6, 8, 9])) {
-            $panjang = floatval($inputs['panjang'] ?? 0);
-            $lebar = floatval($inputs['lebar'] ?? 0);
-
-            // SPECIAL LOGIC: Minimum Dimension for Category 3 & 6
-            if (in_array($inputs['kategori'], [3, 6]) && ($panjang > 0 || $lebar > 0)) {
-                if ($panjang < 5)
-                    $panjang = 5;
-                if ($lebar < 5)
-                    $lebar = 5;
-            }
-
-            // Map Laser Method to jenisprint_id
-            if ($inputs['kategori'] == 6 && !empty($this->input->post('metode_laser', true))) {
-                $inputs['jenisprint_id'] = $this->input->post('metode_laser', true);
-            }
-
-            // DTG & DTF Area Mapping (Fixed Size to m2)
-            if (in_array($inputs['kategori'], [8, 9])) {
-                $area_mapping = [
-                    '1' => 100,  // Logo
-                    '2' => 350,  // A5
-                    '3' => 630,  // A4
-                    '4' => 1260, // A3
-                    '5' => 1536  // A3+ (for DTG)
-                ];
-
-                // For DTF (Cat 9), option 5 is "Meteran", let dimension block handle it
-                if ($inputs['kategori'] == 9 && $inputs['ket_1'] == '5') {
-                    // Force Linear Meter Calculation (ignore UI width 60cm for SQL logic)
-                    $inputs['lebar'] = 0;
-                    $lebar = 0;
-                } else {
-                    $selected_area = $area_mapping[$inputs['ket_1']] ?? 0;
-                    if ($selected_area > 0) {
-                        $pricing_qty = ($selected_area / 10000) * $inputs['qty'];
-                    }
-                }
-            }
-
-            if ($satuan_id == 11) {
-                // Meter Lari strictly bypasses area calculation and uses Length * Qty
-                $pricing_qty = $panjang * $inputs['qty'];
-            } else if ($panjang > 0 && $lebar > 0) {
-                // Area = P * L (Input unit matches pricing unit)
-                $area = ($panjang * $lebar);
-                $pricing_qty = $area * $inputs['qty'];
-            } else if ($panjang > 0 && empty($lebar)) {
-                // Meter Lari logic: Harga per meter fix, so Qty = P * Qty
-                $pricing_qty = $panjang * $inputs['qty'];
-            }
-        }
+        $pricing_qty = $this->pricing_quantity($inputs, $satuan_id);
 
         $hargaQuery = $this->M_transaksi->get_product_price($inputs['product'], $pricing_qty, [
             'ket_1' => $inputs['ket_1'],
@@ -1277,7 +1340,7 @@ class Transaksi extends MY_Controller
             $perusahaan_id = $spk['perusahaan_id'] ?? 1;
         }
 
-        error_log("ADD_TEMP_DEBUG: product=" . $inputs["product"] . " qty=" . $pricing_qty . " P=" . $inputs["panjang"] . " L=" . $inputs["lebar"] . " ket1=" . $inputs["ket_1"] . " jp=" . $inputs["jenisprint_id"] . " | DB rows=" . $hargaQuery->num_rows());
+        log_message('debug', "ADD_TEMP_DEBUG: product=" . $inputs["product"] . " qty=" . $pricing_qty . " P=" . $inputs["panjang"] . " L=" . $inputs["lebar"] . " ket1=" . $inputs["ket_1"] . " jp=" . $inputs["jenisprint_id"] . " | DB rows=" . $hargaQuery->num_rows());
         $cekhargaproduct = $hargaQuery->row_array();
         // Capture Dynamic Metadata (EAV/JSON)
         // Fields that have their own columns are in standard_keys to avoid duplication in metadata JSON
@@ -1318,7 +1381,7 @@ class Transaksi extends MY_Controller
             $machine_map = [];
             $machines = $this->db->get('tbl_mesin_printing')->result();
             foreach ($machines as $m) {
-                $machine_map[$m->mesin_id] = $m->mesin_nama;
+                $machine_map[$m->id] = $m->mesin_nama;
             }
 
             // Merge original product metadata from tbl_harga_product
@@ -1337,6 +1400,7 @@ class Transaksi extends MY_Controller
 
             foreach ($this->input->post() as $key => $val) {
                 if (!in_array($key, $standard_keys) && !empty($val)) {
+                    if (!is_scalar($val)) { $metadata[$key] = $val; continue; }
                     // Resolve value to label if it is an option select
                     $resolved_val = $schema_options[$key][$val] ?? ($key === 'jenisprint_id' ? ($machine_map[$val] ?? $val) : ($key === 'side_id' || $key === 'ket_1' ? ($side_map[$val] ?? $val) : $val));
                     $metadata[$key] = $val;
@@ -1348,6 +1412,9 @@ class Transaksi extends MY_Controller
                     }
                 }
             }
+
+            $subtotal = $this->priced_subtotal($cekhargaproduct, $pricing_qty);
+            $metadata = $this->build_price_snapshot_metadata($metadata, $cekhargaproduct['harga_1'] ?? 0, $subtotal);
 
             $add_temp = [
                 'product_id' => $inputs['product'],
@@ -1431,66 +1498,23 @@ class Transaksi extends MY_Controller
             'lokasi_cetak' => $this->input->post('lokasi_cetak', true)
         ];
 
+        if (!$this->validate_item_inputs($inputs) || !$this->validate_item_spk($inputs['nospk'], false)) { return; }
+
         // Ensure dynamic pricing keys match schema definitions
         $this->_resolve_dynamic_pricing_keys($inputs['product'], $inputs);
 
         // print_r($inputs);
 
-        $product_info = $this->db->select('satuan_id')->get_where('tbl_product', ['product_id' => $inputs['product']])->row();
-        $satuan_id = $product_info ? $product_info->satuan_id : 0;
+        $product_info = $this->db->select('satuan_id, kategori_id')->get_where('tbl_product', ['product_id' => $inputs['product']])->row();
+        if (!$product_info) {
+            $this->output->set_content_type('application/json')->set_output(json_encode(['status' => 'error', 'message' => 'Produk tidak ditemukan.']));
+            return;
+        }
+        $satuan_id = $product_info->satuan_id;
+        $inputs['kategori'] = $product_info->kategori_id;
 
         // Logic Penentuan Harga - Universal
-        // Calculate Pricing Quantity based on Category
-        $pricing_qty = $inputs['qty'];
-        if (in_array($inputs['kategori'], [2, 3, 5, 6, 8, 9])) {
-            $panjang = floatval($inputs['panjang'] ?? 0);
-            $lebar = floatval($inputs['lebar'] ?? 0);
-
-            // Minimum 5x5 for Flatbed and Laser
-            if (in_array($inputs['kategori'], [3, 6]) && ($panjang > 0 || $lebar > 0)) {
-                if ($panjang < 5)
-                    $panjang = 5;
-                if ($lebar < 5)
-                    $lebar = 5;
-            }
-
-            // Map Laser Method to jenisprint_id
-            if ($inputs['kategori'] == 6 && !empty($this->input->post('metode_laser', true))) {
-                $inputs['jenisprint_id'] = $this->input->post('metode_laser', true);
-            }
-
-            // DTG & DTF Area Mapping (Fixed Size to m2)
-            if (in_array($inputs['kategori'], [8, 9])) {
-                $area_mapping = [
-                    '1' => 100,  // Logo
-                    '2' => 350,  // A5
-                    '3' => 630,  // A4
-                    '4' => 1260, // A3
-                    '5' => 1536  // A3+
-                ];
-
-                if ($inputs['kategori'] == 9 && $inputs['ket_1'] == '5') {
-                    // Force Linear Meter Calculation
-                    $inputs['lebar'] = 0;
-                    $lebar = 0;
-                } else {
-                    $selected_area = $area_mapping[$inputs['ket_1']] ?? 0;
-                    if ($selected_area > 0) {
-                        $pricing_qty = ($selected_area / 10000) * $inputs['qty'];
-                    }
-                }
-            }
-
-            if ($satuan_id == 11) {
-                $pricing_qty = $panjang * $inputs['qty'];
-            } else if ($panjang > 0 && $lebar > 0) {
-                // Area = P * L (Input unit matches pricing unit)
-                $area = ($panjang * $lebar);
-                $pricing_qty = $area * $inputs['qty'];
-            } else if ($panjang > 0 && empty($lebar)) {
-                $pricing_qty = $panjang * $inputs['qty'];
-            }
-        }
+        $pricing_qty = $this->pricing_quantity($inputs, $satuan_id);
 
         // Capture Dynamic Metadata for Edit Mode
         $standard_keys = ['product_id', 'nospk', 'qty', 'panjang', 'lebar', 'kategori_id', 'keterangan', 'approve', 'lokasi_cetak'];
@@ -1501,7 +1525,7 @@ class Transaksi extends MY_Controller
             'jenisprint_id' => $inputs['jenisprint_id']
         ]);
 
-        error_log("ADD_TEMP_DEBUG: product=" . $inputs["product"] . " qty=" . $pricing_qty . " P=" . $inputs["panjang"] . " L=" . $inputs["lebar"] . " ket1=" . $inputs["ket_1"] . " jp=" . $inputs["jenisprint_id"] . " | DB rows=" . $hargaQuery->num_rows());
+        log_message('debug', "ADD_TEMP_DEBUG: product=" . $inputs["product"] . " qty=" . $pricing_qty . " P=" . $inputs["panjang"] . " L=" . $inputs["lebar"] . " ket1=" . $inputs["ket_1"] . " jp=" . $inputs["jenisprint_id"] . " | DB rows=" . $hargaQuery->num_rows());
         $cekhargaproduct = $hargaQuery->row_array();
         $hasilcek = $hargaQuery->num_rows();
 
@@ -1539,7 +1563,7 @@ class Transaksi extends MY_Controller
             $machine_map = [];
             $machines = $this->db->get('tbl_mesin_printing')->result();
             foreach ($machines as $m) {
-                $machine_map[$m->mesin_id] = $m->mesin_nama;
+                $machine_map[$m->id] = $m->mesin_nama;
             }
 
             // Merge original product metadata from tbl_harga_product
@@ -1558,6 +1582,7 @@ class Transaksi extends MY_Controller
 
             foreach ($this->input->post() as $key => $val) {
                 if (!in_array($key, $standard_keys) && !empty($val)) {
+                    if (!is_scalar($val)) { $metadata[$key] = $val; continue; }
                     // Resolve value to label if it is an option select
                     $resolved_val = $schema_options[$key][$val] ?? ($key === 'jenisprint_id' ? ($machine_map[$val] ?? $val) : ($key === 'side_id' || $key === 'ket_1' ? ($side_map[$val] ?? $val) : $val));
                     $metadata[$key] = $val;
@@ -1572,15 +1597,7 @@ class Transaksi extends MY_Controller
 
             $harga_satuan = (float) ($cekhargaproduct['harga_1'] ?? 0);
             $harga_minimal = (float) ($cekhargaproduct['harga_minimal'] ?? 0);
-            $temp_item = (object) [
-                'qty' => $inputs['qty'],
-                'panjang' => $inputs['panjang'],
-                'lebar' => $inputs['lebar'],
-                'satuan_id' => $inputs['satuan_id'],
-                'kategori_id' => $inputs['kategori_id'],
-                'ket_1' => $inputs['ket_1']
-            ];
-            $subtotal = $this->calculate_snapshot_subtotal($temp_item, $harga_satuan, 'qty', 'panjang', 'lebar', $harga_minimal);
+            $subtotal = $this->priced_subtotal($cekhargaproduct, $pricing_qty);
 
             $metadata = $this->build_price_snapshot_metadata($metadata, $harga_satuan, $subtotal);
 
@@ -1591,6 +1608,9 @@ class Transaksi extends MY_Controller
                 'harga_id' => $cekhargaproduct['harga_id'],
                 'panjang' => $inputs['panjang'],
                 'lebar' => $inputs['lebar'],
+                'approve' => $inputs['approve'] ?? 0,
+                'lokasi_cetak' => $inputs['lokasi_cetak'] ?? $this->session->userdata('perusahaan_id'),
+                'keterangan' => $inputs['keterangan'],
                 'metadata' => !empty($metadata) ? json_encode($metadata) : null
             ];
 
@@ -1657,7 +1677,7 @@ class Transaksi extends MY_Controller
 
         foreach ($required_fields as $field => $label) {
             if (empty($this->input->post($field))) {
-                error_log("ADD_PEMESANAN ERROR: Validation failed - $label is empty.");
+                log_message('debug', "ADD_PEMESANAN ERROR: Validation failed - $label is empty.");
                 $this->session->set_flashdata('error', "$label tidak boleh kosong.");
                 redirect('transaksi/createspk');
                 return;
@@ -1667,7 +1687,7 @@ class Transaksi extends MY_Controller
         // 3. Fetch Temporary Data
         $detailPemesanan = $this->M_transaksi->tampilTmp($nospk)->result();
         if (empty($detailPemesanan)) {
-            error_log("ADD_PEMESANAN ERROR: No items found in temp table for SPK $nospk");
+            log_message('debug', "ADD_PEMESANAN ERROR: No items found in temp table for SPK $nospk");
             $this->session->set_flashdata('error', 'Tidak ada item produk dalam pesanan.');
             redirect('transaksi/createspk');
             return;
@@ -1682,77 +1702,116 @@ class Transaksi extends MY_Controller
             'marketplace_id' => $this->input->post('marketplace_id', true) ?: 0,
             'resi_marketplace' => $this->input->post('resi_marketplace', true) ?: '-',
             'id_pengiriman' => $this->input->post('id_pengiriman', true) ?: 0,
-            'batch_pengiriman' => $this->input->post('batch_pengiriman', true) ?: '',
             'perusahaan_id' => $perusahaan_id,
             'status_pembayaran' => 'pending',
             'created_at' => date('Y-m-d H:i:s'),
         ];
+        if ($this->db->field_exists('batch_pengiriman', 'tbl_pemesanan')) {
+            $dataPemesanan['batch_pengiriman'] = $this->input->post('batch_pengiriman', true) ?: '';
+        }
 
         // 5. Database Transaction
-        $this->db->trans_start();
-
-        // Check if transaction already exists for this SPK
-        $existing = $this->db->get_where('tbl_pemesanan', ['nospk' => $nospk])->row();
-
-        if ($existing) {
-            error_log("LOG PENGECEKAN: SPK $nospk sudah ada. Menjalankan mode UPDATE.");
-            // Update Header
-            $this->db->where('nospk', $nospk);
-            $this->db->update('tbl_pemesanan', $dataPemesanan);
-
-            // Clear existing details for re-insertion
-            $this->db->delete('tbl_pemesanan_detail', ['nospk' => $nospk]);
-        } else {
-            error_log("LOG PENGECEKAN: SPK $nospk belum ada. Menjalankan mode INSERT.");
-            // Insert Header
-            $this->db->insert('tbl_pemesanan', $dataPemesanan);
-        }
-
-        // Insert/Process Details
-        $item_count = 0;
-        foreach ($detailPemesanan as $tmp) {
-            $harga_satuan = (float) ($tmp->harga_1 ?? 0);
-            $harga_minimal = (float) ($tmp->harga_minimal ?? 0);
-            $subtotal = $this->calculate_snapshot_subtotal($tmp, $harga_satuan, 'temp_qty', 'temp_panjang', 'temp_lebar', $harga_minimal);
-            $metadata = $this->build_price_snapshot_metadata($tmp->metadata ?? null, $harga_satuan, $subtotal);
-
-            $detail_data = [
-                'product_id' => $tmp->product_id ?? 0,
-                'qty' => $tmp->temp_qty ?? 0,
-                'diskon' => $tmp->temp_diskon ?? 0,
-                'panjang' => $tmp->temp_panjang ?? 0.0,
-                'lebar' => $tmp->temp_lebar ?? 0.0,
-                'nospk' => $nospk,
-                'harga_id' => $tmp->harga_id ?? null,
-                'dateline_tgl' => $tmp->dateline_tgl ?? date('Y-m-d'),
-                'dateline_jam' => $tmp->dateline_jam ?? date('H:i:s'),
-                'posisi_barang' => 0,
-                'finishing_id' => $tmp->finishing_id ?? null,
-                'approve' => $tmp->approve ?? 0,
-                'lokasi_cetak' => $tmp->lokasi_cetak ?? 0,
-                'metadata' => !empty($metadata) ? json_encode($metadata) : null,
-                'keterangan' => $tmp->keterangan ?? null,
-            ];
-
-            if ($this->db->field_exists('unit_price', 'tbl_pemesanan_detail')) {
-                $detail_data['unit_price'] = $harga_satuan;
+        $this->db->trans_begin();
+        try {
+            $spk = $this->db->query('SELECT * FROM tbl_spk WHERE nospk = ? FOR UPDATE', [$nospk])->row();
+            if (!$spk || ($spk->user_id != $userid && !in_array((int) $this->session->userdata('level'), [1, 17], true))) {
+                throw new DomainException('SPK tidak ditemukan atau bukan milik Anda.');
             }
-            if ($this->db->field_exists('subtotal', 'tbl_pemesanan_detail')) {
-                $detail_data['subtotal'] = (int) round($subtotal);
+            if (!in_array((int) $this->session->userdata('level'), [1, 17], true) && (int) $spk->perusahaan_id !== (int) $perusahaan_id) {
+                throw new DomainException('SPK tidak dimiliki cabang aktif.');
+            }
+            $perusahaan_id = $dataPemesanan['perusahaan_id'] = $spk->perusahaan_id;
+            $detailPemesanan = $this->M_transaksi->tampilTmp($nospk)->result();
+            if (!$detailPemesanan) { throw new DomainException('Tidak ada item produk dalam pesanan.'); }
+            $total_pemesanan = 0;
+
+            // Check if transaction already exists for this SPK
+            $existing = $this->db->get_where('tbl_pemesanan', ['nospk' => $nospk])->row();
+
+            if ($existing && ($existing->status_pembayaran !== 'pending' || $this->db->get_where('tbl_pembayaran', ['nospk' => $nospk])->row())) {
+                throw new DomainException('SPK sudah diproses kasir dan tidak dapat ditimpa dari draft.');
             }
 
-            if ($this->db->insert('tbl_pemesanan_detail', $detail_data)) {
+            if ($existing) {
+                log_message('debug', "LOG PENGECEKAN: SPK $nospk sudah ada. Menjalankan mode UPDATE.");
+                // Update Header
+                $this->db->where('nospk', $nospk);
+                $this->checked_transaction_write($this->db->update('tbl_pemesanan', $dataPemesanan));
+
+                // Clear existing details for re-insertion
+                $this->checked_transaction_write($this->db->delete('tbl_pemesanan_detail', ['nospk' => $nospk]));
+            } else {
+                log_message('debug', "LOG PENGECEKAN: SPK $nospk belum ada. Menjalankan mode INSERT.");
+                // Insert Header
+                $this->checked_transaction_write($this->db->insert('tbl_pemesanan', $dataPemesanan));
+            }
+
+            // Insert/Process Details
+            $item_count = 0;
+            foreach ($detailPemesanan as $tmp) {
+                $harga_satuan = $this->resolve_detail_unit_price($tmp);
+                $harga_minimal = (float) ($tmp->harga_minimal ?? 0);
+                $snapshot = $this->decode_metadata_array($tmp->metadata ?? null);
+                $subtotal = isset($snapshot['subtotal']) && is_numeric($snapshot['subtotal'])
+                    ? (float) $snapshot['subtotal']
+                    : $this->calculate_snapshot_subtotal($tmp, $harga_satuan, 'temp_qty', 'temp_panjang', 'temp_lebar', $harga_minimal);
+                $metadata = $this->build_price_snapshot_metadata($tmp->metadata ?? null, $harga_satuan, $subtotal);
+
+                $detail_data = [
+                    'product_id' => $tmp->product_id ?? 0,
+                    'qty' => $tmp->temp_qty ?? 0,
+                    'diskon' => $tmp->temp_diskon ?? 0,
+                    'panjang' => $tmp->temp_panjang ?? 0.0,
+                    'lebar' => $tmp->temp_lebar ?? 0.0,
+                    'nospk' => $nospk,
+                    'harga_id' => $tmp->harga_id ?? null,
+                    'dateline_tgl' => $tmp->dateline_tgl ?? date('Y-m-d'),
+                    'dateline_jam' => $tmp->dateline_jam ?? date('H:i:s'),
+                    'posisi_barang' => 0,
+                    'finishing_id' => $tmp->finishing_id ?? null,
+                    'approve' => $tmp->approve ?? 0,
+                    'lokasi_cetak' => $tmp->lokasi_cetak ?? 0,
+                ];
+
+                if ($this->db->field_exists('metadata', 'tbl_pemesanan_detail') && !empty($metadata)) {
+                    $detail_data['metadata'] = json_encode($metadata);
+                }
+                if ($this->db->field_exists('keterangan', 'tbl_pemesanan_detail')) {
+                    $detail_data['keterangan'] = $tmp->keterangan ?? null;
+                }
+                if ($this->db->field_exists('unit_price', 'tbl_pemesanan_detail')) {
+                    $detail_data['unit_price'] = $harga_satuan;
+                }
+                if ($this->db->field_exists('subtotal', 'tbl_pemesanan_detail')) {
+                    $detail_data['subtotal'] = (int) round($subtotal);
+                }
+
+                $this->checked_transaction_write($this->db->insert('tbl_pemesanan_detail', $detail_data));
                 $item_count++;
+                $total_pemesanan += $subtotal;
             }
-        }
-        error_log("LOG PROSES: Berhasil memproses $item_count item untuk SPK $nospk.");
+            log_message('debug', "LOG PROSES: Berhasil memproses $item_count item untuk SPK $nospk.");
 
-        $this->db->trans_complete();
+            if ($dataPemesanan['id_jenis_transaksi'] == '2') {
+                $this->load->model('M_pembayaran');
+                $this->checked_transaction_write($this->M_pembayaran->insertDetailDanProduksi($nospk, $perusahaan_id));
+                $this->checked_transaction_write($this->db->update('tbl_pemesanan', ['status_pembayaran' => 'paid'], ['nospk' => $nospk]));
+            }
+            $this->checked_transaction_write($this->M_transaksi->deleteTmp($nospk));
+            $this->checked_transaction_write($this->db->trans_status());
+            $this->checked_transaction_write($this->db->trans_commit());
+        } catch (Throwable $e) {
+            $this->db->trans_rollback();
+            log_message('error', 'Save order: ' . $e->getMessage());
+            $this->session->set_flashdata('error', $e instanceof DomainException ? $e->getMessage() : 'Gagal memproses pesanan. Perubahan dibatalkan.');
+            redirect('transaksi/createspk');
+            return;
+        }
 
         // 6. Response & Finalization
         if ($this->db->trans_status() === FALSE) {
             $error = $this->db->error();
-            error_log("ADD_PEMESANAN FATAL: Transaction failed! Message: " . $error['message']);
+            log_message('debug', "ADD_PEMESANAN FATAL: Transaction failed! Message: " . $error['message']);
             $this->session->set_flashdata('error', 'Gagal memproses pemesanan. Database error: ' . $error['message']);
         } else {
             log_activity($userid, $action, $module, $nospk);
@@ -1764,7 +1823,6 @@ class Transaksi extends MY_Controller
                 'item_count' => $item_count
             ]), 'WRITE');
 
-            $this->M_transaksi->deleteTmp($nospk);
 
             // --- KIRIM WA OTOMATIS (BOOKING) ---
             $konsumen = $this->db->get_where('tbl_konsumen', ['konsumen_id' => $konsumen_id])->row();
@@ -1777,10 +1835,11 @@ class Transaksi extends MY_Controller
                 $wa_msg .= "--------------------------------\n";
 
                 foreach ($detailPemesanan as $tmp) {
-                    $harga_satuan = $tmp->harga_1;
-                    $subtotal = ($tmp->temp_panjang != 0 && $tmp->temp_lebar != 0)
-                        ? $tmp->temp_qty * $tmp->temp_panjang * $tmp->temp_lebar * $harga_satuan
-                        : $tmp->temp_qty * $harga_satuan;
+                    $harga_satuan = $this->resolve_detail_unit_price($tmp);
+                    $snapshot = $this->decode_metadata_array($tmp->metadata ?? null);
+                    $subtotal = isset($snapshot['subtotal']) && is_numeric($snapshot['subtotal'])
+                        ? (float) $snapshot['subtotal']
+                        : $this->calculate_snapshot_subtotal($tmp, $harga_satuan, 'temp_qty', 'temp_panjang', 'temp_lebar', $tmp->harga_minimal ?? 0);
 
                     $wa_msg .= $tmp->detail_product . " (x" . $tmp->temp_qty . ") - Rp " . number_format($subtotal, 0, ',', '.') . "\n";
                 }
@@ -1798,19 +1857,11 @@ class Transaksi extends MY_Controller
             // MARKETPLACE BYPASS LOGIC (LEWATI KASIR)
             // ==========================================
             if ($dataPemesanan['id_jenis_transaksi'] == '2') {
-                $this->load->model('M_pembayaran');
 
-                // 1. Jalankan sinkronisasi ke antrian produksi
-                $this->M_pembayaran->insertDetailDanProduksi($nospk, $perusahaan_id);
-
-                // 2. Tandai sebagai Paid agar tidak muncul di kasir
-                $this->db->where('nospk', $nospk);
-                $this->db->update('tbl_pemesanan', ['status_pembayaran' => 'paid']);
-
-                error_log("ADD_PEMESANAN BYPASS: SPK $nospk Marketplace dikirim ke Produksi.");
+                log_message('debug', "ADD_PEMESANAN BYPASS: SPK $nospk Marketplace dikirim ke Produksi.");
                 $this->session->set_flashdata('success', 'Pesanan Marketplace ' . $nospk . ' berhasil terkirim ke PRODUKSI.');
             } else {
-                error_log("ADD_PEMESANAN SUCCESS: SPK $nospk berhasil dikirim ke kasir.");
+                log_message('debug', "ADD_PEMESANAN SUCCESS: SPK $nospk berhasil dikirim ke kasir.");
                 $this->session->set_flashdata('success', 'Pemesanan SPK ' . $nospk . ' berhasil dikirim ke kasir.');
             }
         }
@@ -2240,8 +2291,12 @@ class Transaksi extends MY_Controller
         }
         $data = $this->_get_common_data('Proses Pembayaran SPK');
         $data['nospk'] = $nospk;
-        $data['getdata'] = $this->M_transaksi->getDetailPemesanan()->row_array();
-        $data['getdetail'] = $this->M_transaksi->getDetail()->result();
+        $data['getdata'] = $this->M_transaksi->getDetailPemesanan($nospk)->row_array();
+        $data['getdetail'] = $this->M_transaksi->getDetail($nospk)->result();
+        foreach ($data['getdetail'] as $item) {
+            $item->harga_1 = $this->resolve_detail_unit_price($item);
+            $item->subtotal = $this->resolve_detail_subtotal($item, $item->harga_1);
+        }
         $data['rekening'] = $this->db->get('tbl_rekening')->result();
         $data['ewallet'] = $this->db->get('tbl_ewallet')->result();
         $data['edc'] = $this->db->get('tbl_mesin_edc')->result();
@@ -2281,16 +2336,54 @@ class Transaksi extends MY_Controller
 
         $this->load->library('ciqrcode');
 
-        $result = $this->M_pembayaran->prosesTransaksi($post, $perusahaan, $userid);
-        log_activity($userid, $action, $module, $post['nospk']);
-
-        // [AUDIT LOG]
-        $this->_log_manual("Kasir: Pembayaran SPK #" . $post['nospk'], json_encode([
-            'grandtotal' => $post['grandtotal'],
-            'metode' => $post['id_jenis_transaksi']
-        ]), 'WRITE');
-
+        try {
+            if (!is_array($post) || !is_string($post['nospk'] ?? null) || trim($post['nospk']) === '') {
+                throw new DomainException('Nomor SPK tidak valid.');
+            }
+            $payment_fields = ['cash' => 'bayar_tunai', 'transfer' => 'bayar_transfer', 'edc' => 'bayar_debit',
+                'ewallet' => 'bayar_ewallet', 'qris' => 'bayar_qris', 'piutang' => 'bayar_dp'];
+            if (!is_string($post['metode'] ?? null) || !isset($payment_fields[$post['metode']])) {
+                throw new DomainException('Metode pembayaran tidak valid.');
+            }
+            foreach ($payment_fields as $method => $field) {
+                if ($method !== $post['metode']) { $post[$field] = 0; }
+            }
+            foreach (['grandtotal', 'diskon', 'ongkir', 'bayar_tunai', 'bayar_transfer', 'bayar_debit', 'bayar_ewallet', 'bayar_dp', 'bayar_qris'] as $field) {
+                $value = $post[$field] ?? ($field === 'grandtotal' ? null : 0);
+                if ($value === '') { $value = 0; }
+                if (!is_scalar($value) || !preg_match('/^(?:Rp\s*)?[0-9]+(?:[.,][0-9]+)*$/i', trim((string) $value))) {
+                    throw new DomainException('Nilai pembayaran, diskon, atau ongkir tidak valid.');
+                }
+            }
+            $order = $this->db->get_where('tbl_pemesanan', ['nospk' => $post['nospk']])->row();
+            if (!$order) { throw new DomainException('Data SPK tidak ditemukan.'); }
+            if (!in_array((int) $this->session->userdata('level'), [1, 17], true) &&
+                (int) $order->perusahaan_id !== (int) $this->session->userdata('perusahaan_id')) {
+                throw new DomainException('SPK tidak dimiliki cabang aktif.');
+            }
+            $perusahaan = $order->perusahaan_id;
+            $post['konsumen_id'] = $order->konsumen_id;
+            $result = $this->M_pembayaran->prosesTransaksi($post, $perusahaan, $userid);
+            if (!is_array($result) || !isset($result['status'], $result['message'])) {
+                throw new RuntimeException('Respons proses pembayaran tidak valid.');
+            }
+        } catch (Throwable $e) {
+            $this->db->trans_rollback();
+            log_message('error', 'Cashier payment: ' . $e->getMessage());
+            $this->session->set_flashdata('error', $e instanceof DomainException ? $e->getMessage() : 'Gagal memproses pembayaran.');
+            redirect('transaksi/transaksi_belumbayar');
+            return;
+        }
         if ($result['status'] == 'success') {
+            log_activity($userid, $action, $module, $post['nospk']);
+
+            // [AUDIT LOG]
+            $this->_log_manual("Kasir: Pembayaran SPK #" . $post['nospk'], json_encode([
+                'grandtotal' => $post['grandtotal'],
+                'metode' => $post['id_jenis_transaksi'] ?? null
+            ]), 'WRITE');
+
+
             // --- KIRIM WA OTOMATIS (PEMBAYARAN) ---
             $nospk = $post['nospk'];
             $konsumen_id = $post['konsumen_id'];
@@ -2412,11 +2505,33 @@ class Transaksi extends MY_Controller
         $this->load_admin_view('admin/transaksi/manual', $data);
     }
 
+    private function validate_manual_input(array $post)
+    {
+        if (empty($post['konsumen_id']) || !is_array($post['products'] ?? null) || !$post['products']) {
+            throw new DomainException('Konsumen dan detail produk wajib diisi.');
+        }
+        foreach ($post['products'] as $item) {
+            if (!is_array($item) || !is_scalar($item['product_id'] ?? null) || (string) $item['product_id'] === '' ||
+                !is_numeric($item['jumlah'] ?? null) || !is_finite((float) $item['jumlah']) || (float) $item['jumlah'] <= 0 ||
+                !is_numeric($item['harga_satuan'] ?? null) || !is_finite((float) $item['harga_satuan']) || (float) $item['harga_satuan'] < 0 ||
+                !is_finite((float) $item['jumlah'] * (float) $item['harga_satuan'])) {
+                throw new DomainException('Produk, quantity, atau harga satuan transaksi manual tidak valid.');
+            }
+        }
+        $date = $post['tanggal_transaksi'] ?? null;
+        $parsed = is_string($date) ? DateTime::createFromFormat('!Y-m-d', $date) : false;
+        if (!$parsed || $parsed->format('Y-m-d') !== $date) { throw new DomainException('Tanggal transaksi tidak valid.'); }
+        if (!in_array($post['metode_bayar'] ?? null, ['cash', 'tunai', 'transfer', 'debit', 'kartu_kredit', 'ewallet', 'piutang', 'lainnya'], true)) {
+            throw new DomainException('Metode pembayaran tidak valid.');
+        }
+    }
+
     public function simpan_manual()
     {
         $this->load->model('Penjualan_manual_model', 'penjualan');
         try {
             $post = $this->input->post();
+            $this->validate_manual_input($post);
             if (empty($post['products']))
                 throw new Exception('Detail produk tidak boleh kosong.');
             if (empty($post['konsumen_id']))
@@ -2433,7 +2548,8 @@ class Transaksi extends MY_Controller
             } else {
                 throw new Exception('Gagal menyimpan ke database.');
             }
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
+            $this->db->trans_rollback();
             echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
         }
     }
@@ -2464,6 +2580,7 @@ class Transaksi extends MY_Controller
         if (!$transaction) {
             $this->session->set_flashdata('error', 'Transaksi tidak ditemukan.');
             redirect('transaksi/manual_list');
+            return;
         }
 
         // View expects $transaction as array
@@ -2556,6 +2673,7 @@ class Transaksi extends MY_Controller
             }
             $this->session->set_flashdata('error', 'No SPK tidak valid atau link kadaluarsa.');
             redirect('transaksi/transaksi_belumbayar');
+            return;
         }
 
         // Check if SPK exists
@@ -2567,6 +2685,7 @@ class Transaksi extends MY_Controller
             }
             $this->session->set_flashdata('error', 'Data SPK #' . $nospk . ' tidak ditemukan.');
             redirect('transaksi/transaksi_belumbayar');
+            return;
         }
 
         // Perform deletion
@@ -3112,107 +3231,66 @@ class Transaksi extends MY_Controller
      */
     public function edit_pending_spk($nospk = null)
     {
-        // Handle $nospk from URL or POST
-        if (!$nospk) {
-            $nospk = $this->input->post('nospk', true);
-        }
-
-        if (!$nospk) {
-            if ($this->input->is_ajax_request()) {
-                echo json_encode(['status' => 'error', 'message' => 'No SPK tidak valid.']);
-                return;
+        $nospk = $nospk ?: $this->input->post('nospk', true);
+        $started = false;
+        $this->output->set_content_type($this->input->is_ajax_request() ? 'application/json' : 'text/html');
+        try {
+            if (!is_string($nospk) || $nospk === '') { throw new DomainException('No SPK tidak valid.'); }
+            $user_id = $this->session->userdata('id');
+            $this->checked_transaction_write($this->db->trans_begin()); $started = true;
+            $order = $this->db->query('SELECT * FROM tbl_pemesanan WHERE nospk = ? FOR UPDATE', [$nospk])->row();
+            if (!$order) { throw new DomainException('Data pemesanan tidak ditemukan.'); }
+            if (!in_array((int) $this->session->userdata('level'), [1, 17], true) &&
+                ($order->deskprint_id != $user_id || (int) $order->perusahaan_id !== (int) $this->session->userdata('perusahaan_id'))) {
+                throw new DomainException('Anda hanya dapat menarik SPK milik Anda pada cabang aktif.');
             }
-            $this->session->set_flashdata('error', 'No SPK tidak valid.');
-            redirect('transaksi/transaksi_belumbayar');
-        }
-
-        $userId = $this->session->userdata('id');
-        $perusahaanId = $this->session->userdata('perusahaan_id');
-
-        // 1. Check if SPK exists and its payment status
-        $pemesanan = $this->db->get_where('tbl_pemesanan', ['nospk' => $nospk])->row();
-
-        if (!$pemesanan) {
-            if ($this->input->is_ajax_request()) {
-                echo json_encode(['status' => 'error', 'message' => 'Data pemesanan tidak ditemukan.']);
-                return;
+            if ($order->status_pembayaran !== 'pending' || $this->db->get_where('tbl_pembayaran', ['nospk' => $nospk])->row()) {
+                throw new DomainException('SPK sudah diproses kasir dan tidak dapat ditarik kembali.');
             }
-            $this->session->set_flashdata('error', 'Data pemesanan tidak ditemukan.');
-            redirect('transaksi/transaksi_belumbayar');
-        }
-
-        // --- NEW OWNERSHIP CHECK ---
-        $userLevel = $this->session->userdata('level');
-        // Only allow the original creator OR Admin (1) OR Owner (17)
-        if ($pemesanan->deskprint_id != $userId && !in_array($userLevel, [1, 17])) {
-            if ($this->input->is_ajax_request()) {
-                echo json_encode(['status' => 'error', 'message' => 'Maaf, Anda hanya dapat menarik kembali SPK yang Anda buat sendiri.']);
-                return;
+            $details = $this->db->get_where('tbl_pemesanan_detail', ['nospk' => $nospk])->result();
+            if (!$details) { throw new DomainException('Detail pemesanan tidak ditemukan.'); }
+            $this->checked_transaction_write($this->db->delete('tbl_temp_transaksi', ['no_spk' => $nospk]));
+            foreach ($details as $item) {
+                $metadata = $this->decode_metadata_array($item->metadata ?? null);
+                foreach (['unit_price', 'subtotal'] as $field) {
+                    if (!isset($metadata[$field]) && isset($item->$field) && is_numeric($item->$field)) {
+                        $metadata[$field] = (float) $item->$field;
+                    }
+                }
+                $data = ['product_id' => $item->product_id, 'no_spk' => $nospk, 'temp_qty' => $item->qty,
+                    'temp_panjang' => $item->panjang, 'temp_lebar' => $item->lebar, 'harga_id' => $item->harga_id,
+                    'approve' => $item->approve, 'lokasi_cetak' => $item->lokasi_cetak,
+                    'perusahaan_id' => $order->perusahaan_id, 'user_id' => $user_id,
+                    'keterangan' => $item->keterangan ?? null, 'metadata' => $metadata ? json_encode($metadata) : null];
+                foreach (['dateline_tgl', 'dateline_jam', 'finishing_id'] as $field) {
+                    if ($this->db->field_exists($field, 'tbl_temp_transaksi') && isset($item->$field)) { $data[$field] = $item->$field; }
+                }
+                if ($this->db->field_exists('temp_diskon', 'tbl_temp_transaksi')) { $data['temp_diskon'] = $item->diskon ?? 0; }
+                $this->checked_transaction_write($this->db->insert('tbl_temp_transaksi', $data));
             }
-            $this->session->set_flashdata('error', 'Maaf, Anda hanya dapat menarik kembali SPK yang Anda buat sendiri.');
-            redirect('transaksi/transaksi_belumbayar');
+            $this->checked_transaction_write($this->db->delete('tbl_pemesanan_detail', ['nospk' => $nospk]));
+            $this->checked_transaction_write($this->db->delete('tbl_pemesanan', ['nospk' => $nospk]));
+            $this->checked_transaction_write($this->db->trans_status());
+            $this->checked_transaction_write($this->db->trans_commit()); $started = false;
+        } catch (Throwable $e) {
+            if ($started) { $this->db->trans_rollback(); }
+            log_message('error', 'Withdraw order: ' . $e->getMessage());
+            $message = $e instanceof DomainException ? $e->getMessage() : 'Gagal menarik SPK. Perubahan dibatalkan.';
+            if ($this->input->is_ajax_request()) { echo json_encode(['status' => 'error', 'message' => $message]); return; }
+            $this->session->set_flashdata('error', $message);
+            redirect('transaksi/transaksi_belumbayar'); return;
+        }
+        if (function_exists('log_activity')) {
+            try { log_activity($user_id, 'Tarik_Balik_SPK', 'Deskprint', $nospk); }
+            catch (Throwable $e) { log_message('error', 'Withdrawal audit: ' . $e->getMessage()); }
+        }
+        $message = 'SPK #' . $nospk . ' berhasil ditarik kembali ke draft.';
+        if ($this->input->is_ajax_request()) {
+            echo json_encode(['status' => 'success', 'message' => $message, 'redirect' => base_url('transaksi/createspk/' . $nospk)]);
             return;
         }
-        // ---------------------------
-
-        // IMPORTANT: Prevent editing if already paid (partial or full)
-        if ($pemesanan->status_pembayaran != 'pending') {
-            if ($this->input->is_ajax_request()) {
-                echo json_encode(['status' => 'error', 'message' => 'Maaf, SPK ini sudah diproses pembayarannya oleh kasir dan tidak dapat diedit kembali.']);
-                return;
-            }
-            $this->session->set_flashdata('error', 'Maaf, SPK ini sudah diproses pembayarannya oleh kasir dan tidak dapat diedit kembali.');
-            redirect('transaksi/transaksi_belumbayar');
-        }
-
-        // 2. Start Transaction to move data back to Temp
-        $this->db->trans_start();
-
-        // Fetch current details
-        $details = $this->db->get_where('tbl_pemesanan_detail', ['nospk' => $nospk])->result();
-
-        // Clear any existing temp data for this SPK just in case
-        $this->db->delete('tbl_temp_transaksi', ['no_spk' => $nospk]);
-
-        // Insert back to temp
-        foreach ($details as $d) {
-            $temp_data = [
-                'product_id' => $d->product_id,
-                'no_spk' => $nospk,
-                'temp_qty' => $d->qty,
-                // 'temp_diskon'   => $d->diskon, // Optional: ensure these exist in tbl_temp_transaksi before enabling
-                'temp_panjang' => $d->panjang,
-                'temp_lebar' => $d->lebar,
-                'harga_id' => $d->harga_id,
-                // 'dateline_tgl'  => $d->dateline_tgl,
-                // 'dateline_jam'  => $d->dateline_jam,
-                // 'finishing_id'  => $d->finishing_id,
-                'approve' => $d->approve,
-                'lokasi_cetak' => $d->lokasi_cetak,
-                'perusahaan_id' => $perusahaanId,
-                'user_id' => $userId,
-                'keterangan' => $d->keterangan ?? null,
-            ];
-            $this->db->insert('tbl_temp_transaksi', $temp_data);
-        }
-
-        // 3. Remove from final tables (it becomes a draft again)
-        $this->db->delete('tbl_pemesanan_detail', ['nospk' => $nospk]);
-        $this->db->delete('tbl_pemesanan', ['nospk' => $nospk]);
-
-        $this->db->trans_complete();
-
-        if ($this->db->trans_status() === FALSE) {
-            $this->session->set_flashdata('error', 'Gagal memproses penarikan SPK.');
-            redirect('transaksi/transaksi_belumbayar');
-        } else {
-            // Log this action
-            log_activity($userId, 'Tarik_Balik_SPK', 'Deskprint', $nospk);
-
-            $this->session->set_flashdata('success', 'SPK #' . $nospk . ' berhasil ditarik kembali ke mode draft para ahli.');
-            $this->session->set_flashdata('success', 'SPK #' . $nospk . ' berhasil ditarik kembali ke mode draft para ahli.');
-            redirect('transaksi/createspk/' . $nospk);
-        }
+        $this->session->set_flashdata('success', $message);
+        redirect('transaksi/createspk/' . $nospk);
     }
 
     function step_satu()
@@ -3232,57 +3310,66 @@ class Transaksi extends MY_Controller
         $konsumen = $this->input->post('konsumen_id', true);
         $metode_pesan = $this->input->post('id_jenis_transaksi', true);
 
-        // logic Khusus Marketplace: Buat Konsumen Otomatis (Status: 0 / Inactive untuk memisahkan dari database utama)
-        if ($metode_pesan == 2) {
-            $m_nama = $this->input->post('m_nama_konsumen', true);
-            $m_alamat = $this->input->post('m_alamat_konsumen', true);
+        $started = false;
+        try {
+            if ($userId <= 0 || $perusahaan <= 0 || !is_scalar($metode_pesan) || !ctype_digit((string) $metode_pesan) || (int) $metode_pesan <= 0) {
+                throw new DomainException('Petugas, cabang, atau jenis transaksi tidak valid.');
+            }
+            $this->checked_transaction_write($this->db->trans_begin()); $started = true;
+            // Serialize number generation for this user, including the first SPK of a month.
+            $user = $this->db->query('SELECT user_id FROM users WHERE user_id = ? FOR UPDATE', [$userId])->row();
+            if (!$user) { throw new DomainException('Petugas tidak ditemukan.'); }
 
-            $data_m_konsumen = [
-                'konsumen_nama' => $m_nama,
-                'konsumen_alamat' => $m_alamat,
-                'konsumen_nohp' => 'MARKETPLACE',
-                'status' => '0' // Default status
+            // logic Khusus Marketplace: Buat Konsumen Otomatis (Status: 0 / Inactive untuk memisahkan dari database utama)
+            if ($metode_pesan == 2) {
+                $m_nama = $this->input->post('m_nama_konsumen', true);
+                $m_alamat = $this->input->post('m_alamat_konsumen', true);
+
+                if (!is_string($m_nama) || trim($m_nama) === '') { throw new DomainException('Nama konsumen marketplace wajib diisi.'); }
+                $data_m_konsumen = [
+                    'konsumen_nama' => $m_nama,
+                    'konsumen_alamat' => $m_alamat,
+                    'konsumen_nohp' => 'MARKETPLACE',
+                    'status' => '0' // Default status
+                ];
+                $this->checked_transaction_write($this->db->insert('tbl_konsumen', $data_m_konsumen));
+                $konsumen = $this->db->insert_id();
+            }
+
+            if (!is_scalar($konsumen) || !ctype_digit((string) $konsumen) || (int) $konsumen <= 0) { throw new DomainException('Konsumen wajib dipilih.'); }
+
+            // Ambil nomor urut SPK terakhir untuk bulan & cabang ini, lalu increment
+            $lastUrut = $this->M_transaksi->getNoSPK($userId, $perusahaan)->row_array();
+
+            // Handle first-time SPK in the current month (null result)
+            $currentUrut = isset($lastUrut['no_urut_spk']) ? (int) $lastUrut['no_urut_spk'] : 0;
+            $noUrutSPK = $currentUrut + 1;
+
+            // Generate nospk format: [Branch]-[User]-[MMYY]-[Sequence]
+            $newSPK = $perusahaan . '-' . $userId . '-' . date('my') . '-' . $noUrutSPK;
+
+            // Data untuk insert SPK
+            $addSPK = [
+                'nospk' => $newSPK,
+                'user_id' => $userId,
+                'no_urut_spk' => $noUrutSPK,
+                'konsumen_id' => $konsumen,
+                'metode_pesan' => $this->input->post('id_jenis_transaksi', true),
+                'id_marketplace' => $this->input->post('marketplace_id', true) ?: 0,
+                'resi_marketplace' => $this->input->post('resi_marketplace', true) ?: '-',
+                'id_pengiriman' => $this->input->post('id_pengiriman', true) ?: 0,
+                'batch_pengiriman' => $this->input->post('batch_pengiriman', true) ?: '',
+                'perusahaan_id' => $perusahaan,
             ];
-            $this->db->insert('tbl_konsumen', $data_m_konsumen);
-            $konsumen = $this->db->insert_id();
-        }
 
-        // Ambil nomor urut SPK terakhir untuk bulan & cabang ini, lalu increment
-        $lastUrut = $this->M_transaksi->getNoSPK($userId, $perusahaan)->row_array();
-
-        // Handle first-time SPK in the current month (null result)
-        $currentUrut = isset($lastUrut['no_urut_spk']) ? (int) $lastUrut['no_urut_spk'] : 0;
-        $noUrutSPK = $currentUrut + 1;
-
-        // Generate nospk format: [Branch]-[User]-[MMYY]-[Sequence]
-        $newSPK = $perusahaan . '-' . $userId . '-' . date('my') . '-' . $noUrutSPK;
-
-        // Data untuk insert SPK
-        $addSPK = [
-            'nospk' => $newSPK,
-            'user_id' => $userId,
-            'no_urut_spk' => $noUrutSPK,
-            'konsumen_id' => $konsumen,
-            'metode_pesan' => $this->input->post('id_jenis_transaksi', true),
-            'id_marketplace' => $this->input->post('marketplace_id', true) ?: 0,
-            'resi_marketplace' => $this->input->post('resi_marketplace', true) ?: '-',
-            'id_pengiriman' => $this->input->post('id_pengiriman', true) ?: 0,
-            'batch_pengiriman' => $this->input->post('batch_pengiriman', true) ?: '',
-            'perusahaan_id' => $perusahaan,
-        ];
-
-        // Simpan SPK
-        if ($this->db->insert('tbl_spk', $addSPK)) {
-            $response = [
-                'status' => 'success',
-                'message' => 'SPK berhasil dibuat',
-                'nospk' => $newSPK
-            ];
-        } else {
-            $response = [
-                'status' => 'error',
-                'message' => 'Gagal membuat SPK'
-            ];
+            $this->checked_transaction_write($this->db->insert('tbl_spk', $addSPK));
+            $this->checked_transaction_write($this->db->trans_status());
+            $this->checked_transaction_write($this->db->trans_commit()); $started = false;
+            $response = ['status' => 'success', 'message' => 'SPK berhasil dibuat', 'nospk' => $newSPK];
+        } catch (Throwable $e) {
+            if ($started) { $this->db->trans_rollback(); }
+            log_message('error', 'Create SPK: ' . $e->getMessage());
+            $response = ['status' => 'error', 'message' => $e instanceof DomainException ? $e->getMessage() : 'Gagal membuat SPK. Perubahan dibatalkan.'];
         }
 
         // Return JSON response
@@ -3372,261 +3459,159 @@ class Transaksi extends MY_Controller
         echo json_encode(['success' => true, 'data' => $details]);
     }
 
-    public function process_payment()
+    private function checked_transaction_write($result)
     {
-        // Check if request is AJAX
+        if (!$result) {
+            $err = $this->db->error();
+            $msg = !empty($err['message']) ? 'Gagal menyimpan database: ' . $err['message'] : 'Gagal menyimpan perubahan database.';
+            throw new RuntimeException($msg);
+        }
+    }
+
+    private function receivable_payment_input()
+    {
+        $raw_amount = $this->input->post('payment_amount', true);
+        $amount = is_numeric($raw_amount) ? round((float) $raw_amount, 2) : 0;
+        $consumer = $this->input->post('konsumen_id', true);
+        $method = $this->input->post('payment_method', true);
+        $methods = ['cash' => 'tunai', 'transfer' => 'transfer', 'qris' => 'ewallet', 'edc' => 'debit'];
+        $date = $this->input->post('payment_date', true) ?: date('Y-m-d');
+        if (!is_finite($amount) || $amount <= 0 || !is_scalar($consumer) ||
+            !ctype_digit((string) $consumer) || (int) $consumer <= 0 || !is_string($method) || !isset($methods[$method])) {
+            throw new DomainException('Konsumen, jumlah, atau metode pembayaran tidak valid.');
+        }
+        $parsed = is_string($date) ? DateTime::createFromFormat('!Y-m-d', $date) : false;
+        if (!$parsed || $parsed->format('Y-m-d') !== $date) {
+            throw new DomainException('Tanggal pembayaran tidak valid.');
+        }
+        $data = ['amount' => $amount, 'consumer' => (int) $consumer, 'method' => $methods[$method],
+            'date' => $date . ' ' . date('H:i:s'), 'notes' => $this->input->post('payment_notes', true) ?? '',
+            'bank_id' => null, 'edc_id' => null, 'ewallet_id' => null];
+        foreach (['transfer' => ['bank_id', 'bank_id', 'tbl_rekening', 'id'], 'debit' => ['edc_id', 'edc_id', 'tbl_mesin_edc', 'edc_id'], 'ewallet' => ['ewallet_id', 'wallet_id', 'tbl_ewallet', 'id']] as $db_method => $fields) {
+            if ($data['method'] !== $db_method) { continue; }
+            $id = $this->input->post($fields[1], true);
+            if (!is_scalar($id) || !ctype_digit((string) $id) || (int) $id <= 0) {
+                throw new DomainException('Pilih rekening, mesin EDC, atau e-wallet sesuai metode pembayaran.');
+            }
+            if (!$this->db->get_where($fields[2], [$fields[3] => $id])->row()) {
+                throw new DomainException('Rekening, mesin EDC, atau e-wallet tidak ditemukan.');
+            }
+            $data[$fields[0]] = (int) $id;
+        }
+        if (!is_string($data['notes'])) { throw new DomainException('Catatan pembayaran tidak valid.'); }
+        return $data;
+    }
+
+    private function locked_receivables(array $payment, $nospk = null)
+    {
+        $this->db->select('p.*')->from('tbl_pembayaran p')
+            ->join('tbl_pemesanan pm', 'pm.nospk = p.nospk')->where('pm.konsumen_id', $payment['consumer']);
+        if (!in_array((int) $this->session->userdata('level'), [1, 17], true)) {
+            $branch = (int) $this->session->userdata('perusahaan_id');
+            if ($branch <= 0) { throw new DomainException('Cabang aktif tidak ditemukan.'); }
+            $this->db->where('pm.perusahaan_id', $branch)->where('p.perusahaan_id', $branch);
+        }
+        if ($nospk !== null) { $this->db->where('p.nospk', $nospk); }
+        else { $this->db->where('(p.total_tagihan - p.total_bayar) >', 0); }
+        $sql = $this->db->order_by('pm.created_at', 'ASC')->order_by('p.pembayaran_id', 'ASC')->get_compiled_select();
+        $result = $this->db->query($sql . ' FOR UPDATE');
+        if (!$result) { throw new RuntimeException('Gagal membaca data pembayaran.'); }
+        $rows = $result->result();
+        $seen = [];
+        foreach ($rows as $row) {
+            if (isset($seen[$row->nospk])) { throw new DomainException('Terdapat data pembayaran ganda untuk SPK ini. Periksa data sebelum melanjutkan.'); }
+            $seen[$row->nospk] = true;
+        }
+        return $rows;
+    }
+
+    private function apply_receivable_payment($debt, $amount, array $payment, $collective = false)
+    {
+        $new_total = round((float) $debt->total_bayar + $amount, 2);
+        $paid = $new_total >= round((float) $debt->total_tagihan, 2);
+        $this->checked_transaction_write($this->db->update('tbl_pembayaran', [
+            'total_bayar' => $new_total, 'status_lunas' => $paid ? '1' : '0', 'updated_at' => date('Y-m-d H:i:s')
+        ], ['pembayaran_id' => $debt->pembayaran_id]));
+        if ($paid) {
+            $this->checked_transaction_write($this->db->update('tbl_pemesanan', ['status_pembayaran' => 'paid'], ['nospk' => $debt->nospk]));
+        }
+        $notes = $payment['notes'] . ($collective ? ' (Bayar Kolektif)' : '');
+        $this->checked_transaction_write($this->db->insert('tbl_pembayaran_detail', [
+            'pembayaran_id' => $debt->pembayaran_id, 'metode' => $payment['method'], 'jumlah' => $amount,
+            'bank_id' => $payment['bank_id'], 'edc_id' => $payment['edc_id'], 'ewallet_id' => $payment['ewallet_id'],
+            'keterangan' => $notes, 'created_at' => $payment['date']
+        ]));
+        $piutang = $this->db->get_where('tbl_piutang', ['nospk' => $debt->nospk])->row();
+        if ($piutang) {
+            $pi_total = round((float) $piutang->total_bayar + $amount, 2);
+            $this->checked_transaction_write($this->db->update('tbl_piutang', [
+                'total_bayar' => $pi_total, 'status' => $pi_total >= round((float) $piutang->total_tagihan, 2) ? 'LUNAS' : 'SEBAGIAN',
+                'updated_at' => date('Y-m-d H:i:s')
+            ], ['piutang_id' => $piutang->piutang_id]));
+            $this->checked_transaction_write($this->db->insert('tbl_piutang_pembayaran', [
+                'piutang_id' => $piutang->piutang_id, 'tanggal_bayar' => $payment['date'], 'jumlah_bayar' => $amount,
+                'metode_bayar' => $payment['method'], 'rekening_id' => $payment['bank_id'] ?? 0,
+                'edc_id' => $payment['edc_id'] ?? 0, 'ewallet_id' => $payment['ewallet_id'] ?? 0, 'keterangan' => $notes
+            ]));
+        }
+    }
+
+    private function process_receivable_payment($collective)
+    {
+        $this->output->set_content_type('application/json');
         if (!$this->input->is_ajax_request()) {
             $this->output->set_status_header(400);
             echo json_encode(['success' => false, 'message' => 'Invalid request method']);
             return;
         }
-
-        // Get POST data
-        $konsumen_id = $this->input->post('konsumen_id', true);
-        $nospk = $this->input->post('nospk', true);
-        $payment_amount = $this->input->post('payment_amount', true);
-        $payment_method = $this->input->post('payment_method', true);
-        $payment_date = $this->input->post('payment_date', true);
-        $payment_notes = $this->input->post('payment_notes', true);
-        $bank_id = $this->input->post('bank_id', true);
-        $edc_id = $this->input->post('edc_id', true);
-        $wallet_id = $this->input->post('wallet_id', true);
-
-        // Validate input
-        if (empty($konsumen_id) || empty($nospk) || empty($payment_amount) || empty($payment_method) || empty($payment_date)) {
-            echo json_encode(['success' => false, 'message' => 'Semua field wajib diisi untuk SPK: ' . $nospk]);
+        $started = false;
+        try {
+            $payment = $this->receivable_payment_input();
+            $nospk = $collective ? null : $this->input->post('nospk', true);
+            if (!$collective && (!is_string($nospk) || trim($nospk) === '')) {
+                throw new DomainException('Nomor SPK wajib diisi.');
+            }
+            $this->checked_transaction_write($this->db->trans_begin());
+            $started = true;
+            $debts = $this->locked_receivables($payment, $nospk);
+            if (!$debts) { throw new DomainException('Data piutang tidak ditemukan untuk konsumen dan cabang ini.'); }
+            $available = 0;
+            foreach ($debts as $debt) { $available += max(0, round((float) $debt->total_tagihan - (float) $debt->total_bayar, 2)); }
+            $available = round($available, 2);
+            if ($payment['amount'] > $available) { throw new DomainException('Jumlah pembayaran melebihi sisa piutang.'); }
+            $remaining = $payment['amount'];
+            foreach ($debts as $debt) {
+                if ($remaining <= 0) { break; }
+                $due = max(0, round((float) $debt->total_tagihan - (float) $debt->total_bayar, 2));
+                $amount = min($remaining, $due);
+                if ($amount <= 0) { continue; }
+                $this->apply_receivable_payment($debt, $amount, $payment, $collective);
+                $remaining = round($remaining - $amount, 2);
+            }
+            $this->checked_transaction_write($this->db->trans_status());
+            $this->checked_transaction_write($this->db->trans_commit());
+            $started = false;
+        } catch (Throwable $e) {
+            if ($started) { $this->db->trans_rollback(); }
+            log_message('error', 'Receivable payment: ' . $e->getMessage());
+            echo json_encode(['success' => false, 'message' => $e instanceof DomainException ? $e->getMessage() : 'Gagal memproses pembayaran. Perubahan dibatalkan.']);
             return;
         }
-
-        try {
-            $this->db->trans_start();
-
-            // 1. Get current payment data from tbl_pembayaran
-            $pembayaran = $this->db->get_where('tbl_pembayaran', ['nospk' => $nospk])->row();
-            if (!$pembayaran) {
-                echo json_encode(['success' => false, 'message' => 'Data pembayaran tidak ditemukan untuk SPK: ' . $nospk]);
-                return;
-            }
-
-            $current_total_bayar = (float) $pembayaran->total_bayar;
-            $total_tagihan = (float) $pembayaran->total_tagihan;
-            $new_total_bayar = $current_total_bayar + $payment_amount;
-
-            if ($new_total_bayar > $total_tagihan + 1) { // +1 for floating point safety
-                echo json_encode(['success' => false, 'message' => 'Jumlah pembayaran melebihi total tagihan.']);
-                return;
-            }
-
-            // 2. Update tbl_pembayaran
-            $status_lunas = ($new_total_bayar >= $total_tagihan - 1) ? '1' : '0';
-            $this->db->where('nospk', $nospk);
-            $this->db->update('tbl_pembayaran', [
-                'total_bayar' => $new_total_bayar,
-                'status_lunas' => $status_lunas,
-                'updated_at' => date('Y-m-d H:i:s')
-            ]);
-
-            // Update tbl_pemesanan status if fully paid
-            if ($status_lunas === '1') {
-                $this->db->where('nospk', $nospk);
-                $this->db->update('tbl_pemesanan', ['status_pembayaran' => 'paid']);
-            }
-
-            // Map payment methods to DB enum
-            $method_map = [
-                'cash' => 'tunai',
-                'transfer' => 'transfer',
-                'qris' => 'ewallet',
-                'edc' => 'debit'
-            ];
-            $db_method = isset($method_map[$payment_method]) ? $method_map[$payment_method] : 'tunai';
-
-            // 3. Insert into tbl_pembayaran_detail
-            $this->db->insert('tbl_pembayaran_detail', [
-                'pembayaran_id' => $pembayaran->pembayaran_id,
-                'metode' => $db_method,
-                'jumlah' => $payment_amount,
-                'bank_id' => ($db_method == 'transfer') ? $bank_id : null,
-                'edc_id' => ($db_method == 'debit') ? $edc_id : null,
-                'ewallet_id' => ($db_method == 'ewallet') ? $wallet_id : null,
-                'keterangan' => $payment_notes,
-                'created_at' => date('Y-m-d H:i:s')
-            ]);
-
-            // 4. Update tbl_piutang if exists
-            $piutang = $this->db->get_where('tbl_piutang', ['nospk' => $nospk])->row();
-            if ($piutang) {
-                $pi_new_total_bayar = (float) $piutang->total_bayar + $payment_amount;
-                $pi_status = ($pi_new_total_bayar >= (float) $piutang->total_tagihan - 1) ? 'LUNAS' : 'SEBAGIAN';
-
-                $this->db->where('nospk', $nospk);
-                $this->db->update('tbl_piutang', [
-                    'total_bayar' => $pi_new_total_bayar,
-                    'status' => $pi_status,
-                    'updated_at' => date('Y-m-d H:i:s')
-                ]);
-
-                // 5. Insert into tbl_piutang_pembayaran
-                $this->db->insert('tbl_piutang_pembayaran', [
-                    'piutang_id' => $piutang->piutang_id,
-                    'tanggal_bayar' => date('Y-m-d H:i:s'),
-                    'jumlah_bayar' => $payment_amount,
-                    'metode_bayar' => $db_method,
-                    'rekening_id' => ($db_method == 'transfer') ? $bank_id : 0,
-                    'edc_id' => ($db_method == 'debit') ? $edc_id : 0,
-                    'ewallet_id' => ($db_method == 'ewallet') ? $wallet_id : 0,
-                    'keterangan' => $payment_notes
-                ]);
-            }
-
-            $this->db->trans_complete();
-
-            if ($this->db->trans_status() === FALSE) {
-                echo json_encode(['success' => false, 'message' => 'Gagal memproses transaksi database.']);
-            } else {
-                // Log activity
-                $user_id = $this->session->userdata('id');
-                // Check if log_activity exists before calling (original code called it)
-                if (function_exists('log_activity')) {
-                    log_activity($user_id, 'Payment_Processed', 'Piutang', $nospk);
-                }
-                echo json_encode(['success' => true, 'message' => 'Pembayaran berhasil diproses untuk SPK: ' . $nospk]);
-            }
-        } catch (Exception $e) {
-            $this->db->trans_rollback();
-            echo json_encode(['success' => false, 'message' => 'Terjadi kesalahan: ' . $e->getMessage()]);
+        if (function_exists('log_activity')) {
+            try { log_activity($this->session->userdata('id'), $collective ? 'Collective_Payment_Processed' : 'Payment_Processed', 'Piutang', $nospk ?? (string) $payment['consumer']); }
+            catch (Throwable $e) { log_message('error', 'Payment audit: ' . $e->getMessage()); }
         }
+        echo json_encode(['success' => true, 'message' => $collective ? 'Pembayaran kolektif berhasil diproses.' : 'Pembayaran berhasil diproses untuk SPK: ' . $nospk]);
+    }
+
+    public function process_payment()
+    {
+        return $this->process_receivable_payment(false);
     }
 
     public function process_payment_collective()
     {
-        // Check if request is AJAX
-        if (!$this->input->is_ajax_request()) {
-            $this->output->set_status_header(400);
-            echo json_encode(['success' => false, 'message' => 'Invalid request method']);
-            return;
-        }
-
-        // Get POST data
-        $konsumen_id = $this->input->post('konsumen_id', true);
-        $payment_amount = (float) $this->input->post('payment_amount', true);
-        $payment_method = $this->input->post('payment_method', true);
-        $payment_notes = $this->input->post('payment_notes', true);
-        $bank_id = $this->input->post('bank_id', true);
-        $edc_id = $this->input->post('edc_id', true);
-        $wallet_id = $this->input->post('wallet_id', true);
-        $payment_date = $this->input->post('payment_date', true) ?: date('Y-m-d');
-
-        // Validate input
-        if (empty($konsumen_id) || empty($payment_amount) || empty($payment_method)) {
-            echo json_encode(['success' => false, 'message' => 'Data pembayaran tidak lengkap.']);
-            return;
-        }
-
-        try {
-            $this->db->trans_start();
-
-            // Get all unpaid debts for this consumer
-            $this->db->select('p.*');
-            $this->db->from('tbl_pembayaran p');
-            $this->db->join('tbl_pemesanan pm', 'pm.nospk = p.nospk');
-            $this->db->where('pm.konsumen_id', $konsumen_id);
-            $this->db->where('(p.total_tagihan - p.total_bayar) > 0.5'); // Use tolerance for floating point
-            $this->db->order_by('pm.created_at', 'ASC'); // Pay oldest first
-            $unpaid_debts = $this->db->get()->result();
-
-            if (empty($unpaid_debts)) {
-                echo json_encode(['success' => false, 'message' => 'Tidak ada piutang yang perlu dibayar untuk konsumen ini.']);
-                return;
-            }
-
-            $remaining_payment = $payment_amount;
-
-            // Map payment methods to DB enum
-            $method_map = [
-                'cash' => 'tunai',
-                'transfer' => 'transfer',
-                'qris' => 'ewallet',
-                'edc' => 'debit'
-            ];
-            $db_method = isset($method_map[$payment_method]) ? $method_map[$payment_method] : 'tunai';
-
-            foreach ($unpaid_debts as $debt) {
-                if ($remaining_payment <= 0.5)
-                    break;
-
-                $sisa_piutang = (float) $debt->total_tagihan - (float) $debt->total_bayar;
-                $pay_on_this = min($remaining_payment, $sisa_piutang);
-
-                $new_total_bayar = (float) $debt->total_bayar + $pay_on_this;
-                $status_lunas = ($new_total_bayar >= (float) $debt->total_tagihan - 1) ? '1' : '0';
-
-                // 1. Update tbl_pembayaran
-                $this->db->where('pembayaran_id', $debt->pembayaran_id);
-                $this->db->update('tbl_pembayaran', [
-                    'total_bayar' => $new_total_bayar,
-                    'status_lunas' => $status_lunas,
-                    'updated_at' => date('Y-m-d H:i:s')
-                ]);
-
-                // 2. Update tbl_pemesanan status if fully paid
-                if ($status_lunas === '1') {
-                    $this->db->where('nospk', $debt->nospk);
-                    $this->db->update('tbl_pemesanan', ['status_pembayaran' => 'paid']);
-                }
-
-                // 3. Insert into tbl_pembayaran_detail
-                $this->db->insert('tbl_pembayaran_detail', [
-                    'pembayaran_id' => $debt->pembayaran_id,
-                    'metode' => $db_method,
-                    'jumlah' => $pay_on_this,
-                    'bank_id' => ($db_method == 'transfer') ? $bank_id : null,
-                    'edc_id' => ($db_method == 'debit') ? $edc_id : null,
-                    'ewallet_id' => ($db_method == 'ewallet') ? $wallet_id : null,
-                    'keterangan' => $payment_notes . " (Bayar Kolektif)",
-                    'created_at' => date('Y-m-d H:i:s')
-                ]);
-
-                // 4. Update tbl_piutang if exists
-                $piutang = $this->db->get_where('tbl_piutang', ['nospk' => $debt->nospk])->row();
-                if ($piutang) {
-                    $pi_new_total_bayar = (float) $piutang->total_bayar + $pay_on_this;
-                    $pi_status = ($pi_new_total_bayar >= (float) $piutang->total_tagihan - 1) ? 'LUNAS' : 'SEBAGIAN';
-
-                    $this->db->where('nospk', $debt->nospk);
-                    $this->db->update('tbl_piutang', [
-                        'total_bayar' => $pi_new_total_bayar,
-                        'status' => $pi_status,
-                        'updated_at' => date('Y-m-d H:i:s')
-                    ]);
-
-                    // 5. Insert into tbl_piutang_pembayaran
-                    $this->db->insert('tbl_piutang_pembayaran', [
-                        'piutang_id' => $piutang->piutang_id,
-                        'tanggal_bayar' => date('Y-m-d H:i:s'),
-                        'jumlah_bayar' => $pay_on_this,
-                        'metode_bayar' => $db_method,
-                        'rekening_id' => ($db_method == 'transfer') ? $bank_id : 0,
-                        'edc_id' => ($db_method == 'debit') ? $edc_id : 0,
-                        'ewallet_id' => ($db_method == 'ewallet') ? $wallet_id : 0,
-                        'keterangan' => $payment_notes . " (Kolektif)"
-                    ]);
-                }
-
-                $remaining_payment -= $pay_on_this;
-            }
-
-            $this->db->trans_complete();
-
-            if ($this->db->trans_status() === FALSE) {
-                echo json_encode(['success' => false, 'message' => 'Gagal memproses transaksi database pembayaran kolektif.']);
-            } else {
-                echo json_encode(['success' => true, 'message' => 'Pembayaran kolektif berhasil diproses.']);
-            }
-        } catch (Exception $e) {
-            $this->db->trans_rollback();
-            echo json_encode(['success' => false, 'message' => 'Terjadi kesalahan: ' . $e->getMessage()]);
-        }
+        return $this->process_receivable_payment(true);
     }
 
     public function update_spk()
@@ -3921,321 +3906,133 @@ class Transaksi extends MY_Controller
         return $params;
     }
 
-    function get_kasir_shift()
+    private function shift_report_branch($branch = null)
     {
-        $this->db->select('ks.*, k.nama_karyawan, k.foto, p.nama_perusahaan');
-        $this->db->from('tbl_kasir_shift ks');
-        $this->db->join('tbl_karyawan k', 'ks.kasir_id = k.id', 'left');
-        $this->db->join('tbl_perusahaan p', 'ks.perusahaan_id = p.id', 'left');
-        $this->db->where('ks.perusahaan_id', $this->session->userdata('perusahaan_id'));
-        $this->db->order_by('ks.id', 'DESC');
-        return $this->db->get()->result();
+        $active = (int) $this->session->userdata('perusahaan_id');
+        if (!in_array((int) $this->session->userdata('level'), [1, 17], true)) { return $active; }
+        return is_scalar($branch) && ctype_digit((string) $branch) && (int) $branch > 0 ? (int) $branch : $active;
     }
 
-    // Fungsi untuk mendapatkan data kasir shift dengan laporan lengkap
-    function get_kasir_shift_report($perusahaan_id = null)
+    private function shift_report_rows($branch, $id = null, array $filters = [])
     {
-        if (!$perusahaan_id) {
-            $perusahaan_id = $this->session->userdata('perusahaan_id');
+        $this->db->select("ks.*, ks.shift_id as id, ks.user_id as kasir_id, ks.jam_open as tanggal_mulai,
+            ks.jam_close as tanggal_selesai, u.perusahaan_id1 as perusahaan_id,
+            COALESCE(k.nama_lengkap, u.username) as nama_karyawan, k.foto, k.email, k.telepon, p.nama_perusahaan,
+            CASE WHEN ks.status = 'open' THEN 'aktif' ELSE 'selesai' END as status", false)
+            ->from('kasir_shift ks')->join('users u', 'u.user_id = ks.user_id')
+            ->join('tbl_karyawan k', 'k.karyawan_id = u.karyawan_id', 'left')
+            ->join('tbl_perusahaan p', 'p.id_perusahaan = u.perusahaan_id1', 'left')
+            ->where('u.perusahaan_id1', $branch);
+        if ($id !== null) { $this->db->where('ks.shift_id', $id); }
+        if (!empty($filters['kasir_id'])) { $this->db->where('ks.user_id', $filters['kasir_id']); }
+        if (!empty($filters['status'])) {
+            $statuses = ['aktif' => 'open', 'selesai' => 'closed', 'open' => 'open', 'closed' => 'closed'];
+            $this->db->where('ks.status', $statuses[$filters['status']] ?? 'invalid');
         }
-
-        // Ambil data kasir shift
-        $this->db->select('ks.*, k.nama_karyawan, k.foto, p.nama_perusahaan');
-        $this->db->from('tbl_kasir_shift ks');
-        $this->db->join('tbl_karyawan k', 'ks.kasir_id = k.id', 'left');
-        $this->db->join('tbl_perusahaan p', 'ks.perusahaan_id = p.id', 'left');
-        $this->db->where('ks.perusahaan_id', $perusahaan_id);
-        $this->db->order_by('ks.id', 'DESC');
-        $kasir_shifts = $this->db->get()->result();
-
-        // Ambil laporan transaksi untuk setiap kasir shift
-        foreach ($kasir_shifts as $shift) {
-            // Hitung total transaksi
-            $this->db->select('COUNT(*) as total_transaksi, SUM(total_bayar) as total_pendapatan');
-            $this->db->from('tbl_pembayaran');
-            $this->db->where('kasir_id', $shift->kasir_id);
-            $this->db->where('perusahaan_id', $perusahaan_id);
-            $this->db->where('DATE(pembayaran_tgl) >=', $shift->tanggal_mulai);
-            if ($shift->tanggal_selesai) {
-                $this->db->where('DATE(pembayaran_tgl) <=', $shift->tanggal_selesai);
-            }
-            $transaksi_data = $this->db->get()->row();
-
-            // Hitung total pengeluaran
-            $this->db->select('SUM(pengeluaran_jumlah) as total_pengeluaran');
-            $this->db->from('tbl_pengeluaran');
-            $this->db->where('kasir_id', $shift->kasir_id);
-            $this->db->where('perusahaan_id', $perusahaan_id);
-            $this->db->where('DATE(pengeluaran_tgl) >=', $shift->tanggal_mulai);
-            if ($shift->tanggal_selesai) {
-                $this->db->where('DATE(pengeluaran_tgl) <=', $shift->tanggal_selesai);
-            }
-            $pengeluaran_data = $this->db->get()->row();
-
-            // Hitung total piutang
-            $this->db->select('SUM(piutang_sisa) as total_piutang');
-            $this->db->from('tbl_piutang');
-            $this->db->where('kasir_id', $shift->kasir_id);
-            $this->db->where('perusahaan_id', $perusahaan_id);
-            $this->db->where('DATE(piutang_tgl) >=', $shift->tanggal_mulai);
-            if ($shift->tanggal_selesai) {
-                $this->db->where('DATE(piutang_tgl) <=', $shift->tanggal_selesai);
-            }
-            $piutang_data = $this->db->get()->row();
-
-            // Tambahkan data laporan ke shift
-            $shift->total_transaksi = $transaksi_data->total_transaksi ?? 0;
-            $shift->total_pendapatan = $transaksi_data->total_pendapatan ?? 0;
-            $shift->total_pengeluaran = $pengeluaran_data->total_pengeluaran ?? 0;
-            $shift->total_piutang = $piutang_data->total_piutang ?? 0;
-            $shift->saldo_kasir = ($shift->total_pendapatan - $shift->total_pengeluaran);
-        }
-
-        return $kasir_shifts;
+        if (!empty($filters['tanggal_mulai'])) { $this->db->where('ks.tanggal_shift >=', $filters['tanggal_mulai']); }
+        if (!empty($filters['tanggal_selesai'])) { $this->db->where('ks.tanggal_shift <=', $filters['tanggal_selesai']); }
+        return $this->db->order_by('ks.shift_id', 'DESC')->get()->result();
     }
 
-    // Fungsi untuk mendapatkan detail laporan kasir per shift
-    function get_kasir_shift_detail($shift_id)
+    private function fill_shift_report($shift, $details = false)
     {
-        $this->db->select('ks.*, k.nama_karyawan, k.foto, p.nama_perusahaan');
-        $this->db->from('tbl_kasir_shift ks');
-        $this->db->join('tbl_karyawan k', 'ks.kasir_id = k.id', 'left');
-        $this->db->join('tbl_perusahaan p', 'ks.perusahaan_id = p.id', 'left');
-        $this->db->where('ks.id', $shift_id);
-        $shift = $this->db->get()->row();
-
-        if ($shift) {
-            $perusahaan_id = $shift->perusahaan_id;
-
-            // Detail transaksi pembayaran
-            $this->db->select('*');
-            $this->db->from('tbl_pembayaran');
-            $this->db->where('kasir_id', $shift->kasir_id);
-            $this->db->where('perusahaan_id', $perusahaan_id);
-            $this->db->where('DATE(pembayaran_tgl) >=', $shift->tanggal_mulai);
-            if ($shift->tanggal_selesai) {
-                $this->db->where('DATE(pembayaran_tgl) <=', $shift->tanggal_selesai);
-            }
-            $this->db->order_by('pembayaran_tgl', 'DESC');
-            $shift->transaksi_pembayaran = $this->db->get()->result();
-
-            // Detail pengeluaran
-            $this->db->select('*');
-            $this->db->from('tbl_pengeluaran');
-            $this->db->where('kasir_id', $shift->kasir_id);
-            $this->db->where('perusahaan_id', $perusahaan_id);
-            $this->db->where('DATE(pengeluaran_tgl) >=', $shift->tanggal_mulai);
-            if ($shift->tanggal_selesai) {
-                $this->db->where('DATE(pengeluaran_tgl) <=', $shift->tanggal_selesai);
-            }
-            $this->db->order_by('pengeluaran_tgl', 'DESC');
-            $shift->transaksi_pengeluaran = $this->db->get()->result();
-
-            // Detail piutang
-            $this->db->select('*');
-            $this->db->from('tbl_piutang');
-            $this->db->where('kasir_id', $shift->kasir_id);
-            $this->db->where('perusahaan_id', $perusahaan_id);
-            $this->db->where('DATE(piutang_tgl) >=', $shift->tanggal_mulai);
-            if ($shift->tanggal_selesai) {
-                $this->db->where('DATE(piutang_tgl) <=', $shift->tanggal_selesai);
-            }
-            $this->db->order_by('piutang_tgl', 'DESC');
-            $shift->transaksi_piutang = $this->db->get()->result();
+        // Match full datetimes so a shift spanning midnight includes both days.
+        $this->db->where('kasir_id', $shift->kasir_id)->where('perusahaan_id', $shift->perusahaan_id)
+            ->where("CONCAT(tgl_bayar, ' ', jam_bayar) >=", $shift->tanggal_mulai);
+        if ($shift->tanggal_selesai) { $this->db->where("CONCAT(tgl_bayar, ' ', jam_bayar) <=", $shift->tanggal_selesai); }
+        $payments = $this->db->get('tbl_pembayaran')->result();
+        $expenses = $this->db->where('shift_id', $shift->id)->where('perusahaan_id', $shift->perusahaan_id)
+            ->get('tbl_pengeluaran')->result();
+        $this->db->distinct()->select('pi.*')->from('tbl_piutang pi')->join('tbl_pembayaran pb', 'pb.nospk = pi.nospk')
+            ->where('pb.kasir_id', $shift->kasir_id)->where('pi.perusahaan_id', $shift->perusahaan_id)
+            ->where("CONCAT(pb.tgl_bayar, ' ', pb.jam_bayar) >=", $shift->tanggal_mulai);
+        if ($shift->tanggal_selesai) { $this->db->where("CONCAT(pb.tgl_bayar, ' ', pb.jam_bayar) <=", $shift->tanggal_selesai); }
+        $receivables = $this->db->get()->result();
+        $shift->total_transaksi = count($payments);
+        $shift->total_pendapatan = array_sum(array_column($payments, 'total_bayar'));
+        $shift->total_pengeluaran = array_sum(array_column($expenses, 'pengeluaran_jumlah'));
+        $shift->total_piutang = 0;
+        foreach ($receivables as $row) { $shift->total_piutang += max(0, (float) $row->total_tagihan - (float) $row->total_bayar); }
+        $shift->saldo_kasir = $shift->total_pendapatan - $shift->total_pengeluaran;
+        if ($details) {
+            $shift->transaksi_pembayaran = $payments;
+            $shift->transaksi_pengeluaran = $expenses;
+            $shift->transaksi_piutang = $receivables;
         }
-
         return $shift;
     }
 
-    // Fungsi untuk mendapatkan summary laporan kasir
-    function get_kasir_summary($perusahaan_id = null)
+    public function get_kasir_shift()
     {
-        if (!$perusahaan_id) {
-            $perusahaan_id = $this->session->userdata('perusahaan_id');
-        }
-
-        $summary = array();
-
-        // Total kasir aktif
-        $this->db->select('COUNT(DISTINCT kasir_id) as total_kasir');
-        $this->db->from('tbl_kasir_shift');
-        $this->db->where('perusahaan_id', $perusahaan_id);
-        $this->db->where('status', 'aktif');
-        $summary['total_kasir_aktif'] = $this->db->get()->row()->total_kasir ?? 0;
-
-        // Total shift hari ini
-        $this->db->select('COUNT(*) as total_shift_hari_ini');
-        $this->db->from('tbl_kasir_shift');
-        $this->db->where('perusahaan_id', $perusahaan_id);
-        $this->db->where('DATE(tanggal_mulai)', date('Y-m-d'));
-        $summary['total_shift_hari_ini'] = $this->db->get()->row()->total_shift_hari_ini ?? 0;
-
-        // Total pendapatan hari ini
-        $this->db->select('SUM(total_bayar) as total_pendapatan_hari_ini');
-        $this->db->from('tbl_pembayaran');
-        $this->db->where('perusahaan_id', $perusahaan_id);
-        $this->db->where('DATE(pembayaran_tgl)', date('Y-m-d'));
-        $summary['total_pendapatan_hari_ini'] = $this->db->get()->row()->total_pendapatan_hari_ini ?? 0;
-
-        // Total pengeluaran hari ini
-        $this->db->select('SUM(pengeluaran_jumlah) as total_pengeluaran_hari_ini');
-        $this->db->from('tbl_pengeluaran');
-        $this->db->where('perusahaan_id', $perusahaan_id);
-        $this->db->where('DATE(pengeluaran_tgl)', date('Y-m-d'));
-        $summary['total_pengeluaran_hari_ini'] = $this->db->get()->row()->total_pengeluaran_hari_ini ?? 0;
-
-        // Saldo kas hari ini
-        $summary['saldo_kas_hari_ini'] = $summary['total_pendapatan_hari_ini'] - $summary['total_pengeluaran_hari_ini'];
-
-        return $summary;
+        return $this->shift_report_rows($this->shift_report_branch());
     }
 
-    // Fungsi untuk administrator/owner melihat semua data shift kasir
-    function get_all_kasir_shift_admin($perusahaan_id = null, $filters = array())
+    public function get_kasir_shift_report($perusahaan_id = null)
     {
-        if (!$perusahaan_id) {
-            $perusahaan_id = $this->session->userdata('perusahaan_id');
-        }
-
-        // Check role access
-        $role_id = $this->session->userdata('role_id');
-        if (!in_array($role_id, [1, 2])) { // 1 = Administrator, 2 = Owner
-            return false;
-        }
-
-        $this->db->select('ks.*, k.nama_karyawan, k.foto, k.email, k.telepon, p.nama_perusahaan');
-        $this->db->from('tbl_kasir_shift ks');
-        $this->db->join('tbl_karyawan k', 'ks.kasir_id = k.id', 'left');
-        $this->db->join('tbl_perusahaan p', 'ks.perusahaan_id = p.id', 'left');
-        $this->db->where('ks.perusahaan_id', $perusahaan_id);
-
-        // Apply filters
-        if (!empty($filters['status'])) {
-            $this->db->where('ks.status', $filters['status']);
-        }
-        if (!empty($filters['kasir_id'])) {
-            $this->db->where('ks.kasir_id', $filters['kasir_id']);
-        }
-        if (!empty($filters['tanggal_mulai'])) {
-            $this->db->where('DATE(ks.tanggal_mulai) >=', $filters['tanggal_mulai']);
-        }
-        if (!empty($filters['tanggal_selesai'])) {
-            $this->db->where('DATE(ks.tanggal_mulai) <=', $filters['tanggal_selesai']);
-        }
-
-        $this->db->order_by('ks.id', 'DESC');
-        $kasir_shifts = $this->db->get()->result();
-
-        // Ambil laporan transaksi untuk setiap kasir shift
-        foreach ($kasir_shifts as $shift) {
-            // Hitung total transaksi
-            $this->db->select('COUNT(*) as total_transaksi, SUM(total_bayar) as total_pendapatan');
-            $this->db->from('tbl_pembayaran');
-            $this->db->where('kasir_id', $shift->kasir_id);
-            $this->db->where('perusahaan_id', $perusahaan_id);
-            $this->db->where('DATE(pembayaran_tgl) >=', $shift->tanggal_mulai);
-            if ($shift->tanggal_selesai) {
-                $this->db->where('DATE(pembayaran_tgl) <=', $shift->tanggal_selesai);
-            }
-            $transaksi_data = $this->db->get()->row();
-
-            // Hitung total pengeluaran
-            $this->db->select('SUM(pengeluaran_jumlah) as total_pengeluaran');
-            $this->db->from('tbl_pengeluaran');
-            $this->db->where('kasir_id', $shift->kasir_id);
-            $this->db->where('perusahaan_id', $perusahaan_id);
-            $this->db->where('DATE(pengeluaran_tgl) >=', $shift->tanggal_mulai);
-            if ($shift->tanggal_selesai) {
-                $this->db->where('DATE(pengeluaran_tgl) <=', $shift->tanggal_selesai);
-            }
-            $pengeluaran_data = $this->db->get()->row();
-
-            // Hitung total piutang
-            $this->db->select('SUM(piutang_sisa) as total_piutang');
-            $this->db->from('tbl_piutang');
-            $this->db->where('kasir_id', $shift->kasir_id);
-            $this->db->where('perusahaan_id', $perusahaan_id);
-            $this->db->where('DATE(piutang_tgl) >=', $shift->tanggal_mulai);
-            if ($shift->tanggal_selesai) {
-                $this->db->where('DATE(piutang_tgl) <=', $shift->tanggal_selesai);
-            }
-            $piutang_data = $this->db->get()->row();
-
-            // Tambahkan data laporan ke shift
-            $shift->total_transaksi = $transaksi_data->total_transaksi ?? 0;
-            $shift->total_pendapatan = $transaksi_data->total_pendapatan ?? 0;
-            $shift->total_pengeluaran = $pengeluaran_data->total_pengeluaran ?? 0;
-            $shift->total_piutang = $piutang_data->total_piutang ?? 0;
-            $shift->saldo_kasir = ($shift->total_pendapatan - $shift->total_pengeluaran);
-        }
-
-        return $kasir_shifts;
+        $rows = $this->shift_report_rows($this->shift_report_branch($perusahaan_id));
+        foreach ($rows as $row) { $this->fill_shift_report($row); }
+        return $rows;
     }
 
-    // Fungsi untuk mendapatkan rekap kasir shift per periode
-    function get_kasir_shift_rekap($perusahaan_id = null, $periode = 'bulan')
+    public function get_kasir_shift_detail($shift_id)
     {
-        if (!$perusahaan_id) {
-            $perusahaan_id = $this->session->userdata('perusahaan_id');
+        $rows = $this->shift_report_rows($this->shift_report_branch(), $shift_id);
+        return $rows ? $this->fill_shift_report($rows[0], true) : null;
+    }
+
+    public function get_kasir_summary($perusahaan_id = null)
+    {
+        $branch = $this->shift_report_branch($perusahaan_id);
+        $rows = $this->shift_report_rows($branch);
+        $active = []; $today = 0;
+        foreach ($rows as $row) {
+            if ($row->status === 'aktif') { $active[$row->kasir_id] = true; }
+            if (substr($row->tanggal_mulai, 0, 10) === date('Y-m-d')) { $today++; }
         }
+        $payments = $this->db->where('perusahaan_id', $branch)->where('tgl_bayar', date('Y-m-d'))
+            ->get('tbl_pembayaran')->result();
+        $expenses = $this->db->where('perusahaan_id', $branch)->where('pengeluaran_tgl', date('Y-m-d'))
+            ->get('tbl_pengeluaran')->result();
+        $income = array_sum(array_column($payments, 'total_bayar'));
+        $expense = array_sum(array_column($expenses, 'pengeluaran_jumlah'));
+        return ['total_kasir_aktif' => count($active), 'total_shift_hari_ini' => $today,
+            'total_pendapatan_hari_ini' => $income, 'total_pengeluaran_hari_ini' => $expense, 'saldo_kas_hari_ini' => $income - $expense];
+    }
 
-        $rekap = array();
+    public function get_all_kasir_shift_admin($perusahaan_id = null, $filters = [])
+    {
+        if (!in_array((int) $this->session->userdata('level'), [1, 17], true)) { return false; }
+        $rows = $this->shift_report_rows($this->shift_report_branch($perusahaan_id), null, is_array($filters) ? $filters : []);
+        foreach ($rows as $row) { $this->fill_shift_report($row); }
+        return $rows;
+    }
 
-        switch ($periode) {
-            case 'hari':
-                $group_by = 'DATE(ks.tanggal_mulai)';
-                $date_format = '%Y-%m-%d';
-                break;
-            case 'minggu':
-                $group_by = 'YEARWEEK(ks.tanggal_mulai)';
-                $date_format = '%Y-%u';
-                break;
-            case 'bulan':
-            default:
-                $group_by = 'DATE_FORMAT(ks.tanggal_mulai, "%Y-%m")';
-                $date_format = '%Y-%m';
-                break;
+    public function get_kasir_shift_rekap($perusahaan_id = null, $periode = 'bulan')
+    {
+        $rows = $this->get_kasir_shift_report($perusahaan_id);
+        $periods = []; $cashiers = []; $period_cashiers = [];
+        foreach ($rows as $row) {
+            $timestamp = strtotime($row->tanggal_mulai);
+            $period = date($periode === 'hari' ? 'Y-m-d' : ($periode === 'minggu' ? 'o-W' : 'Y-m'), $timestamp);
+            if (!isset($periods[$period])) {
+                $periods[$period] = ['periode' => $period, 'total_kasir' => 0, 'total_shift' => 0, 'shift_aktif' => 0, 'shift_selesai' => 0, 'shift_batal' => 0];
+            }
+            $periods[$period]['total_shift']++;
+            $periods[$period][$row->status === 'aktif' ? 'shift_aktif' : 'shift_selesai']++;
+            $period_cashiers[$period][$row->kasir_id] = true;
+            if (!isset($cashiers[$row->kasir_id])) {
+                $cashiers[$row->kasir_id] = ['kasir_id' => $row->kasir_id, 'nama_karyawan' => $row->nama_karyawan, 'foto' => $row->foto,
+                    'total_shift' => 0, 'shift_aktif' => 0, 'shift_selesai' => 0, 'shift_batal' => 0,
+                    'total_pendapatan' => 0, 'total_pengeluaran' => 0, 'total_piutang' => 0];
+            }
+            $cashiers[$row->kasir_id]['total_shift']++;
+            $cashiers[$row->kasir_id][$row->status === 'aktif' ? 'shift_aktif' : 'shift_selesai']++;
+            foreach (['total_pendapatan', 'total_pengeluaran', 'total_piutang'] as $field) { $cashiers[$row->kasir_id][$field] += $row->$field; }
         }
-
-        // Rekap per periode
-        $this->db->select("
-                {$group_by} as periode,
-                COUNT(DISTINCT ks.kasir_id) as total_kasir,
-                COUNT(ks.id) as total_shift,
-                SUM(CASE WHEN ks.status = 'aktif' THEN 1 ELSE 0 END) as shift_aktif,
-                SUM(CASE WHEN ks.status = 'selesai' THEN 1 ELSE 0 END) as shift_selesai,
-                SUM(CASE WHEN ks.status = 'batal' THEN 1 ELSE 0 END) as shift_batal
-            ");
-        $this->db->from('tbl_kasir_shift ks');
-        $this->db->where('ks.perusahaan_id', $perusahaan_id);
-        $this->db->group_by($group_by);
-        $this->db->order_by('periode', 'DESC');
-        $rekap['per_periode'] = $this->db->get()->result();
-
-        // Rekap per kasir
-        $this->db->select("
-                k.nama_karyawan,
-                k.foto,
-                COUNT(ks.id) as total_shift,
-                SUM(CASE WHEN ks.status = 'aktif' THEN 1 ELSE 0 END) as shift_aktif,
-                SUM(CASE WHEN ks.status = 'selesai' THEN 1 ELSE 0 END) as shift_selesai,
-                SUM(CASE WHEN ks.status = 'batal' THEN 1 ELSE 0 END) as shift_batal,
-                SUM(pb.total_bayar) as total_pendapatan,
-                SUM(pe.pengeluaran_jumlah) as total_pengeluaran,
-                SUM(pi.piutang_sisa) as total_piutang
-            ");
-        $this->db->from('tbl_karyawan k');
-        $this->db->join('tbl_kasir_shift ks', 'k.id = ks.kasir_id', 'left');
-        $this->db->join('(SELECT kasir_id, SUM(total_bayar) as total_bayar FROM tbl_pembayaran WHERE perusahaan_id = ' . $perusahaan_id . ' GROUP BY kasir_id) pb', 'k.id = pb.kasir_id', 'left');
-        $this->db->join('(SELECT kasir_id, SUM(pengeluaran_jumlah) as pengeluaran_jumlah FROM tbl_pengeluaran WHERE perusahaan_id = ' . $perusahaan_id . ' GROUP BY kasir_id) pe', 'k.id = pe.kasir_id', 'left');
-        $this->db->join('(SELECT kasir_id, SUM(piutang_sisa) as piutang_sisa FROM tbl_piutang WHERE perusahaan_id = ' . $perusahaan_id . ' GROUP BY kasir_id) pi', 'k.id = pi.kasir_id', 'left');
-        $this->db->where('k.perusahaan_id', $perusahaan_id);
-        $this->db->where('k.role_id', 3); // Role kasir
-        $this->db->group_by('k.id');
-        $this->db->order_by('total_shift', 'DESC');
-        $rekap['per_kasir'] = $this->db->get()->result();
-
-        return $rekap;
+        foreach ($periods as $key => &$period) { $period['total_kasir'] = count($period_cashiers[$key]); }
+        unset($period); krsort($periods);
+        return ['per_periode' => array_map(function ($row) { return (object) $row; }, array_values($periods)),
+            'per_kasir' => array_map(function ($row) { return (object) $row; }, array_values($cashiers))];
     }
 
     // Fungsi untuk export laporan kasir shift
@@ -4246,8 +4043,8 @@ class Transaksi extends MY_Controller
         }
 
         // Check role access
-        $role_id = $this->session->userdata('role_id');
-        if (!in_array($role_id, [1, 2])) { // 1 = Administrator, 2 = Owner
+        $role_id = (int) $this->session->userdata('level');
+        if (!in_array($role_id, [1, 17], true)) { // 1 = Administrator, 2 = Owner
             return false;
         }
 
@@ -4281,39 +4078,17 @@ class Transaksi extends MY_Controller
     // Method untuk menampilkan view rekap kasir shift
     public function kasir_shift_rekap()
     {
-        // Check role access
-        $role_id = $this->session->userdata('role_id');
-        if (!in_array($role_id, [1, 2])) { // 1 = Administrator, 2 = Owner
-            redirect('auth/access_denied');
+        if (!in_array((int) $this->session->userdata('level'), [1, 17], true)) {
+            show_404(); return;
         }
-
-        $perusahaan_id = $this->session->userdata('perusahaan_id');
-
-        // Get perusahaan data
-        $perusahaan = $this->db->get_where('tbl_perusahaan', ['id' => $perusahaan_id])->row_array();
-
-        // Get kasir list for filter
-        $kasir_list = $this->db->select('id, nama_karyawan')
-            ->from('tbl_karyawan')
-            ->where('perusahaan_id', $perusahaan_id)
-            ->where('role_id', 3) // Role kasir
-            ->order_by('nama_karyawan', 'ASC')
-            ->get()->result();
-
-        $data = array(
-            'title' => 'Rekap Kasir Shift',
-            'perusahaan' => $perusahaan,
-            'kasir_list' => $kasir_list
-        );
-
-        $this->load->view('admin/transaksi/kasir_shift_rekap', $data);
+        redirect('kasir_shift');
     }
 
     // Method untuk API get all kasir shift admin (POST method)
     // public function get_all_kasir_shift_admin() {
     //     // Check role access
-    //     $role_id = $this->session->userdata('role_id');
-    //     if (!in_array($role_id, [1, 2])) { // 1 = Administrator, 2 = Owner
+    //     $role_id = (int) $this->session->userdata('level');
+    //     if (!in_array($role_id, [1, 17], true)) { // 1 = Administrator, 2 = Owner
     //         $this->output->set_status_header(403);
     //         echo json_encode(['error' => 'Access denied']);
     //         return;
@@ -4341,8 +4116,8 @@ class Transaksi extends MY_Controller
     public function get_kasir_summary_api()
     {
         // Check role access
-        $role_id = $this->session->userdata('role_id');
-        if (!in_array($role_id, [1, 2])) { // 1 = Administrator, 2 = Owner
+        $role_id = (int) $this->session->userdata('level');
+        if (!in_array($role_id, [1, 17], true)) { // 1 = Administrator, 2 = Owner
             $this->output->set_status_header(403);
             echo json_encode(['error' => 'Access denied']);
             return;
@@ -4361,8 +4136,8 @@ class Transaksi extends MY_Controller
     public function get_kasir_shift_rekap_api()
     {
         // Check role access
-        $role_id = $this->session->userdata('role_id');
-        if (!in_array($role_id, [1, 2])) { // 1 = Administrator, 2 = Owner
+        $role_id = (int) $this->session->userdata('level');
+        if (!in_array($role_id, [1, 17], true)) { // 1 = Administrator, 2 = Owner
             $this->output->set_status_header(403);
             echo json_encode(['error' => 'Access denied']);
             return;
@@ -4483,12 +4258,14 @@ class Transaksi extends MY_Controller
         if (!$nospk) {
             $this->session->set_flashdata('error', 'No. SPK tidak ditemukan.');
             redirect('penjualan/manual_list');
+            return;
         }
 
         $transaksi = $this->manual_sales->get_transaksi_by_nospk($nospk);
         if (!$transaksi) {
             $this->session->set_flashdata('error', 'Transaksi tidak ditemukan.');
             redirect('penjualan/manual_list');
+            return;
         }
 
         $data = $this->_get_common_data('Edit Transaksi Manual');
@@ -4521,15 +4298,27 @@ class Transaksi extends MY_Controller
         }
 
         $products = $this->input->post('products', true);
-        if (empty($products)) {
+        if (empty($products) || !is_array($products)) {
             echo json_encode(['status' => 'error', 'message' => 'Detail produk tidak boleh kosong']);
             return;
         }
 
         try {
-            $this->db->trans_start();
-
             $post = $this->input->post();
+            $this->validate_manual_input($post);
+            if (!is_string($nospk) || strpos($nospk, 'MAN-') !== 0) { throw new DomainException('SPK ini bukan transaksi manual.'); }
+            $this->db->trans_begin();
+            $order = $this->db->query('SELECT * FROM tbl_pemesanan WHERE nospk = ? FOR UPDATE', [$nospk])->row();
+            if (!$order) { throw new DomainException('Transaksi tidak ditemukan.'); }
+            if (!in_array((int) $this->session->userdata('level'), [1, 17], true) &&
+                (int) $order->perusahaan_id !== (int) $this->session->userdata('perusahaan_id')) {
+                throw new DomainException('Transaksi tidak dimiliki cabang aktif.');
+            }
+            $existing_piutang = $this->db->get_where('tbl_piutang', ['nospk' => $nospk])->row();
+            if ($existing_piutang && $this->db->get_where('tbl_piutang_pembayaran', ['piutang_id' => $existing_piutang->piutang_id])->num_rows() > 0) {
+                throw new DomainException('Transaksi sudah memiliki cicilan. Gunakan penyesuaian piutang agar riwayat pembayaran tetap tersimpan.');
+            }
+
             $total_tagihan = 0;
             foreach ($products as $p) {
                 $total_tagihan += (floatval($p['jumlah']) * floatval($p['harga_satuan']));
@@ -4643,18 +4432,19 @@ class Transaksi extends MY_Controller
                 $this->db->insert('tbl_piutang', [
                     'nospk' => $nospk,
                     'konsumen_id' => $post['konsumen_id'],
-                    'perusahaan_id' => $this->session->userdata('perusahaan_id'),
+                    'perusahaan_id' => $order->perusahaan_id,
                     'total_tagihan' => $total_tagihan,
                     'total_bayar' => 0,
-                    'jatuh_tempo' => date('Y-m-d', strtotime("+{$termin} days")),
+                    'jatuh_tempo' => date('Y-m-d', strtotime($post['tanggal_transaksi'] . " +{$termin} days")),
                     'status' => 'BELUM LUNAS'
                 ]);
             }
 
-            $this->db->trans_complete();
+            $this->checked_transaction_write($this->db->trans_status());
+            $this->checked_transaction_write($this->db->trans_commit());
             echo json_encode(['status' => 'success', 'message' => 'Transaksi berhasil diperbarui!']);
 
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             $this->db->trans_rollback();
             echo json_encode(['status' => 'error', 'message' => 'Gagal memperbarui: ' . $e->getMessage()]);
         }

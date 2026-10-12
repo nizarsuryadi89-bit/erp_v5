@@ -152,7 +152,7 @@ class Kiosk extends MY_Controller
      */
     public function search_konsumen()
     {
-        $term = trim($this->input->get('term', true));
+        $term = trim((string) ($this->input->get('term', true) ?? ''));
 
         if (empty($term)) {
             header('Content-Type: application/json');
@@ -160,24 +160,46 @@ class Kiosk extends MY_Controller
             return;
         }
 
-        // Case-insensitive search by name or phone
+        $keywords = array_filter(preg_split('/\s+/', $term));
+        $clean_phone = preg_replace('/[^0-9]/', '', $term);
+
         $this->db->select('konsumen_id, konsumen_nama, konsumen_nohp');
-        $this->db->group_start();
-        $this->db->where("LOWER(konsumen_nama) LIKE '%" . strtolower($term) . "%'", NULL, FALSE);
-        $this->db->or_where("konsumen_nohp LIKE '%" . $term . "%'", NULL, FALSE);
-        $this->db->group_end();
+        $this->db->from('tbl_konsumen');
+
+        if (!empty($keywords)) {
+            $this->db->group_start();
+            foreach ($keywords as $kw) {
+                $kw_clean = strtolower($kw);
+                $this->db->group_start();
+                $this->db->like('LOWER(konsumen_nama)', $kw_clean);
+                $this->db->or_like('LOWER(konsumen_nohp)', $kw_clean);
+                if (strlen($clean_phone) >= 3) {
+                    $this->db->or_like("REPLACE(REPLACE(konsumen_nohp, ' ', ''), '-', '')", $clean_phone);
+                }
+                $this->db->group_end();
+            }
+            $this->db->group_end();
+        }
+
+        $this->db->where('konsumen_nohp !=', 'MARKETPLACE');
+
+        $first_kw = strtolower(reset($keywords) ?: $term);
+        $escaped_kw = $this->db->escape_like_str($first_kw);
+        $this->db->order_by("CASE WHEN LOWER(konsumen_nama) LIKE '{$escaped_kw}%' THEN 1 ELSE 2 END", 'ASC', FALSE);
         $this->db->order_by('konsumen_nama', 'ASC');
-        $this->db->limit(10);
-        $results = $this->db->get('tbl_konsumen')->result();
+        $this->db->limit(15);
+        $results = $this->db->get()->result();
 
         $output = [];
-        foreach ($results as $k) {
-            $output[] = [
-                'id' => $k->konsumen_id,
-                'label' => $k->konsumen_nama . ' (' . $k->konsumen_nohp . ')',
-                'value' => $k->konsumen_nama,
-                'phone' => $k->konsumen_nohp
-            ];
+        if ($results) {
+            foreach ($results as $k) {
+                $output[] = [
+                    'id' => $k->konsumen_id,
+                    'label' => $k->konsumen_nama . ' (' . $k->konsumen_nohp . ')',
+                    'value' => $k->konsumen_nama,
+                    'phone' => $k->konsumen_nohp
+                ];
+            }
         }
 
         header('Content-Type: application/json');

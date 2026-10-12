@@ -743,8 +743,9 @@
                     if (result.isConfirmed) {
                         $.post("<?= base_url('transaksi/edit_pending_spk') ?>", { nospk: nospk }, function (res) {
                             if (res && res.status === 'error') { Swal.fire('Gagal!', res.message, 'error'); }
-                            else { window.location.href = '<?= base_url("transaksi") ?>'; }
-                        }, 'json').fail(() => { window.location.href = '<?= base_url("transaksi") ?>'; });
+                            else if (res && res.status === 'success') { window.location.href = res.redirect; }
+                            else { Swal.fire('Gagal!', 'Respons penarikan SPK tidak valid.', 'error'); }
+                        }, 'json').fail(() => { Swal.fire('Gagal!', 'Penarikan SPK gagal. Silakan muat ulang data.', 'error'); });
                     }
                 });
             }

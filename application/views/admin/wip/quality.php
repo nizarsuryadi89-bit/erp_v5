@@ -4,7 +4,7 @@ $labels = ['pending' => 'Menunggu QC', 'hold' => 'Ditahan / Perlu tindak lanjut'
 ?>
 <div class="container-fluid py-4" id="quality-app" data-save-url="<?= site_url('wip/quality_inspect') ?>" data-history-url="<?= site_url('wip/quality_history') ?>">
     <div class="d-flex flex-wrap justify-content-between gap-3 align-items-center mb-3">
-        <div><h3 class="mb-1">Pemeriksaan QC</h3><p class="text-muted mb-0">Periksa hasil akhir sebelum serah terima ke PB.</p></div>
+        <div><h3 class="mb-1">Pemeriksaan QC</h3><p class="text-muted mb-0">Periksa hasil akhir sebelum barang di PB diserahkan ke konsumen.</p></div>
         <a class="btn btn-outline-primary" href="<?= site_url('wip/produksi') ?>">Kembali ke produksi</a>
     </div>
     <?php if ($qc_error): ?><div class="alert alert-danger"><?= $esc($qc_error) ?></div><?php endif; ?>
@@ -33,7 +33,7 @@ $labels = ['pending' => 'Menunggu QC', 'hold' => 'Ditahan / Perlu tindak lanjut'
                 <td><span class="badge <?= $row->status === 'passed' ? 'bg-success' : ($row->status === 'hold' ? 'bg-danger' : 'bg-warning text-dark') ?>"><?= $esc($labels[$row->status] ?? $row->status) ?></span></td>
                 <td class="small"><?= $esc($row->created_at) ?></td>
                 <td>
-                    <?php if ($qc_can_review && in_array($row->status, ['pending', 'hold'], true) && $row->status_produksi === 'done'): ?>
+                    <?php if ($qc_can_review && in_array($row->status, ['pending', 'hold'], true) && in_array($row->status_produksi, ['done', 'on_pb'], true)): ?>
                         <button type="button" class="btn btn-sm btn-primary qc-inspect" data-job="<?= $esc(json_encode(['produksi_id' => $row->produksi_id, 'version' => $row->version, 'target' => (float) $row->target_qty, 'status' => $row->status, 'nospk' => $row->nospk, 'request_key' => bin2hex(random_bytes(16))])) ?>"><?= $row->status === 'hold' ? 'Periksa ulang' : 'Periksa hasil' ?></button>
                     <?php endif; ?>
                     <button type="button" class="btn btn-sm btn-outline-secondary qc-history" data-id="<?= (int) $row->produksi_id ?>">Riwayat</button>
@@ -67,4 +67,4 @@ $labels = ['pending' => 'Menunggu QC', 'hold' => 'Ditahan / Perlu tindak lanjut'
     <dialog id="qc-history-dialog" class="border-0 rounded-3 p-4 shadow" style="width:min(820px,95vw)"><div class="d-flex justify-content-between"><h4>Riwayat pemeriksaan</h4><button class="btn btn-light qc-close" type="button">Tutup</button></div><div id="qc-history-content" class="mt-3"></div></dialog>
 </div>
 <style>dialog::backdrop{background:rgba(0,0,0,.45)} #quality-app dialog{max-height:90vh;overflow:auto}</style>
-<script src="<?= base_url('assets/js/wip_quality.js?v=' . filemtime(FCPATH . 'assets/js/wip_quality.js')) ?>"></script>
+<script src="<?= base_url('assets/js/wip_quality.js?v=' . (file_exists(FCPATH . 'assets/js/wip_quality.js') ? filemtime(FCPATH . 'assets/js/wip_quality.js') : '1.0')) ?>"></script>

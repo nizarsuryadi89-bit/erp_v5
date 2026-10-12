@@ -14,7 +14,7 @@ if (!empty($getdetail)) {
         $meta = !empty($dt->metadata) ? json_decode($dt->metadata, true) : [];
         if (isset($meta['subtotal']) && is_numeric($meta['subtotal'])) {
             $jumlah = (float) $meta['subtotal'];
-        } else if (isset($dt->subtotal) && $dt->subtotal !== null && $dt->subtotal !== '' && is_numeric($dt->subtotal) && floatval($dt->subtotal) > 0) {
+        } else if (isset($dt->subtotal) && $dt->subtotal !== null && $dt->subtotal !== '' && is_numeric($dt->subtotal)) {
             $jumlah = (float) $dt->subtotal;
         } else {
             if (isset($dt->satuan_id) && $dt->satuan_id == 11) {
@@ -55,6 +55,26 @@ $subTotal = round($subTotal);
     <?php $this->load->view('layout_admin/header_modul'); ?>
 
     <div class="container-fluid py-4">
+        <?php if (!empty($getdata['is_blacklist']) && $getdata['is_blacklist'] == 1): ?>
+            <!-- Alert Peringatan Konsumen Pengawasan Kasir -->
+            <div class="alert alert-danger border-2 border-danger shadow-sm d-flex align-items-center mb-4 p-3 rounded-4" role="alert">
+                <div class="fs-1 text-danger me-3 ps-2">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <div class="flex-grow-1">
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <span class="badge bg-danger text-white px-2 py-1"><i class="fas fa-shield-alt me-1"></i>PERINGATAN KASIR</span>
+                        <h6 class="alert-heading fw-bold mb-0 text-danger text-uppercase">KONSUMEN DALAM PENGAWASAN KHUSUS</h6>
+                    </div>
+                    <div class="text-dark small">
+                        <strong>Catatan/Alasan:</strong> <?= !empty($getdata['catatan_blacklist']) ? html_escape($getdata['catatan_blacklist']) : 'Konsumen ini ditandai dalam daftar pengawasan kasir.' ?>
+                    </div>
+                    <div class="text-danger small mt-1 fw-semibold">
+                        <i class="fas fa-info-circle me-1"></i>Harap pastikan pembayaran sesuai ketentuan dan periksa sisa piutang sebelum menyelesaikan transaksi.
+                    </div>
+                </div>
+            </div>
+        <?php endif; ?>
         <div class="row g-4">
             <!-- Info Transaksi & Action Header -->
             <div class="col-12">
@@ -75,7 +95,7 @@ $subTotal = round($subTotal);
                             <div class="col-md-3 border-end">
                                 <span class="info-label"><i class="fas fa-calendar-alt me-1"></i>Tanggal Pesan</span>
                                 <div class="info-value mt-1 fs-6">
-                                    <?= date_indo($getdata['created_at']) ?>
+                                    <?= date_indo(date('Y-m-d', strtotime($getdata['created_at']))) ?>
                                     <span
                                         class="badge bg-light text-muted ms-1 fw-normal"><?= date('H:i', strtotime($getdata['created_at'])) ?></span>
                                 </div>
@@ -84,7 +104,14 @@ $subTotal = round($subTotal);
                             <!-- Konsumen -->
                             <div class="col-md-3 border-end ps-md-4">
                                 <span class="info-label"><i class="fas fa-user me-1"></i>Konsumen</span>
-                                <div class="info-value text-primary fs-5 mt-1"><?= $getdata['konsumen_nama'] ?></div>
+                                <div class="info-value text-primary fs-5 mt-1 d-flex align-items-center flex-wrap gap-1">
+                                    <span><?= $getdata['konsumen_nama'] ?></span>
+                                    <?php if (!empty($getdata['is_blacklist']) && $getdata['is_blacklist'] == 1): ?>
+                                        <span class="badge bg-danger text-white shadow-sm" style="font-size: 0.65rem;" title="<?= !empty($getdata['catatan_blacklist']) ? html_escape($getdata['catatan_blacklist']) : 'Perhatian Khusus' ?>">
+                                            <i class="fas fa-exclamation-triangle me-1"></i>Pengawasan Kasir
+                                        </span>
+                                    <?php endif; ?>
+                                </div>
                                 <div class="small text-muted fw-bold mt-1">
                                     <i class="fas fa-phone-alt me-1"></i> <?= $getdata['konsumen_nohp'] ?>
                                 </div>
@@ -165,7 +192,7 @@ $subTotal = round($subTotal);
                                             $meta = !empty($dt->metadata) ? json_decode($dt->metadata, true) : [];
                                             if (isset($meta['subtotal']) && is_numeric($meta['subtotal'])) {
                                                 $jumlah = (float) $meta['subtotal'];
-                                            } else if (isset($dt->subtotal) && $dt->subtotal !== null && $dt->subtotal !== '' && is_numeric($dt->subtotal) && floatval($dt->subtotal) > 0) {
+                                            } else if (isset($dt->subtotal) && $dt->subtotal !== null && $dt->subtotal !== '' && is_numeric($dt->subtotal)) {
                                                 $jumlah = (float) $dt->subtotal;
                                             } else {
                                                 if (isset($dt->satuan_id) && $dt->satuan_id == 11) {

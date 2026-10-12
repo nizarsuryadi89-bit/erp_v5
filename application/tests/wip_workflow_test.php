@@ -12,6 +12,7 @@ class TestSession
 }
 class TestLoader { public function library($name) {} public function model($name, $alias = null) {} }
 class DisabledQuality { public function assert_storage() {} public function enroll($item, $actor) {} public function assert_handover($item) {} }
+#[AllowDynamicProperties]
 class CI_Model
 {
     public $db;
@@ -31,17 +32,22 @@ class MemoryProductionDb
     public $tables;
     public $depth = 0;
     public $fail_log = false;
+    public $fail_stock_runtime = false;
     public $locks = [];
     public $engine = 'InnoDB';
     private $snapshot;
     private $conditions = [];
     private $affected = 0;
+    private $last_insert_id = 0;
     public function __construct($tables) { $this->tables = $tables; }
     public function trans_begin() { if (!$this->depth) $this->snapshot = serialize($this->tables); $this->depth++; return true; }
     public function trans_commit() { if (!$this->depth) return false; $this->depth--; return true; }
     public function trans_rollback() { if (!$this->depth) return false; if (--$this->depth === 0) $this->tables = unserialize($this->snapshot); return true; }
     public function trans_status() { return true; }
+    public function error() { return ['code' => 0, 'message' => '']; }
+    public function field_exists($field, $table) { return true; }
     public function affected_rows() { return $this->affected; }
+    public function insert_id() { return $this->last_insert_id; }
     public function where($key, $value = null) { foreach (is_array($key) ? $key : [$key => $value] as $k => $v) $this->conditions[$k] = $v; return $this; }
     public function or_where($key, $value) { $this->conditions[$key] = $value; return $this; }
     public function select($fields) { return $this; }
@@ -61,8 +67,10 @@ class MemoryProductionDb
         return new TestRows($rows);
     }
     public function insert($table, $data) {
+        if ($this->fail_stock_runtime && $table === 'tbl_stok_log') throw new TypeError('Stock ledger runtime failure');
         if ($this->fail_log && in_array($table, ['tbl_stok_log', 'tbl_produksi_log'], true)) return false;
         if ($table === 'detail_produksi') $data['detail_produksi_id'] = count($this->tables[$table]) + 1;
+        if ($table === 'tbl_stok_gudang') $data['stok_id'] = $this->last_insert_id = count($this->tables[$table]) + 1;
         $this->tables[$table][] = (object) $data;
         return true;
     }
@@ -89,10 +97,10 @@ class MemoryProductionDb
         }
         if (strpos($sql, 'SELECT konversi FROM tbl_material ') === 0 || strpos($sql, 'SELECT material_id FROM tbl_material ') === 0) return $this->get_where('tbl_material', ['material_id' => $binds[0]]);
         if (strpos($sql, 'SELECT * FROM tbl_stok_gudang ') === 0) { $where = ['material_id' => $binds[0], 'gudang_id' => $binds[1]]; if (count($binds) > 2) $where['rak_id'] = $binds[2]; return $this->get_where('tbl_stok_gudang', $where); }
-        if (strpos($sql, 'UPDATE tbl_stok_gudang SET qty = qty +') === 0) {
+        if (strpos($sql, 'UPDATE tbl_stok_gudang SET qty = qty -') === 0) {
             $this->affected = 0;
             foreach ($this->tables['tbl_stok_gudang'] as $row) {
-                if ($row->stok_id == $binds[2] && $row->qty + $binds[3] >= 0) { $row->qty += $binds[0]; $this->affected++; }
+                if ($row->stok_id == $binds[2]) { $row->qty -= $binds[0]; $this->affected++; }
             }
             return true;
         }
@@ -134,19 +142,32 @@ check(Production_workflow::ids([3, '1', 3, 2]) === [1, 2, 3], 'Stable unique loc
 rejected(function () { Production_workflow::ids(['1 OR 1']); }, 'Invalid IDs');
 check(!Production_workflow::can_transition('pending', 'done'), 'No pending to done');
 check(!Production_workflow::can_transition('proses', 'on_pb'), 'No in-progress to PB');
+foreach (['F.Laminating', 'Finishing Pin', 'Laminasi Doff A3', 'Laminas Doft A3', 'Potong', 'Packing'] as $name)
+    check(Production_workflow::finishing_step((object) ['routing_name' => $name, 'is_finishing' => 0]), 'Legacy finishing name recognized');
+check(!Production_workflow::finishing_step((object) ['routing_name' => 'Print A3+', 'is_finishing' => 0]), 'Printing keeps machine policy');
+foreach (['F.Cutting', 'Finishing Potong Kertas', 'Potong', 'Finishing Kiss Cut', 'Cutting Sticker'] as $name)
+    check(Production_workflow::finishing_requires_machine((object) ['routing_name' => $name]), 'Non-A3 cutting/potong requires machine');
+foreach (['F.Laminating', 'Finishing Pin', 'Packing', 'Print A3+'] as $name)
+    check(!Production_workflow::finishing_requires_machine((object) ['routing_name' => $name]), 'Other steps do not use finishing machine requirement');
+foreach (['Cutting Kiss Cut A3 (Standar)', 'Cutting Die Cut A3', 'Ongkos Potong A3'] as $name)
+    check(!Production_workflow::finishing_requires_machine((object) ['routing_name' => 'F.Cutting'], (object) ['kategori_id' => 16, 'product_nama' => $name]), 'Standalone A3 finishing product does not need a machine');
+check(!Production_workflow::finishing_requires_machine((object) ['routing_name' => 'F.Potong', 'kategori_id' => 1]), 'Digital A3 finishing does not need a machine');
+check(Production_workflow::finishing_requires_machine((object) ['routing_name' => 'F.Cutting'], (object) ['kategori_id' => 16, 'product_nama' => 'Cutting Meteran']), 'Non-A3 finishing still needs its cutting machine');
 check(Production_workflow::can_transition('done', 'on_pb'), 'Done to PB');
 
 $db = fixture(); $workflow = service($db);
 $result = $workflow->execute([1], 'complete', $actor, [1 => 11], [], function () { return ['qty_output' => 10]; });
 check($result['success'], 'Complete actual output');
-check($db->tables['tbl_produksi'][0]->status_produksi === 'done', 'Header completed');
+check($db->tables['tbl_produksi'][0]->status_produksi === 'on_pb', 'Final completion automatically enters PB');
+check(!empty($db->tables['tbl_produksi'][0]->tgl_selesai) && $db->tables['tbl_produksi'][0]->tgl_selesai === $db->tables['tbl_produksi'][0]->tgl_kirim_pb, 'Completion and PB arrival share one timestamp');
+check($result['auto_pb_ids'] === [1], 'Response identifies completed PB item');
 check($db->tables['detail_produksi'][0]->status_produksi === '2', 'Operation remains numeric completed');
 check($db->depth === 0 && count($db->locks) >= 2, 'Transaction closes and locks records');
 $before = serialize($db->tables);
 $retry = $workflow->execute([1], 'complete', $actor, [1 => 11], [], function () { return ['qty_output' => 10]; });
 check(!$retry['success'] && serialize($db->tables) === $before, 'Retry does not duplicate results');
 $pb = $workflow->execute([1], 'handover', $actor);
-check($pb['success'] && $db->tables['tbl_produksi'][0]->status_produksi === 'on_pb', 'Checked PB handover');
+check($pb['success'] && serialize($db->tables) === $before, 'Legacy PB action is read-only after automatic arrival');
 check($db->tables['detail_produksi'][0]->status_produksi === '2' && $db->tables['detail_produksi'][0]->waktu_mulai === '2026-01-01 10:00:00', 'PB retains operation evidence');
 $before = serialize($db->tables);
 check($workflow->execute([1], 'handover', $actor)['success'] && serialize($db->tables) === $before, 'PB retry is read-only');
@@ -158,6 +179,7 @@ $result = $workflow->execute([1], 'complete', $actor, [1 => 11], [1 => $version]
     return ['qty_output' => 4, 'qty_missing' => 1, 'qty_bahan_pakai' => 100];
 });
 check($result['success'] && $db->tables['detail_produksi'][0]->status_produksi === '1', 'Partial output remains active');
+check($db->tables['tbl_produksi'][0]->status_produksi === 'proses' && $result['auto_pb_ids'] === [], 'Partial result does not enter PB');
 check($db->tables['detail_produksi'][0]->qty_output === 4.0 && $db->tables['tbl_stok_gudang'][0]->qty === 1900.0, 'Partial result and base-unit consumption');
 $before = serialize($db->tables);
 $result = $workflow->execute([1], 'complete', $actor, [1 => 11], [1 => $version], function () { return ['qty_output' => 4]; });
@@ -165,12 +187,12 @@ check(!$result['success'] && serialize($db->tables) === $before, 'Partial retry/
 check(!$workflow->execute([1], 'handover', $actor)['success'], 'Partial output cannot handover');
 check(!$workflow->execute([1], 'cancel', $actor, [1 => 11])['success'], 'Cannot erase used operation');
 
-foreach (['stock_shortage', 'log_failure'] as $failure) {
+foreach (['invalid_material', 'log_failure'] as $failure) {
     $db = fixture(); $workflow = service($db); $stock = new M_gudang(); $stock->db = $db;
     $db->fail_log = $failure === 'log_failure';
     $before = serialize($db->tables);
     $result = $workflow->execute([1], 'complete', $actor, [1 => 11], [], function () use ($stock, $failure) {
-        $stock->update_stock_with_log(5, 1, $failure === 'stock_shortage' ? -5 : -1, 'Produksi', 1);
+        $stock->update_stock_with_log($failure === 'invalid_material' ? 999 : 5, 1, -1, 'Produksi', 1);
         return ['qty_output' => 10];
     });
     check(!$result['success'] && serialize($db->tables) === $before && $db->depth === 0, 'Atomic rollback: ' . $failure);
@@ -184,7 +206,17 @@ foreach ([['branch' => 2], ['operator_role' => 8], ['operator_role' => null]] as
 $db = fixture('pending', '0'); $db->tables['detail_produksi'][0]->waktu_mulai = null;
 check(!service($db)->execute([1], 'complete', $actor, [1 => 11], [], function () { return ['qty_output' => 10]; })['success'], 'Cannot finish pending operation');
 check(service($db)->execute([1], 'start', $actor)['success'], 'Start pending operation');
-check(!service($db)->execute([1], 'start', $actor)['success'], 'Double start does not open another operation');
+$before = serialize($db->tables);
+$retry_callback = false;
+$retry = service($db)->execute([1], 'start', $actor, [1 => 11], [1 => 'old-version'], function () use (&$retry_callback) {
+    $retry_callback = true;
+    return ['mesin_id' => 999];
+});
+check($retry['success'] && $retry['already_started_ids'] === [1], 'Double start refreshes an already-running operation');
+check(serialize($db->tables) === $before && !$retry_callback, 'Double start preserves worker, time, machine, stock, notes, and audit without callback');
+check(!service($db)->execute([1], 'start', $actor, [1 => 12])['success'] && serialize($db->tables) === $before, 'Stale start cannot act on a different operation');
+check(!service($db)->execute([1], 'start', array_merge($actor, ['operator_role' => 8]))['success'] && serialize($db->tables) === $before, 'Running-stage retry still checks assigned division');
+check(!service($db)->execute([1], 'start', array_merge($actor, ['branch' => 2]))['success'] && serialize($db->tables) === $before, 'Running-stage retry still checks branch access');
 $start_time = $db->tables['detail_produksi'][0]->waktu_mulai;
 check(service($db)->execute([1], 'cancel', $actor, [1 => 11])['success'], 'Cancel unused start');
 check($db->tables['detail_produksi'][0]->waktu_mulai === $start_time && $db->tables['detail_produksi'][0]->operator_id === 70, 'Cancel preserves evidence');
@@ -215,8 +247,9 @@ $db = fixture();
 $db->tables['tbl_produksi'][] = (object) array_merge((array) $db->tables['tbl_produksi'][0], ['produksi_id' => 2]);
 $db->tables['detail_produksi'][] = (object) array_merge((array) $db->tables['detail_produksi'][0], ['detail_produksi_id' => 22, 'produksi_id' => 2]);
 $before = serialize($db->tables); $stock = new M_gudang(); $stock->db = $db;
-$result = service($db)->execute([2, 1], 'complete', $actor, [1 => 11, 2 => 22], [], function ($item) use ($stock) {
-    $stock->update_stock_with_log(5, 1, $item->produksi_id === 1 ? -1 : -5, 'Produksi', $item->produksi_id);
+$result = service($db)->execute([2, 1], 'complete', $actor, [1 => 11, 2 => 22], [], function ($item) use ($stock, $db) {
+    $db->fail_log = $item->produksi_id === 2;
+    $stock->update_stock_with_log(5, 1, -1, 'Produksi', $item->produksi_id);
     return ['qty_output' => 10];
 });
 check(!$result['success'] && serialize($db->tables) === $before && $db->depth === 0, 'Batch second-item failure rolls back first item and stock');
@@ -246,17 +279,34 @@ check(!$workflow->execute([1], 'complete', $actor, [1 => 11], [1 => $old_version
 
 $db = fixture(); $before = serialize($db->tables);
 check(!service($db)->execute([1], 'complete', $actor, [], [], function () { return ['qty_output' => 10]; })['success'] && serialize($db->tables) === $before, 'Missing operation identity cannot mutate a later operation');
+$db = fixture(); $before = serialize($db->tables); $stock = new M_gudang(); $stock->db = $db;
+$result = service($db)->execute([1], 'complete', $actor, [1 => 11], [], function () use ($stock) {
+    $stock->update_stock_with_log(5, 1, -0.1, 'Produksi', 1);
+    throw new TypeError('Runtime failure after stock deduction');
+});
+check(!$result['success'] && serialize($db->tables) === $before && $db->depth === 0, 'Runtime error rolls back stock, results and logs');
+$db = fixture(); $db->fail_stock_runtime = true; $before = serialize($db->tables); $stock = new M_gudang(); $stock->db = $db;
+$result = service($db)->execute([1], 'complete', $actor, [1 => 11], [], function () use ($stock) {
+    $stock->update_stock_with_log(5, 1, -0.1, 'Produksi', 1);
+    return ['qty_output' => 10];
+});
+check(!$result['success'] && serialize($db->tables) === $before && $db->depth === 0, 'Runtime error inside stock closes nested transaction and rolls back all changes');
 $db = fixture(); $db->tables['tbl_pemesanan'][0]->status_pembayaran = 'unpaid'; $before = serialize($db->tables);
 check(!service($db)->execute([1], 'complete', $actor, [1 => 11], [], function () { return ['qty_output' => 10]; })['success'] && serialize($db->tables) === $before, 'Unpaid order follows existing release policy');
 
 $db = fixture(); $db->tables['tbl_produksi'][0]->finishing_id = 99; $db->tables['tbl_produksi'][0]->status_finishing = 'pending';
 $db->tables['routing'][0]->is_finishing = 1;
-check(service($db)->execute([1], 'complete', $actor, [1 => 11], [], function () { return ['qty_output' => 10]; })['success'] && $db->tables['tbl_produksi'][0]->status_finishing === 'done' && $db->tables['tbl_produksi'][0]->status_produksi === 'done', 'Actual finishing completion resolves existing finishing fields');
+check(service($db)->execute([1], 'complete', $actor, [1 => 11], [], function () { return ['qty_output' => 10]; })['success'] && $db->tables['tbl_produksi'][0]->status_finishing === 'done' && $db->tables['tbl_produksi'][0]->status_produksi === 'on_pb', 'Actual finishing completion closes finishing and enters PB');
+$db = fixture(); $db->tables['routing'][0]->routing_name = 'F.Laminating';
+check(service($db)->steps($db->tables['tbl_produksi'][0])[0]->is_finishing === 1, 'Workflow normalizes legacy finishing flag when reading routing');
 
-$db = fixture(); $db->tables['tbl_stok_gudang'][] = clone $db->tables['tbl_stok_gudang'][0]; $stock = new M_gudang(); $stock->db = $db;
-$before = serialize($db->tables);
-rejected(function () use ($stock) { $stock->update_stock_with_log(5, 1, -0.1, 'Produksi', 1); }, 'Ambiguous duplicate balance rejected');
-check(serialize($db->tables) === $before && $db->depth === 0, 'Duplicate balances left untouched');
+// Current stock policy records actual usage even when the balance becomes negative.
+$db = fixture(); $stock = new M_gudang(); $stock->db = $db;
+check($stock->update_stock_with_log(5, 1, -5, 'Produksi', 1), 'Usage beyond available balance is recorded');
+check($db->tables['tbl_stok_gudang'][0]->qty === -500.0 && $db->depth === 0, 'Negative balance preserves actual consumption');
+$db = fixture(); $db->tables['tbl_stok_gudang'] = []; $stock = new M_gudang(); $stock->db = $db;
+check($stock->update_stock_with_log(5, 1, -0.1, 'Produksi', 1), 'Missing stock balance is created for actual usage');
+check($db->tables['tbl_stok_gudang'][0]->qty === -50.0 && count($db->tables['tbl_stok_log']) === 1, 'New balance and ledger record agree');
 
 $db = fixture(); $db->tables['tbl_stok_gudang'][0]->rak_id = 4; $db->tables['tbl_stok_gudang'][0]->qty = 100;
 $db->tables['tbl_stok_gudang'][] = (object) ['stok_id' => 2, 'material_id' => 5, 'gudang_id' => 1, 'rak_id' => 8, 'qty' => 200];
@@ -278,6 +328,11 @@ $db = fixture();
 $db->tables['users'] = [(object) ['user_id' => 9, 'karyawan_id' => 70, 'operator_id' => 7], (object) ['user_id' => 10, 'karyawan_id' => 80, 'operator_id' => 8]];
 $db->tables['tbl_karyawan'] = [(object) ['karyawan_id' => 70, 'pin_produksi' => '1111', 'perusahaan_id' => 1, 'divisi_id' => 7], (object) ['karyawan_id' => 80, 'pin_produksi' => '2222', 'perusahaan_id' => 1, 'divisi_id' => 8]];
 check(service($db)->actor('1111', 7)['employee_id'] === 70, 'PIN resolves actual employee independently of routing role');
+foreach (['123', '1234567', '12ab', 'https://qr.invalid/1111', ['1111']] as $invalid_pin)
+    rejected(function () use ($db, $invalid_pin) { service($db)->actor($invalid_pin, 7); }, 'Malformed scanned PIN rejected');
+$db->tables['tbl_karyawan'][0]->pin_produksi = '0042';
+check(service($db)->actor('0042', 7)['employee_id'] === 70, 'Scanned PIN preserves leading zeros during server verification');
+$db->tables['tbl_karyawan'][0]->pin_produksi = '1111';
 rejected(function () use ($db) { service($db)->actor('2222', 7); }, 'PIN from another division cannot authorize operation');
 $db->tables['tbl_karyawan'][0]->perusahaan_id = 2;
 rejected(function () use ($db) { service($db)->actor('1111', 7); }, 'PIN from another branch is rejected');
@@ -315,7 +370,38 @@ $probe->hold = false;
 check(count($workflow->customer_handover_items([1], $actor, 'OFFLINE-1')) === 1, 'PB item with approved QC can reach customer handover');
 rejected(function () use ($workflow, $actor) { $workflow->customer_handover_items([1], $actor, 'OTHER-SPK'); }, 'Customer handover validates SPK ownership');
 $db->tables['tbl_produksi'][0]->status_produksi = 'done';
-rejected(function () use ($workflow, $actor) { $workflow->customer_handover_items([1], $actor); }, 'Customer handover cannot skip PB');
+check(count($workflow->customer_handover_items([1], $actor)) === 1, 'Completed historical item needs no extra PB action');
+$db->tables['detail_produksi'][0]->status_produksi = '1';
+rejected(function () use ($workflow, $actor) { $workflow->customer_handover_items([1], $actor); }, 'Historical done header with incomplete operation cannot hand over');
+$db->tables['detail_produksi'][0]->status_produksi = '2';
+$db->tables['tbl_produksi'][0]->finishing_id = 99; $db->tables['tbl_produksi'][0]->status_finishing = 'pending';
+rejected(function () use ($workflow, $actor) { $workflow->customer_handover_items([1], $actor); }, 'Historical done header with open finishing cannot hand over');
+
+// Only the last completed operation enters PB, including mixed-result batches.
+$db = fixture();
+$next = clone $db->tables['detail_produksi'][0]; $next->detail_produksi_id = 12; $next->routing_id = 22;
+$next->routing_urutan = 2; $next->status_produksi = '0'; $next->waktu_mulai = null;
+$db->tables['detail_produksi'][] = $next;
+$route = clone $db->tables['routing'][0]; $route->routing_id = 22; $route->routing_urutan = 2; $route->is_finishing = 1;
+$db->tables['routing'][] = $route;
+$workflow = service($db);
+$result = $workflow->execute([1], 'complete', $actor, [1 => 11], [], function () { return ['qty_output' => 10]; });
+check($result['success'] && $result['auto_pb_ids'] === [] && $db->tables['tbl_produksi'][0]->status_produksi === 'proses', 'Intermediate completion stays in production');
+check($workflow->execute([1], 'start', $actor, [1 => 12])['success'], 'Next finishing operation starts');
+$result = $workflow->execute([1], 'complete', $actor, [1 => 12], [], function () { return ['qty_output' => 10]; });
+check($result['success'] && $result['auto_pb_ids'] === [1], 'Final finishing operation enters PB once');
+
+$db = fixture(); $second = clone $db->tables['tbl_produksi'][0]; $second->produksi_id = 2; $db->tables['tbl_produksi'][] = $second;
+$step2 = clone $db->tables['detail_produksi'][0]; $step2->detail_produksi_id = 12; $step2->produksi_id = 2; $db->tables['detail_produksi'][] = $step2;
+$workflow = service($db); $versions = [2 => Production_workflow::version($workflow->steps($second)[0])];
+$result = $workflow->execute([1, 2], 'complete', $actor, [1 => 11, 2 => 12], $versions, function ($item) { return ['qty_output' => $item->produksi_id === 1 ? 10 : 4]; });
+check($result['success'] && $result['auto_pb_ids'] === [1], 'Mixed batch returns only finished item as PB arrival');
+check($db->tables['tbl_produksi'][0]->status_produksi === 'on_pb' && $db->tables['tbl_produksi'][1]->status_produksi === 'proses', 'Unfinished sibling in same SPK stays in production');
+
+$db = fixture(); $workflow = service($db); $probe = new QualityProbe(); $probe->hold = true; $workflow->wip_quality = $probe;
+$result = $workflow->execute([1], 'complete', $actor, [1 => 11], [], function () { return ['qty_output' => 10]; });
+check($result['success'] && $db->tables['tbl_produksi'][0]->status_produksi === 'on_pb' && $probe->enrolled === 1, 'QC registration does not add a separate production-to-PB action');
+rejected(function () use ($workflow, $actor) { $workflow->customer_handover_items([1], $actor); }, 'Automatic PB arrival still respects customer QC hold');
 
 // Machine picker and write validation must use the same item location policy.
 $machine = (object) ['perusahaan_id' => 3];

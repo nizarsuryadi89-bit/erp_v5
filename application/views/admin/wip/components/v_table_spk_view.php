@@ -20,18 +20,16 @@
                 $p = $group_items[0];
                 $itemCount = count($group_items);
 
-                $adaPending = $adaProses = $adaDone = $adaOnPB = $isReprintGroup = false;
+                $adaPending = $adaProses = $adaOnPB = $isReprintGroup = false;
                 $rowCats = [];
 
                 foreach ($group_items as $item) {
                     $st = (string) ($item->status_produksi ?? '0');
                     if (in_array($st, ['approved', 'pending', '', '0']))
                         $adaPending = true;
-                    elseif ($st === 'proses')
+                    elseif (in_array($st, ['proses', 'finishing'], true))
                         $adaProses = true;
-                    elseif ($st === 'done')
-                        $adaDone = true;
-                    elseif ($st === 'on_pb')
+                    elseif (in_array($st, ['done', 'on_pb'], true))
                         $adaOnPB = true;
 
                     if (!empty($item->is_reprint) || strpos(($item->catatan ?? ''), '[RIJEK]') !== false) {
@@ -73,32 +71,21 @@
                         $aggClass = 'bg-primary bg-opacity-10 text-primary border-primary';
                         $badgeIcon = '<i class="fas fa-cog fa-spin me-1"></i>';
                     }
-                } elseif ($adaDone) {
-                    $aggStatus = 'SIAP PB';
-                    $aggClass = 'bg-success bg-opacity-10 text-success border-success';
-                    $badgeIcon = '<i class="fas fa-check-circle me-1"></i>';
-
-                    if ($adaOnPB) {
-                        $aggStatus = 'SIAP PB (Parsial)';
-                    }
                 } elseif ($adaOnPB) {
-                    $aggStatus = 'DIKIRIM PB';
+                    $aggStatus = 'BARANG DI PB';
                     $aggClass = 'bg-primary bg-opacity-10 text-primary border-primary';
                     $badgeIcon = '<i class="fas fa-paper-plane me-1"></i>';
                 }
 
-                $isReadyToPB = (!$adaPending && !$adaProses && $adaDone);
-                $readyPbClass = $isReadyToPB ? 'tr-ready-pb bg-success bg-opacity-10' : '';
-
-                $isSentToPB = (!$adaPending && !$adaProses && !$adaDone && $adaOnPB);
+                $isSentToPB = (!$adaPending && !$adaProses && $adaOnPB);
                 $sentPbClass = $isSentToPB ? 'tr-sent-pb opacity-75' : '';
 
-                $rowClass = $readyPbClass . ' ' . $sentPbClass . ($isReprintGroup ? ' tr-reprint' : '');
+                $rowClass = $sentPbClass . ($isReprintGroup ? ' tr-reprint' : '');
                 
                 $comp_name = $p->nama_perusahaan ?: 'N/A';
                 $hash = array_sum(array_map('ord', str_split($comp_name)));
                 $branchColor = $branchColors[$hash % count($branchColors)];
-                $borderClass = $isReadyToPB ? '#2ecc71' : ($isSentToPB ? '#3498db' : ($isReprintGroup ? '#e74c3c' : $branchColor));
+                $borderClass = $isSentToPB ? '#3498db' : ($isReprintGroup ? '#e74c3c' : $branchColor);
                 ?>
                 <tr class="tr-spk-row <?= $rowClass ?>" data-categories='<?= json_encode($rowCats) ?>'
                     style="border-left: 5px solid <?= $borderClass ?> !important;">
@@ -341,20 +328,12 @@
                                 <i class="fas fa-exclamation-triangle"></i>
                             </button>
 
-                            <?php if ($isReadyToPB): ?>
-                                <a href="#"
-                                    class="btn btn-warning btn-sm rounded-pill px-3 fw-bold text-dark shadow-sm d-flex align-items-center justify-content-center gap-1"
-                                    onclick="ProductionApp.sendSPKToPB(<?= htmlspecialchars(json_encode($p->nospk), ENT_QUOTES, 'UTF-8') ?>); return false;">
-                                    <i class="fas fa-truck"></i> PB
-                                </a>
-                            <?php endif; ?>
+
                         </div>
                     </td>
 
                     <td class="d-none">
                         <?php
-                        if ($isReadyToPB)
-                            echo "#READY_PB# ";
                         if ($adaProses)
                             echo "#PROSES# ";
                         ?>

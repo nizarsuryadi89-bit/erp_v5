@@ -2991,11 +2991,15 @@ LIMIT 50
 
     public function konsumen_add()
     {
+        $is_blacklist = $this->input->post('is_blacklist', true) ? 1 : 0;
+        $catatan_blacklist = $this->input->post('catatan_blacklist', true);
         $data = array(
             'konsumen_nama' => $this->input->post('konsumen_nama', true),
             'konsumen_alamat' => $this->input->post('konsumen_alamat', true),
             'konsumen_nohp' => $this->input->post('konsumen_nohp', true),
             'konsumen_email' => $this->input->post('konsumen_email', true),
+            'is_blacklist' => $is_blacklist,
+            'catatan_blacklist' => $is_blacklist ? $catatan_blacklist : null
         );
         $this->M_master->addData('tbl_konsumen', $data);
         $this->session->set_flashdata('success', 'Data Berhasil Disimpan');
@@ -3005,12 +3009,16 @@ LIMIT 50
     public function konsumen_edit()
     {
         $id = $this->input->post('konsumen_id', true);
+        $is_blacklist = $this->input->post('is_blacklist', true) ? 1 : 0;
+        $catatan_blacklist = $this->input->post('catatan_blacklist', true);
         $data = [
             'konsumen_nama' => $this->input->post('konsumen_nama', true),
             'konsumen_alamat' => $this->input->post('konsumen_alamat', true),
             'konsumen_nohp' => $this->input->post('konsumen_nohp', true),
             'konsumen_email' => $this->input->post('konsumen_email', true),
-            'status' => $this->input->post('status', true)
+            'status' => $this->input->post('status', true),
+            'is_blacklist' => $is_blacklist,
+            'catatan_blacklist' => $is_blacklist ? $catatan_blacklist : null
         ];
 
         if ($id && !empty($data['konsumen_nama'])) {
@@ -3039,20 +3047,54 @@ LIMIT 50
 
     public function konsumen_search_ajax()
     {
-        $term = $this->input->get('q', true);
-        $this->db->group_start();
-        $this->db->like('LOWER(konsumen_nama)', strtolower($term));
-        $this->db->or_like('konsumen_nohp', $term);
-        $this->db->group_end();
-        $this->db->limit(20);
-        $data = $this->db->get('tbl_konsumen')->result();
+        $term = trim((string) ($this->input->get('q', true) ?? ''));
+        if ($term === '') {
+            $this->output->set_content_type('application/json')->set_output(json_encode([]));
+            return;
+        }
+
+        $keywords = array_filter(preg_split('/\s+/', $term));
+        $clean_phone = preg_replace('/[^0-9]/', '', $term);
+
+        $this->db->select('konsumen_id, konsumen_nama, konsumen_nohp, konsumen_email, is_blacklist, catatan_blacklist');
+        $this->db->from('tbl_konsumen');
+
+        if (!empty($keywords)) {
+            $this->db->group_start();
+            foreach ($keywords as $kw) {
+                $kw_clean = strtolower($kw);
+                $this->db->group_start();
+                $this->db->like('LOWER(konsumen_nama)', $kw_clean);
+                $this->db->or_like('LOWER(konsumen_nohp)', $kw_clean);
+                $this->db->or_like('LOWER(konsumen_email)', $kw_clean);
+                if (strlen($clean_phone) >= 3) {
+                    $this->db->or_like("REPLACE(REPLACE(konsumen_nohp, ' ', ''), '-', '')", $clean_phone);
+                }
+                $this->db->group_end();
+            }
+            $this->db->group_end();
+        }
+
+        $this->db->where('konsumen_nohp !=', 'MARKETPLACE');
+
+        $first_kw = strtolower(reset($keywords) ?: $term);
+        $escaped_kw = $this->db->escape_like_str($first_kw);
+        $this->db->order_by("CASE WHEN LOWER(konsumen_nama) LIKE '{$escaped_kw}%' THEN 1 ELSE 2 END", 'ASC', FALSE);
+        $this->db->order_by('konsumen_nama', 'ASC');
+        $this->db->limit(25);
+
+        $query = $this->db->get();
+        $data = $query ? $query->result() : [];
 
         $result = [];
         foreach ($data as $row) {
             $result[] = [
                 'konsumen_id' => $row->konsumen_id,
                 'konsumen_nama' => $row->konsumen_nama,
-                'konsumen_nohp' => $row->konsumen_nohp
+                'konsumen_nohp' => $row->konsumen_nohp,
+                'konsumen_email' => $row->konsumen_email ?? '',
+                'is_blacklist' => $row->is_blacklist ?? 0,
+                'catatan_blacklist' => $row->catatan_blacklist ?? ''
             ];
         }
 

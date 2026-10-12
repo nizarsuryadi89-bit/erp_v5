@@ -252,6 +252,7 @@ $total_semua = (isset($stats['antrian']) ? $stats['antrian'] : 0) + (isset($stat
     <!-- Bottom Row: Status Tabs -->
     <div class="status-tabs-wrapper mt-1">
         <div class="status-tabs-container">
+            <?php if (empty($is_finishing_workcenter)): ?>
             <div class="status-tab tab-semua <?= ($fs_view === 'all_active') ? 'active' : '' ?>"
                 onclick="updateWipFilter('status_view', 'all_active')">
                 Semua (Proses Aktif) <span class="badge-count"><?= $total_semua ?></span>
@@ -265,14 +266,10 @@ $total_semua = (isset($stats['antrian']) ? $stats['antrian'] : 0) + (isset($stat
                 Proses Produksi <span
                     class="badge-count"><?= isset($stats['produksi']) ? $stats['produksi'] : 0 ?></span>
             </div>
+            <?php endif; ?>
             <div class="status-tab tab-proses <?= ($fs_view === 'finishing') ? 'active' : '' ?>"
                 onclick="updateWipFilter('status_view', 'finishing')">
                 Finishing <span class="badge-count"><?= (int) ($stats['finishing'] ?? 0) ?></span>
-            </div>
-            <div class="status-tab tab-selesai <?= ($fs_view === 'ready_pb') ? 'active' : '' ?>"
-                onclick="updateWipFilter('status_view', 'ready_pb')">
-                Siap Serah Terima PB <span
-                    class="badge-count"><?= isset($stats['selesai']) ? $stats['selesai'] : 0 ?></span>
             </div>
             <div class="status-tab tab-pb <?= ($fs_view === 'pb') ? 'active' : '' ?>"
                 onclick="updateWipFilter('status_view', 'pb')">

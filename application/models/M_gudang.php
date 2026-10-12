@@ -762,7 +762,7 @@ class M_gudang extends CI_model
                 throw new RuntimeException('Posting stok gagal.');
             $started = false;
             return true;
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if ($started)
                 $this->db->trans_rollback();
             throw $e; // Production transaction must also roll back results/header/logs.
@@ -786,7 +786,7 @@ class M_gudang extends CI_model
                 return false;
             }
             return $this->db->trans_commit();
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             $this->db->trans_rollback();
             log_message('error', 'Stock posting failed: ' . $e->getMessage());
             return false;

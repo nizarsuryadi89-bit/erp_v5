@@ -154,22 +154,24 @@ $route['mesin/aksi-simpan'] = 'mesin/actionAdd';
 $route['mesin/aksi-delete/(:any)'] = 'mesin/action_delete';
 
 //keuangan
-$route['laporan/akun-piutang'] = 'keuangan/piutang';
-$route['laporan/akun-hutang'] = 'keuangan/hutang';
-$route['laporan/laporan-periode-keuangan'] = 'keuangan/laporan_periode_keuangan';
-$route['laporan/laporan-keuangan-harian'] = 'keuangan/transaksi_harian';
-$route['laporan/laporan-keuangan-bulanan'] = 'keuangan/transaksi_bulanan';
+$route['laporan/mutasi_harian'] = 'laporan/mutasi_harian';
+$route['laporan/mutasi-harian'] = 'laporan/mutasi_harian';
+$route['laporan/export_mutasi_harian'] = 'laporan/export_mutasi_harian';
+$route['laporan/akun-piutang'] = 'laporan/laporan_piutang';
+$route['laporan/akun-hutang'] = 'laporan/hutang';
+$route['laporan/laporan-periode-keuangan'] = 'laporan/pemasukan_bulanan';
+$route['laporan/laporan-keuangan-harian'] = 'laporan/pemasukan_harian';
+$route['laporan/laporan-keuangan-bulanan'] = 'laporan/pemasukan_bulanan';
 
-
-$route['laporan/laporan-cash-harian'] = 'keuangan/transaksi_cash_harian';
-$route['laporan/laporan-transfer-harian'] = 'keuangan/transaksi_transfer_harian';
-$route['laporan/laporan-edc-harian'] = 'keuangan/transaksi_edc_harian';
-$route['laporan/laporan-ewallet-harian'] = 'keuangan/transaksi_ewallet_harian';
-$route['laporan/buku-besar'] = 'keuangan/legger';
+$route['laporan/laporan-cash-harian'] = 'laporan/mutasi_cash';
+$route['laporan/laporan-transfer-harian'] = 'laporan/mutasi_bank';
+$route['laporan/laporan-edc-harian'] = 'laporan/mutasi_edc';
+$route['laporan/laporan-ewallet-harian'] = 'laporan/mutasi_ewallet';
+$route['laporan/buku-besar'] = 'laporan/legger';
 // Pengeluaran
 $route['pengeluaran'] = 'laporan/pengeluaran';
-$route['laporan/pengeluaran-harian'] = 'keuangan/pengeluaran_harian';
-$route['laporan/pengeluaran-bulanan'] = 'keuangan/pengeluaran_bulanan';
+$route['laporan/pengeluaran-harian'] = 'laporan/pengeluaran';
+$route['laporan/pengeluaran-bulanan'] = 'laporan/pengeluaran';
 
 
 //bahan

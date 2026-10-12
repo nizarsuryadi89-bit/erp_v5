@@ -1,3 +1,43 @@
+<?php
+if (!isset($variations) || !is_array($variations)) {
+    if (isset($getProduct['product_id'])) {
+        $ci =& get_instance();
+        $raw_vars = $ci->db->get_where('tbl_harga_product', ['product_id' => $getProduct['product_id']])->result();
+        if (!empty($raw_vars)) {
+            foreach ($raw_vars as &$v) {
+                $var_name = !empty($v->detail_product) ? $v->detail_product : 'Variasi ID: ' . $v->harga_id;
+                $meta_desc = [];
+                if (!empty($v->metadata)) {
+                    $meta = json_decode($v->metadata, true);
+                    if (is_array($meta)) {
+                        $ignored = ['product_id', 'nospk', 'qty', 'panjang', 'lebar', 'kategori_id', 'keterangan', 'approve', 'lokasi_cetak'];
+                        foreach ($meta as $k => $val) {
+                            if (!in_array($k, $ignored) && strpos($k, 'dim_') === false && strpos($k, '_id') === false && $val !== '') {
+                                $meta_desc[] = $val;
+                            }
+                        }
+                    }
+                }
+                if (empty($meta_desc)) {
+                    if (!empty($v->ket_1) && $v->ket_1 !== '0') $meta_desc[] = $v->ket_1;
+                    if (!empty($v->jenisprint_id) && $v->jenisprint_id !== '0') $meta_desc[] = $v->jenisprint_id;
+                    if (!empty($v->side_id) && $v->side_id !== '0') $meta_desc[] = $v->side_id;
+                }
+                if (!empty($meta_desc)) {
+                    $var_name .= ' (' . implode(' | ', $meta_desc) . ')';
+                }
+                $v->display_name = $var_name;
+            }
+            unset($v);
+            $variations = $raw_vars;
+        } else {
+            $variations = [];
+        }
+    } else {
+        $variations = [];
+    }
+}
+?>
 <!-- Modal Copy BOM & Routing -->
 <div class="modal fade" id="modalCopySetup" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -25,11 +65,13 @@
                         <label class="form-label fw-bold small text-primary">COPY DARI SUMBER INI:</label>
                         <select class="form-select shadow-none" name="source_harga_id" id="copy_source_harga_id" required>
                             <option value="">-- Semua Variasi (Global) --</option>
-                            <?php foreach ($variations as $var): ?>
-                                <option value="<?= $var->harga_id ?>">
-                                    <?= $var->display_name ?>
-                                </option>
-                            <?php endforeach; ?>
+                            <?php if (!empty($variations) && is_array($variations)): ?>
+                                <?php foreach ($variations as $var): ?>
+                                    <option value="<?= $var->harga_id ?>">
+                                        <?= !empty($var->display_name) ? $var->display_name : ($var->detail_product ?: 'Variasi ID: ' . $var->harga_id) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
                         </select>
                     </div>
 
@@ -46,14 +88,20 @@
                                     -- Semua Variasi (Global) --
                                 </label>
                             </div>
-                            <?php foreach ($variations as $var): ?>
-                                <div class="form-check mb-2 pb-2 border-bottom">
-                                    <input class="form-check-input copy-target-checkbox" type="checkbox" name="target_harga_ids[]" value="<?= $var->harga_id ?>" id="target_<?= $var->harga_id ?>">
-                                    <label class="form-check-label" for="target_<?= $var->harga_id ?>">
-                                        <?= $var->display_name ?>
-                                    </label>
+                            <?php if (!empty($variations) && is_array($variations)): ?>
+                                <?php foreach ($variations as $var): ?>
+                                    <div class="form-check mb-2 pb-2 border-bottom">
+                                        <input class="form-check-input copy-target-checkbox" type="checkbox" name="target_harga_ids[]" value="<?= $var->harga_id ?>" id="target_<?= $var->harga_id ?>">
+                                        <label class="form-check-label" for="target_<?= $var->harga_id ?>">
+                                            <?= !empty($var->display_name) ? $var->display_name : ($var->detail_product ?: 'Variasi ID: ' . $var->harga_id) ?>
+                                        </label>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <div class="text-muted small py-2">
+                                    <i class="bi bi-info-circle me-1"></i> Tidak ada variasi khusus pada produk ini.
                                 </div>
-                            <?php endforeach; ?>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>

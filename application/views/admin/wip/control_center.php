@@ -60,7 +60,7 @@ $isAdmin = in_array((int) $level, [1, 17], true);
 $isAllDone = true;
 if (!empty($items)) {
     foreach ($items as $itm) {
-        if ($itm->status_produksi != 'done') {
+        if (!in_array($itm->status_produksi, ['done', 'on_pb'], true)) {
             $isAllDone = false;
             break;
         }
@@ -84,11 +84,9 @@ if (!empty($items)) {
             </div>
             <div class="d-flex align-items-center gap-2">
                 <?php if ($isAllDone): ?>
-                    <button
-                        onclick="ProductionApp.sendSPKToPB(<?= htmlspecialchars(json_encode($spk_header->nospk), ENT_QUOTES, 'UTF-8') ?>)"
-                        class="btn btn-warning btn-sm rounded-pill fw-bold shadow-sm animate__animated animate__pulse animate__infinite">
-                        <i class="fas fa-truck-loading me-1"></i> KIRIM KE PB
-                    </button>
+                    <a href="<?= site_url('pb') ?>" class="btn btn-light btn-sm rounded-pill fw-bold shadow-sm">
+                        <i class="fas fa-box me-1"></i> Buka PB
+                    </a>
                 <?php endif; ?>
 
                 <button onclick="startAllItems('<?= $spk_header->nospk ?>')"
@@ -157,7 +155,7 @@ if (!empty($items)) {
                                            class="btn btn-success btn-sm rounded-pill fw-900 shadow-sm px-4 py-2">
                                            <i class="fas fa-check me-1"></i> SELESAI
                                            </button>';
-                        } elseif ($item->status_produksi == 'done') {
+                        } elseif (in_array($item->status_produksi, ['done', 'on_pb', 'on_costumer'], true)) {
                             $stepLabel = '<span class="badge bg-success rounded-pill px-3"><i class="fas fa-check-double me-1"></i> SELESAI</span>';
                             // Tombol Revisi
                             $actionBtn = '<button onclick=\'reviseItem(' . $item->produksi_id . ', ' . json_encode($item->routing_steps) . ')\' class="btn btn-sm btn-outline-danger rounded-pill fw-bold shadow-sm opacity-75" title="Revisi Status"><i class="fas fa-undo me-1"></i> Revisi</button>';

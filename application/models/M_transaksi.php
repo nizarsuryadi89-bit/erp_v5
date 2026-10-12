@@ -396,7 +396,7 @@ class M_transaksi extends CI_Model
         tbl_product.form_schema as product_form_schema
     ');
         $this->db->where('no_spk', $kode);
-        $this->db->join('tbl_harga_product', 'tbl_harga_product.harga_id = tbl_temp_transaksi.harga_id');
+        $this->db->join('tbl_harga_product', 'tbl_harga_product.harga_id = tbl_temp_transaksi.harga_id', 'left');
         $this->db->join('tbl_product', 'tbl_product.product_id = tbl_temp_transaksi.product_id');
         $this->db->join('tbl_kategori', 'tbl_kategori.kategori_id = tbl_product.kategori_id', 'left');
         $this->db->join('tbl_subkategori', 'tbl_subkategori.subkategori_id = tbl_product.subkategori_id', 'left');
@@ -420,9 +420,8 @@ class M_transaksi extends CI_Model
 
     function deleteTmp($kode)
     {
-        $user = $this->session->userdata('id');
-        $this->db->where('user_id', $user);
-        $this->db->delete('tbl_temp_transaksi');
+        if (!is_string($kode) || $kode === '') { return false; }
+        return $this->db->where('no_spk', $kode)->delete('tbl_temp_transaksi');
     }
 
     function setKonsumen($konsummen, $kode)
@@ -440,11 +439,12 @@ class M_transaksi extends CI_Model
 
         return $this->db->query(
             "SELECT no_urut_spk FROM tbl_spk 
-             WHERE perusahaan_id = $perusahaan 
-             AND user_id = $user 
-             AND MONTH(spk_time) = $month 
-             AND YEAR(spk_time) = $year
-             ORDER BY no_urut_spk DESC LIMIT 0,1"
+             WHERE perusahaan_id = ?
+             AND user_id = ?
+             AND MONTH(spk_time) = ?
+             AND YEAR(spk_time) = ?
+             ORDER BY no_urut_spk DESC LIMIT 0,1",
+            [$perusahaan, $user, $month, $year]
         );
     }
 
@@ -491,6 +491,35 @@ class M_transaksi extends CI_Model
         return $this->db->count_all_results('tbl_pemesanan');
     }
 
+    private function kasir_detail_subtotal_sql()
+    {
+        $prices = [];
+        $subtotals = [];
+        if ($this->db->field_exists('metadata', 'tbl_pemesanan_detail')) {
+            foreach (['unit_price', 'subtotal'] as $field) {
+                $value = "JSON_UNQUOTE(JSON_EXTRACT(IF(JSON_VALID(pd.metadata), pd.metadata, '{}'), '$.{$field}'))";
+                $number = "CASE WHEN {$value} REGEXP '^[0-9]+([.][0-9]+)?$' THEN CAST({$value} AS DECIMAL(20,4)) ELSE NULL END";
+                if ($field === 'unit_price') $prices[] = $number;
+                else $subtotals[] = $number;
+            }
+        }
+        foreach (['unit_price', 'snapshot_harga'] as $field) {
+            if ($this->db->field_exists($field, 'tbl_pemesanan_detail')) $prices[] = "pd.{$field}";
+        }
+        foreach (['subtotal', 'snapshot_subtotal'] as $field) {
+            if ($this->db->field_exists($field, 'tbl_pemesanan_detail')) $subtotals[] = "pd.{$field}";
+        }
+        $prices[] = 'hp.harga_1';
+        $price = 'COALESCE(' . implode(', ', $prices) . ', 0)';
+        $subtotals[] = "GREATEST(CASE
+            WHEN pr.satuan_id IN (1,3,6,7,8,9,10,12,13,15,17,18,19) THEN pd.qty * {$price}
+            WHEN pr.satuan_id = 11 OR (pr.kategori_id = 9 AND hp.ket_1 = '5') THEN pd.panjang * pd.qty * {$price}
+            WHEN pd.panjang > 0 AND pd.lebar > 0 THEN pd.panjang * pd.lebar * pd.qty * {$price}
+            WHEN pd.panjang > 0 AND (pd.lebar = 0 OR pd.lebar IS NULL) THEN pd.panjang * pd.qty * {$price}
+            ELSE pd.qty * {$price} END, COALESCE(hp.harga_minimal, 0))";
+        return 'COALESCE(' . implode(', ', $subtotals) . ')';
+    }
+
     function getDataPemesanankasir($status, $perusahaan_override = null)
     {
         $perusahaan = $perusahaan_override ?? $this->session->userdata('perusahaan_id');
@@ -530,21 +559,12 @@ class M_transaksi extends CI_Model
         $this->db->join('tbl_perusahaan', 'tbl_perusahaan.id_perusahaan = tbl_pemesanan.perusahaan_id', 'left');
         
         // Optimasi: Gunakan LEFT JOIN dengan derived table alih-alih subquery
+        $detail_subtotal = $this->kasir_detail_subtotal_sql();
         $this->db->join('(
             SELECT pd.nospk, 
                    COUNT(*) as jumlah_item,
                    MAX(pd.lokasi_cetak) as lokasi_cetak,
-                   ROUND(SUM(
-                       GREATEST(
-                           CASE 
-                               WHEN (pr.satuan_id = 11) THEN (pd.panjang * pd.qty * hp.harga_1)
-                               WHEN (pd.panjang > 0 AND pd.lebar > 0) THEN (pd.panjang * pd.lebar * pd.qty * hp.harga_1) 
-                               WHEN (pd.panjang > 0 AND (pd.lebar = 0 OR pd.lebar IS NULL)) THEN (pd.panjang * pd.qty * hp.harga_1)
-                               ELSE (pd.qty * hp.harga_1) 
-                           END,
-                           COALESCE(hp.harga_minimal, 0)
-                       )
-                   )) as total_detail
+                   ROUND(SUM(' . $detail_subtotal . ')) as total_detail
             FROM tbl_pemesanan_detail pd 
             LEFT JOIN tbl_harga_product hp ON hp.harga_id = pd.harga_id 
             LEFT JOIN tbl_product pr ON pr.product_id = pd.product_id 
@@ -741,29 +761,31 @@ class M_transaksi extends CI_Model
         return $this->db->get('tbl_pemesanan');
     }
 
-    function getDetailPemesanan()
+    function getDetailPemesanan($nospk = null)
     {
-        $nospk = decrypt_url($this->uri->segment(3));
+        $nospk = $nospk ?? decrypt_url($this->uri->segment(3));
 
+        // Keep order dates/IDs separate from similarly named price and customer columns.
+        $this->db->select('tbl_pemesanan.*, tbl_konsumen.konsumen_nama, tbl_konsumen.konsumen_nohp,
+            tbl_konsumen.is_blacklist, tbl_konsumen.catatan_blacklist,
+            users.username, tbl_jenis_transaksi.nama_jenis_transaksi, tbl_marketplace.marketplace_nama');
         $this->db->where('tbl_pemesanan.nospk', $nospk);
         $this->db->join('tbl_konsumen', 'tbl_konsumen.konsumen_id = tbl_pemesanan.konsumen_id');
         $this->db->join('users', 'users.user_id = tbl_pemesanan.deskprint_id');
         $this->db->join('tbl_jenis_transaksi', 'tbl_jenis_transaksi.id_jenis_transaksi = tbl_pemesanan.id_jenis_transaksi');
         $this->db->join('tbl_marketplace', 'tbl_marketplace.marketplace_id = tbl_pemesanan.marketplace_id', 'left');
-        $this->db->join('tbl_pemesanan_detail', 'tbl_pemesanan_detail.nospk = tbl_pemesanan.nospk');
-        $this->db->join('tbl_harga_product', 'tbl_harga_product.harga_id = tbl_pemesanan_detail.harga_id');
         return $this->db->get('tbl_pemesanan');
     }
 
-    function getDetail()
+    function getDetail($nospk = null)
     {
-        $nospk = decrypt_url($this->uri->segment(3));
+        $nospk = $nospk ?? decrypt_url($this->uri->segment(3));
         $this->db->select('tbl_pemesanan_detail.*, tbl_product.product_nama, tbl_kategori.kategori_nama, tbl_product.kategori_id, tbl_product.satuan_id, tbl_harga_product.harga_1, tbl_harga_product.harga_aktif, tbl_harga_product.ket_1, tbl_harga_product.jenisprint_id, tbl_harga_product.side_id, tbl_harga_product.harga_id, tbl_harga_product.detail_product, tbl_harga_product.range_id, tbl_harga_product.jml_minimum, tbl_harga_product.jenisprint_id, tbl_harga_product.harga_minimal, tbl_product.form_schema as product_form_schema, tbl_kategori.form_schema as category_form_schema, tbl_subkategori.form_schema as subcategory_form_schema');
         $this->db->where('nospk', $nospk);
         $this->db->join('tbl_product', 'tbl_product.product_id = tbl_pemesanan_detail.product_id');
         $this->db->join('tbl_kategori', 'tbl_kategori.kategori_id = tbl_product.kategori_id', 'left');
         $this->db->join('tbl_subkategori', 'tbl_subkategori.subkategori_id = tbl_product.subkategori_id', 'left');
-        $this->db->join('tbl_harga_product', 'tbl_harga_product.harga_id = tbl_pemesanan_detail.harga_id');
+        $this->db->join('tbl_harga_product', 'tbl_harga_product.harga_id = tbl_pemesanan_detail.harga_id', 'left');
         return $this->db->get('tbl_pemesanan_detail');
     }
 
@@ -774,7 +796,7 @@ class M_transaksi extends CI_Model
             COALESCE(pp.snapshot_harga, tbl_harga_product.harga_1) AS harga_1,
             tbl_harga_product.harga_aktif,
             tbl_harga_product.ket_1, tbl_harga_product.jenisprint_id, tbl_harga_product.side_id,
-            tbl_harga_product.harga_id,
+            tbl_pemesanan_detail.harga_id,
             COALESCE(pp.snapshot_detail_product, tbl_harga_product.detail_product) AS detail_product,
             tbl_harga_product.range_id,
             tbl_harga_product.jml_minimum,
@@ -793,7 +815,7 @@ class M_transaksi extends CI_Model
         $this->db->join('tbl_satuan', 'tbl_satuan.satuan_id = tbl_product.satuan_id', 'left');
         $this->db->join('tbl_kategori', 'tbl_kategori.kategori_id = tbl_product.kategori_id', 'left');
         $this->db->join('tbl_subkategori', 'tbl_subkategori.subkategori_id = tbl_product.subkategori_id', 'left');
-        $this->db->join('tbl_harga_product', 'tbl_harga_product.harga_id = tbl_pemesanan_detail.harga_id');
+        $this->db->join('tbl_harga_product', 'tbl_harga_product.harga_id = tbl_pemesanan_detail.harga_id', 'left');
         $this->db->join('tbl_spk', 'tbl_spk.nospk = tbl_pemesanan_detail.nospk', 'left');
 
         // Join to a subquery that picks the latest pembayaran_produk row per group

@@ -13,13 +13,19 @@ const ProductionApp = {
     state: {
         activeCategory: 'all',
         csrfHash: WIP_CONFIG.csrfHash,
-        operationSnapshots: {}
+        operationSnapshots: {},
+        advanceRequests: {}
     },
 
     machineOptionsUrl(stepName, catId, ids) {
         const params = new URLSearchParams({ stepName, catId });
         ids.forEach(id => params.append('ids[]', id));
         return this.config.baseUrl + 'get_machines_ajax?' + params.toString();
+    },
+
+    finishingNeedsMachine(stepName, categoryId = 0, productName = '') {
+        if (Number(categoryId) === 1 || /\bA3\b/i.test(String(productName || '') + ' ' + String(stepName || ''))) return false;
+        return /\b(?:cutting|potong|kiss\s*cut|die[\s-]*cut)\b/i.test(String(stepName || ''));
     },
 
     init() {
@@ -61,6 +67,7 @@ const ProductionApp = {
     },
 
     initAutoFocus() {
+        if (window.WipPinQr) window.WipPinQr.init();
         // Bootstrap Modals Autofocus
         $('#modalSelesaiSPK').on('shown.bs.modal', () => $('#selesaiSpkPin').focus());
         $('#modalSelesaiFinishing').on('shown.bs.modal', () => $('#finOperatorPin').focus());
@@ -140,7 +147,7 @@ const ProductionApp = {
         ids.forEach(id => {
             const row = $(`.check-item-nesting[data-id="${id}"]`).first();
             const configured = (WIP_CONFIG.operationSnapshots || {})[id];
-            snapshots[id] = row.length ? { id: row.data('step-id'), version: row.data('step-version'), target: row.data('qty'), completed: row.data('step-output') } : configured;
+            snapshots[id] = row.length ? { id: row.data('step-id'), version: row.data('step-version'), target: row.data('qty'), completed: row.data('step-output'), productName: row.data('product-name') } : configured;
             if (snapshots[id] && snapshots[id].id) this.state.operationSnapshots[id] = snapshots[id];
         });
         return snapshots;
@@ -257,7 +264,7 @@ const ProductionApp = {
             $('#contentProses').removeClass('d-none');
             $('#listProdukRouting').html(''); // Clear first
             (res.items || []).forEach(it => {
-                if (it.workflow_step_id) this.state.operationSnapshots[it.produksi_id] = { id: it.workflow_step_id, version: it.workflow_version, target: it.qty, completed: it.workflow_qty_output ?? 0 };
+                if (it.workflow_step_id) this.state.operationSnapshots[it.produksi_id] = { id: it.workflow_step_id, version: it.workflow_version, target: it.qty, completed: it.workflow_qty_output ?? 0, productName: it.product_nama };
             });
             let html = (res.items || []).map(it => {
                 let btnAction = '';
@@ -286,7 +293,7 @@ const ProductionApp = {
                         // Final Step: Control Button (Use standard finish)
                         btnAction = `<a href="${this.config.baseUrl}control_center/${it.produksi_id}" class="btn btn-success btn-sm rounded-pill fw-bold"><i class="fas fa-check me-1"></i> Finalisasi</a>`;
                     }
-                } else if (it.status_produksi === 'done') {
+                } else if (['done', 'on_pb'].includes(it.status_produksi)) {
                     btnAction = `<span class="badge bg-success"><i class="fas fa-check-double"></i> DONE</span>`;
                 }
 
@@ -336,7 +343,7 @@ const ProductionApp = {
 
             $('#modalSelesaiSPK').data('ids', (res.items || []).filter(it => ['proses', 'finishing'].includes(it.status_produksi)).map(it => it.produksi_id));
             (res.items || []).forEach(it => {
-                if (it.workflow_step_id) this.state.operationSnapshots[it.produksi_id] = { id: it.workflow_step_id, version: it.workflow_version, target: it.qty, completed: it.workflow_qty_output ?? 0 };
+                if (it.workflow_step_id) this.state.operationSnapshots[it.produksi_id] = { id: it.workflow_step_id, version: it.workflow_version, target: it.qty, completed: it.workflow_qty_output ?? 0, productName: it.product_nama };
             });
             let totalM2 = 0;
             let html = (res.items || []).map(it => {
@@ -359,7 +366,7 @@ const ProductionApp = {
                 let roll = maxDim > 0 ? (rolls.find(r => r >= maxDim) || 3.2) : '-';
 
                 let statusBadge = '';
-                if (it.status_produksi === 'done') {
+                if (['done', 'on_pb'].includes(it.status_produksi)) {
                     statusBadge = '<span class="badge bg-success rounded-pill px-2"><i class="fas fa-check-double me-1"></i> DONE</span>';
                 } else if (['proses', 'finishing'].includes(it.status_produksi)) {
                     statusBadge = '<span class="badge bg-warning text-dark rounded-pill px-2"><i class="fas fa-cog fa-spin me-1"></i> PROSES</span>';
@@ -501,35 +508,6 @@ const ProductionApp = {
     },
 
     /** Batch Operations */
-    filterSiapPB() {
-        // Reset tab buttons
-    $('#categoryTabs .nav-link').removeClass('active');
-
-    // Ensure SPK view is active (because ready_to_pb is grouped by SPK)
-    $('#container-view-spk').removeClass('d-none');
-    $('#container-view-item').addClass('d-none');
-
-    // Use DataTables Search API (Handles Pagination correctly)
-    const table = $('#tableSemuaProduksi').DataTable();
-    table.search('#READY_PB#').draw();
-
-    // Scroll to table with a slight offset
-    $('html, body').animate({
-        scrollTop: $("#tableSemuaProduksi").offset().top - 150
-    }, 500);
-
-    // Success Toast
-    Swal.fire({
-        title: 'Filter Aktif',
-        text: 'Menampilkan SPK yang siap dikirim ke PB',
-        icon: 'info',
-        toast: true,
-        position: 'top-end',
-        timer: 3000,
-        showConfirmButton: false
-    });
-},
-
     filterSedangProses() {
         // Reset tab buttons
         $('#categoryTabs .nav-link').removeClass('active');
@@ -658,10 +636,13 @@ const ProductionApp = {
         }
 
         let allProses = checked.toArray().every(el => String($(el).data('step-status')) === '1');
-        let allFinishing = checked.toArray().every(el => $(el).data('step-urutan') > 1);
-        let allDone = checked.toArray().every(el => $(el).data('status') === 'done');
+        let allFinishing = checked.toArray().every(el => this.isFinishingRow(el));
+        let allDone = checked.toArray().every(el => ['done', 'on_pb', 'on_costumer'].includes($(el).data('status')));
 
-        if (activeCat === '1') {
+        if (allFinishing) {
+            $('#btnRipping, #btnSelesaiStok').addClass('d-none');
+            $('#btnSelesaiFinishing').toggleClass('d-none', allDone);
+        } else if (activeCat === '1') {
             // Queue items must start their current operation before result posting.
             $('#btnRipping').addClass('d-none');
             $('#btnSelesaiStok').toggleClass('d-none', !allProses || allDone || allFinishing);
@@ -673,7 +654,6 @@ const ProductionApp = {
             $('#btnSelesaiFinishing').toggleClass('d-none', !(allProses && allFinishing));
         }
 
-        $('#btnKirimPB').toggleClass('d-none', !allDone);
     } else {
         $('#nestingSummary').addClass('d-none');
     }
@@ -700,12 +680,12 @@ enforceConsistency() {
         let baseMat = $(checked[0]).closest('.tr-nesting-item').data('material');
         $('.check-item-nesting').each(function () {
             let mat = $(this).closest('.tr-nesting-item').data('material');
-            let isDone = $(this).data('status') === 'done';
+            let isDone = ['done', 'on_pb', 'on_costumer'].includes($(this).data('status'));
             $(this).prop('disabled', mat !== baseMat || isDone);
             $(this).closest('tr').css('opacity', (mat !== baseMat) ? '0.3' : '1');
         });
     } else {
-        $('.check-item-nesting').each(function () { $(this).prop('disabled', $(this).data('status') === 'done'); });
+        $('.check-item-nesting').each(function () { $(this).prop('disabled', ['done', 'on_pb', 'on_costumer'].includes($(this).data('status'))); });
         $('.tr-nesting-item').css('opacity', '1');
     }
 },
@@ -843,6 +823,8 @@ selectAllByMaterial(mat) {
 
 /** Completion & Logic */
 openCompletionModal() {
+    if (window.WipPinQr) window.WipPinQr.reset();
+    else $('#compOperatorPin').val('');
     let checked = $('.check-item-nesting:checked');
     this.state.completionIds = checked.map((i, el) => $(el).data('id')).get();
     this.captureOperations(this.state.completionIds);
@@ -1002,11 +984,12 @@ openCompletionModal() {
         let bomHtml = '';
         if (bomLines.length > 0) {
             let bomInputs = bomLines.map(bom => {
-                let bq = parseFloat(bom.quantity || bom.bom_qty) || 1;
+                let bq = parseFloat(bom.quantity ?? bom.bom_qty ?? 1);
+                if (!Number.isFinite(bq) || bq < 0) bq = 0;
                 let bomReq = (bq * qty);
                 let sn = (bom.satuan_nama || '').toLowerCase();
 
-                if (activeCat === '2' || activeCat === '5' || activeCat === '9') {
+                if (!bom.is_dynamic && (activeCat === '2' || activeCat === '5' || activeCat === '9')) {
                     if (sn === 'm' || sn === 'meter') {
                         bomReq = meterLari * bq;
                     } else if (sn === 'm2' || sn === 'm²' || sn.includes('persegi')) {
@@ -1198,8 +1181,7 @@ submitCompletion(sendToPb = false) {
         material_id: $('#compMaterialId').val(),
         pin_operator: $('#compOperatorPin').val(),
         total_usage: $('#compActualUsage').val(),
-        mesin_id: mesinId,
-        send_to_pb: 0
+        mesin_id: mesinId
     };
     const actual = this.resultValues(data.ids, 'comp');
     if (!data.ids.length || !actual) return;
@@ -1225,7 +1207,7 @@ submitCompletion(sendToPb = false) {
     if (data.material_id && (data.total_usage === '' || !Number.isFinite(Number(data.total_usage)) || Number(data.total_usage) < 0)) {
         return Swal.fire('Pemakaian belum lengkap', 'Isi jumlah bahan terpakai aktual dalam satuan dasar material.', 'warning');
     }
-    if (!data.pin_operator || data.pin_operator.length < 4) return Swal.fire('Error', 'Masukkan PIN Operator (min 4 digit)', 'error');
+    if (!/^[0-9]{4,6}$/.test(data.pin_operator || '')) return Swal.fire('Error', 'Masukkan PIN Operator 4–6 digit atau scan QR PIN petugas.', 'error');
     if (!isJasaProduksi && !data.material_id) return Swal.fire('Error', 'Pilih Material', 'error');
 
     let activeCat = firstChecked.data('kategori-id') || 0;
@@ -1234,7 +1216,7 @@ submitCompletion(sendToPb = false) {
     postData.outcomes = JSON.stringify(data.outcomes);
 
     // Disable submit buttons to prevent double-submission
-    let submitBtn = $('#modalSelesaiBatch .btn-success, #modalStok .btn-success');
+    let submitBtn = $('#modalNestingCompletion .modal-footer .btn-success');
     let originalText = submitBtn.html() || '<i class="fas fa-check-circle me-1"></i> Simpan';
     submitBtn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i> Memproses...');
 
@@ -1317,7 +1299,7 @@ printGroupTag(groupKey) {
 
 sendGroupToPB(matKey) {
     let ids = $('.tr-nesting-item').filter(function() { return $(this).data('material') == matKey; }).find('.check-item-nesting').filter(function () {
-        return $(this).data('status') === 'done';
+        return ['done', 'on_pb', 'on_costumer'].includes($(this).data('status'));
     }).map((i, el) => $(el).data('id')).get();
 
     if (ids.length === 0) return;
@@ -1346,42 +1328,29 @@ openFinishingModal() {
     this.state.finishingIds = checked.map((i, el) => $(el).data('id')).get();
     this.captureOperations(this.state.finishingIds);
     let activeCat = String(checked.first().data('kategori-id') || '0');
-    let stepName = 'Finishing';
-
-    $('#finMesinId').empty().prop('disabled', true);
-    $.get(this.machineOptionsUrl(stepName, activeCat, this.state.finishingIds), (res) => {
-        let data = typeof res === 'string' ? JSON.parse(res) : res;
-        let m = data.machines || [];
-        if (data.message || (!m.length && data.is_mandatory)) {
-            Swal.fire('Pilihan mesin', data.message || 'Tidak ada mesin aktif yang sesuai lokasi item terpilih. Periksa lokasi produksi dan master mesin; pisahkan batch jika lokasinya berbeda.', 'warning');
-        }
-        let isMandatory = data.is_mandatory || false;
-        let userMesinIds = data.user_mesin_ids || [];
-
-        let sel = $('#finMesinId').empty().prop('disabled', false);
-        if (isMandatory) {
-            sel.append('<option value="">-- Pilih Mesin Wajib --</option>');
-            sel.append('<option value="0">-- Tanpa Mesin (Manual) --</option>');
-            $('#finMesinBadge').show().removeClass('bg-secondary').addClass('bg-danger').text('Wajib');
-            $('#finMesinId').prop('required', true);
-        } else {
-            sel.append('<option value="0">-- Tanpa Mesin (Manual) --</option>');
-            $('#finMesinBadge').show().removeClass('bg-danger').addClass('bg-secondary').text('Opsional');
-            $('#finMesinId').prop('required', false);
-        }
-
-        let firstMatchId = null;
-        if (m && Array.isArray(m)) {
-            m.forEach((mac, index) => {
-                let isSelected = '';
-                if (!firstMatchId && (userMesinIds.includes(mac.mesin_id.toString()) || index === 0)) {
-                    isSelected = 'selected';
-                    firstMatchId = mac.mesin_id;
-                }
-                sel.append(`<option value="${mac.mesin_id}" ${isSelected}>${mac.mesin_nama} (${mac.kategori})</option>`);
-            });
-        }
-    });
+    $('#finOperatorPin').val('');
+    const machineRequired = checked.toArray().some(el => this.finishingNeedsMachine($(el).data('step-name'), $(el).data('kategori-id'), $(el).data('product-name')));
+    this.state.finishingMachineRequired = machineRequired;
+    const machineRequest = (this.state.finishingMachineRequest || 0) + 1;
+    this.state.finishingMachineRequest = machineRequest;
+    $('#sectionFinMesin').prop('hidden', !machineRequired);
+    const machineSelect = $('#finMesinId').empty().prop('disabled', true).prop('required', machineRequired);
+    machineSelect.append($('<option>').val('').text('-- Pilih Mesin --'));
+    if (machineRequired) {
+        $.get(this.machineOptionsUrl('Finishing', activeCat, this.state.finishingIds), (res) => {
+            if (this.state.finishingMachineRequest !== machineRequest) return;
+            const data = typeof res === 'string' ? JSON.parse(res) : res;
+            const machines = data.machines || [];
+            machineSelect.prop('disabled', false);
+            machines.forEach(machine => machineSelect.append($('<option>').val(machine.mesin_id).text(machine.mesin_nama)));
+            if (data.message || !machines.length) {
+                Swal.fire('Pilihan mesin', data.message || 'Tidak ada mesin finishing aktif pada lokasi item. Periksa master mesin atau pisahkan batch sesuai lokasi.', 'warning');
+            }
+        }, 'json').fail(() => {
+            if (this.state.finishingMachineRequest !== machineRequest) return;
+            Swal.fire('Pilihan mesin', 'Daftar mesin belum dapat dimuat. Buka ulang form untuk mencoba lagi.', 'error');
+        });
+    }
 
     let html = checked.toArray().map(el => {
         let pid = $(el).data('id'), tr = $(el).closest('tr');
@@ -1416,11 +1385,12 @@ openFinishingModal() {
         let bomHtml = '';
         if (bomLines.length > 0) {
             let bomInputs = bomLines.map(bom => {
-                let bq = parseFloat(bom.quantity || bom.bom_qty) || 1;
+                let bq = parseFloat(bom.quantity ?? bom.bom_qty ?? 1);
+                if (!Number.isFinite(bq) || bq < 0) bq = 0;
                 let bomReq = (bq * qty);
                 let sn = (bom.satuan_nama || '').toLowerCase();
 
-                if (activeCat === '2' || activeCat === '5' || activeCat === '9') {
+                if (!bom.is_dynamic && (activeCat === '2' || activeCat === '5' || activeCat === '9')) {
                     if (sn === 'm' || sn === 'meter') {
                         bomReq = meterLari * bq;
                     } else if (sn === 'm2' || sn === 'm²' || sn.includes('persegi')) {
@@ -1477,7 +1447,7 @@ openFinishingModal() {
                     </div>
                 </div>`;
     }).join('');
-    let qcWarningHtml = '<div class="alert alert-info p-2 small">Catat hasil finishing aktual. Hasil parsial/rusak tetap terbuka; serah terima PB dilakukan terpisah setelah seluruh tahap selesai.</div>';
+    let qcWarningHtml = '<div class="alert alert-info p-2 small">Catat hasil finishing aktual. Setelah seluruh tahap selesai, barang otomatis masuk PB. Hasil parsial/rusak tetap terbuka.</div>';
     $('#finishingItemList').html(qcWarningHtml + html);
     $('#modalSelesaiFinishing').modal('show');
 },
@@ -1487,11 +1457,11 @@ submitFinishing() {
     const actual = this.resultValues(ids, 'fin');
     if (!ids.length || !actual) return;
     let pin = $('#finOperatorPin').val();
-    let mesinId = $('#finMesinId').val();
-    let isMandatory = $('#finMesinBadge').hasClass('bg-danger');
+    const mesinId = this.state.finishingMachineRequired ? $('#finMesinId').val() : 0;
 
-    if (!pin || pin.length < 4) return Swal.fire('Error', 'Masukkan PIN Operator (min 4 digit)', 'warning');
-    if (isMandatory && !mesinId) return Swal.fire('Error', 'Anda Wajib memilih Mesin Finishing!', 'warning');
+    if (!/^[0-9]{4,6}$/.test(pin || '')) return Swal.fire('Error', 'Masukkan PIN Operator 4–6 digit.', 'warning');
+    if (this.state.finishingMachineRequired && ($('#finMesinId').prop('disabled') || !/^[1-9][0-9]*$/.test(String(mesinId || ''))))
+        return Swal.fire('Error', 'Pilih mesin aktual untuk tahap cutting/potong ini.', 'warning');
 
     let outcomes = {};
     ids.forEach(id => {
@@ -1516,13 +1486,12 @@ submitFinishing() {
         pin_operator: pin,
         material_id: null,
         total_usage: 0,
-        mesin_id: mesinId,
-        send_to_pb: 0
+        mesin_id: mesinId
     }), (res) => {
         if (res.success) {
             Swal.fire({
                 title: 'Hasil Finishing Disimpan',
-                text: res.message + ' Serah terima PB dilakukan melalui tombol PB setelah seluruh tahap tuntas.',
+                text: res.message,
                 icon: 'success',
                 timer: 3000,
                 showConfirmButton: false
@@ -1690,9 +1659,11 @@ clearNestingSelection() {
 
 finishGroupBatch(matKey) {
     this.clearNestingSelection();
+    const app = this;
     $('.tr-nesting-item').filter(function() { return $(this).data('material') == matKey; }).find('.check-item-nesting').each(function () {
         let st = String($(this).data('status')).toLowerCase();
-        if (st === 'proses' || st === '1') {
+        if (!$(this).prop('disabled') && (st === 'proses' || st === 'finishing' || st === '1'
+            || (app.isFinishingRow(this) && ['', '0', 'pending', 'approve', 'approved'].includes(st)))) {
             $(this).prop('checked', true);
         }
     });
@@ -1704,8 +1675,9 @@ startGroupBatch(matKey) {
     this.clearNestingSelection();
     let ids = [];
     $('.tr-nesting-item').filter(function() { return $(this).data('material') == matKey; }).find('.check-item-nesting').each(function () {
-        let st = String($(this).data('status')).toLowerCase();
-        if (st === 'approved' || st === 'pending' || st === '0' || st === '') {
+        let st = String($(this).data('status') ?? '').toLowerCase();
+        let stepSt = String($(this).data('step-status') ?? '').toLowerCase();
+        if (st === 'approved' || st === 'pending' || st === '0' || st === '' || stepSt === '0' || (st === 'finishing' && stepSt !== '1')) {
             ids.push($(this).data('id'));
         }
     });
@@ -1739,8 +1711,9 @@ startSPKBatch(matKey) {
     this.clearNestingSelection();
     let ids = [];
     $('.tr-nesting-item').filter(function() { return $(this).data('material') == matKey; }).find('.check-item-nesting').each(function () {
-        let st = String($(this).data('status')).toLowerCase();
-        if (st === 'approved' || st === 'pending' || st === '0' || st === '') {
+        let st = String($(this).data('status') ?? '').toLowerCase();
+        let stepSt = String($(this).data('step-status') ?? '').toLowerCase();
+        if (st === 'approved' || st === 'pending' || st === '0' || st === '' || stepSt === '0' || (st === 'finishing' && stepSt !== '1')) {
             ids.push($(this).data('id'));
         }
     });
@@ -1774,15 +1747,17 @@ startSPKBatch(matKey) {
  * Used by Control Center or other SPK-specific views
  * to trigger the unified batch modal for an item's group.
  */
+isFinishingRow(el) {
+    const flag = $(el).data('is-finishing');
+    if (flag !== undefined) return Number(flag) === 1;
+    // Compatibility for older control-center rows without the explicit operation flag.
+    return (parseInt($(el).data('step-urutan')) || 1) > 1;
+},
+
 openAppropriateCompletionModal() {
     let checked = $('.check-item-nesting:checked');
     if (!checked.length) return;
-    let allFinishing = checked.toArray().every(el => {
-        let stepUrutan = parseInt($(el).data('step-urutan')) || 1;
-        // Hanya anggap sebagai Finishing jika dia benar-benar berada di urutan ke-2 atau seterusnya (SEQ > 1).
-        // SEQ 1 dianggap sebagai Produksi Utama (yang memotong bahan baku).
-        return stepUrutan > 1;
-    });
+    let allFinishing = checked.toArray().every(el => this.isFinishingRow(el));
     if (allFinishing) {
         this.openFinishingModal();
     } else {
@@ -1844,11 +1819,14 @@ setJobOutcome(pid, status, prefix = '') {
 },
 
 getStatusClass(st) {
-    return st === 'proses' ? 'bg-warning text-dark' : (st === 'done' ? 'bg-success' : 'bg-secondary');
+    return st === 'proses' ? 'bg-warning text-dark' : (['done', 'on_pb'].includes(st) ? 'bg-success' : 'bg-secondary');
 },
 
 advanceStep(id, type, stepName = 'Step Ini', estQty = 0, bomMaterialId = 0, prevPakai = 0, unit = 'Unit', catId = 1, isFinishing = 0) {
+    isFinishing = Boolean(Number(isFinishing)) || /^(?:f[.\s_-]|finishing\b|lamina(?:si|ting|s)\b|potong\b|cutting\b|jahit\b|packing\b|pon\b|kiss\s*cut\b|die[\s-]*cut\b)/i.test(String(stepName).trim());
     this.captureOperations([id]);
+    const productName = this.state.operationSnapshots[id]?.productName || '';
+    const finishingMachineRequired = isFinishing && this.finishingNeedsMachine(stepName, catId, productName);
     if (type === 'start') {
         Swal.fire({
             title: 'Mulai Produksi?',
@@ -1897,14 +1875,14 @@ advanceStep(id, type, stepName = 'Step Ini', estQty = 0, bomMaterialId = 0, prev
         });
     } else {
         // Load Machines dynamically for the branch based on step and category for completion
-        $.get(this.machineOptionsUrl(stepName, catId, [id]), (res) => {
+        const showResultDialog = (res) => {
             let data = typeof res === 'string' ? JSON.parse(res) : res;
             let m = data.machines || [];
-        if (data.message || (!m.length && data.is_mandatory)) {
-            Swal.fire('Pilihan mesin', data.message || 'Tidak ada mesin aktif yang sesuai lokasi item terpilih. Periksa lokasi produksi dan master mesin; pisahkan batch jika lokasinya berbeda.', 'warning');
-            return;
-        }
-            let isMandatory = data.is_mandatory || false;
+            let isMandatory = finishingMachineRequired || (!isFinishing && (data.is_mandatory || false));
+            if (data.message || (!m.length && isMandatory)) {
+                Swal.fire('Pilihan mesin', data.message || 'Tidak ada mesin aktif yang sesuai lokasi item terpilih. Periksa lokasi produksi dan master mesin; pisahkan batch jika lokasinya berbeda.', 'warning');
+                return;
+            }
             let userMesinIds = data.user_mesin_ids || [];
 
             let machineOptions = isMandatory ? '<option value="">-- Pilih Mesin Wajib --</option>' : '<option value="">-- Tanpa Mesin / Manual --</option>';
@@ -1939,7 +1917,7 @@ advanceStep(id, type, stepName = 'Step Ini', estQty = 0, bomMaterialId = 0, prev
             // FLEXIBLE UNIT LABELS
             let isPcsBased = ['pcs', 'unit', 'lembar', 'set'].includes(unit.toLowerCase());
 
-            let modalTitle = isReprint ? 'Koreksi / Reprint (' + unit + ')' : 'Selesai & Lapor Bahan (' + unit + ')';
+            let modalTitle = isFinishing ? 'Catat Hasil Finishing' : isReprint ? 'Koreksi / Reprint (' + unit + ')' : 'Selesai & Lapor Bahan (' + unit + ')';
 
             // Dynamic label based on unit type
             let usageLabel, usagePlaceholder, usageHelpText;
@@ -2013,13 +1991,15 @@ advanceStep(id, type, stepName = 'Step Ini', estQty = 0, bomMaterialId = 0, prev
                             </div>
                             `}
 
+                            ${isFinishing && !finishingMachineRequired ? '' : `
                             <div class="mb-3">
-                                <label class="form-label fw-bold small text-dark"><i class="fas fa-print me-1 text-primary"></i> 4. Pilih Mesin Produksi ${mandatoryBadge}</label>
+                                <label class="form-label fw-bold small text-dark"><i class="fas fa-print me-1 text-primary"></i> Pilih Mesin ${isFinishing ? 'Cutting / Potong' : 'Produksi'} ${mandatoryBadge}</label>
                                 <select id="swal-mesin-id" class="form-select bg-light border-0 fw-bold text-dark shadow-sm select2-swal" style="width: 100%;">
                                     ${machineOptions}
                                 </select>
                                 <div class="form-text small">Pilih mesin yang Anda gunakan untuk pengerjaan tahap ini.</div>
                             </div>
+                            `}
 
                             ${this.resultInputs(id, 'advance', $(`.check-item-nesting[data-id="${id}"]`).first().data('qty') || '-')}
                             <div class="mt-4 p-3 bg-light rounded-3 border-dashed border-primary">
@@ -2047,7 +2027,7 @@ advanceStep(id, type, stepName = 'Step Ini', estQty = 0, bomMaterialId = 0, prev
                     let pakai = Swal.getPopup().querySelector('#swal-qty-pakai')?.value ?? '0';
                     const rusak = Swal.getPopup().querySelector('#swal-qty-rusak')?.value || '0';
                     const pin = Swal.getPopup().querySelector('#swal-pin-next').value;
-                    const mesin_id = Swal.getPopup().querySelector('#swal-mesin-id').value;
+                    const mesin_id = isFinishing && !finishingMachineRequired ? '0' : (Swal.getPopup().querySelector('#swal-mesin-id')?.value || '');
 
                     if (!pin || pin.length < 4) {
                         Swal.showValidationMessage('Harap masukkan PIN (min 4 digit)!');
@@ -2097,11 +2077,15 @@ advanceStep(id, type, stepName = 'Step Ini', estQty = 0, bomMaterialId = 0, prev
                     this._postAdvance(id, type, result.value, catId);
                 }
             });
-        });
+        };
+        if (isFinishing && !finishingMachineRequired) showResultDialog({ machines: [], is_mandatory: false });
+        else $.get(this.machineOptionsUrl(stepName, catId, [id]), showResultDialog);
     }
 },
 
 _postAdvance(id, type, data, catId = 1, supervisorPin = '') {
+    if (this.state.advanceRequests[id]) return;
+    this.state.advanceRequests[id] = true;
     // MODULAR ROUTING: If Category 2 (LF), use dedicated LF endpoint. 
     // Otherwise use standard/legacy A3+ endpoint.
     const endpoint = (parseInt(catId) === 2) ? 'advance_step_lf_ajax' : 'advance_step_ajax';
@@ -2149,6 +2133,8 @@ _postAdvance(id, type, data, catId = 1, supervisorPin = '') {
     }, 'json').fail((xhr) => {
         console.error(xhr);
         Swal.fire('Error', 'Server Error: ' + xhr.status, 'error');
+    }).always(() => {
+        delete this.state.advanceRequests[id];
     });
 }
 };
@@ -2172,7 +2158,6 @@ window.submitBatchFinishing = ProductionApp.submitFinishing.bind(ProductionApp);
 window.submitBatchCompletion = ProductionApp.submitCompletion.bind(ProductionApp);
 window.clearNestingSelection = ProductionApp.clearNestingSelection.bind(ProductionApp);
 window.setJobOutcome = ProductionApp.setJobOutcome.bind(ProductionApp);
-window.filterSiapPB = ProductionApp.filterSiapPB.bind(ProductionApp);
 window.filterSedangProses = ProductionApp.filterSedangProses.bind(ProductionApp);
 window.selectSearchBahan = (id, name) => { $('#searchBahanInput').val(name); $('#searchBahanResults').hide(); ProductionApp.loadVariants(id); };
 

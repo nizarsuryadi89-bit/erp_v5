@@ -265,6 +265,7 @@
 <div style="height: 35px;"></div>
 
 <div class="container-fluid px-5">
+    <?php $this->load->view('admin/warehouse/components/legacy_drafts', ['legacy_drafts' => $legacy_drafts ?? [], 'draft_kind' => 'purchase']); ?>
     <?php $this->load->view('admin/warehouse/components/sop_stepper', ['active_step' => 3]); ?>
     <!-- Stats Row -->
     <div class="stats-container">

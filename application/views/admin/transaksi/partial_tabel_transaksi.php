@@ -61,7 +61,7 @@
                         break;
                 }
                 ?>
-                <tr class="<?= $tr ?>" data-metode="<?= html_escape(strtolower($dt->nama_jenis_transaksi ?? '-')) ?>">
+                <tr class="<?= $tr ?> <?= (!empty($dt->is_blacklist) && $dt->is_blacklist == 1) ? 'table-danger border-start border-4 border-danger' : '' ?>" data-metode="<?= html_escape(strtolower($dt->nama_jenis_transaksi ?? '-')) ?>">
                     <td class="text-center fw-semibold text-muted" style="font-size: 0.95rem;"><?= $no ?></td>
                     <td class="text-center" style="vertical-align: middle;">
                         <span class="spk-id-text"><?= html_escape($dt->nospk) ?></span>
@@ -199,8 +199,20 @@
                         </div>
                     </td>
                     <td>
-                        <div class="fw-bold text-dark text-uppercase mb-1"
-                            style="font-size: 0.9rem; letter-spacing: 0.3px;"><?= html_escape($dt->konsumen_nama) ?></div>
+                        <div class="d-flex align-items-center flex-wrap gap-1 mb-1">
+                            <span class="fw-bold text-dark text-uppercase"
+                                style="font-size: 0.9rem; letter-spacing: 0.3px;"><?= html_escape($dt->konsumen_nama) ?></span>
+                            <?php if (!empty($dt->is_blacklist) && $dt->is_blacklist == 1): ?>
+                                <span class="badge bg-danger text-white shadow-sm" style="font-size: 0.65rem; padding: 3px 6px;" title="<?= !empty($dt->catatan_blacklist) ? html_escape($dt->catatan_blacklist) : 'Konsumen Pengawasan Kasir' ?>">
+                                    <i class="fas fa-exclamation-triangle text-warning me-1"></i>PENGAWASAN KASIR
+                                </span>
+                            <?php endif; ?>
+                        </div>
+                        <?php if (!empty($dt->is_blacklist) && $dt->is_blacklist == 1 && !empty($dt->catatan_blacklist)): ?>
+                            <div class="alert alert-danger py-1 px-2 mb-1 rounded-2" style="font-size: 0.72rem; line-height: 1.2;">
+                                <i class="fas fa-info-circle me-1"></i><strong>Catatan:</strong> <?= html_escape($dt->catatan_blacklist) ?>
+                            </div>
+                        <?php endif; ?>
                         <?php if (!empty($dt->konsumen_nohp)): ?>
                             <div class="text-muted small d-flex align-items-center gap-1" style="font-size: 0.75rem;">
                                 <i class="fab fa-whatsapp text-success" style="font-size: 0.85rem;"></i>

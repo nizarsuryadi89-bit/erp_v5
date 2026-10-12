@@ -3,6 +3,7 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 
 class Warehouse extends MY_Controller
 {
+    private $warehouse_db_debug = null;
 
     public function __construct()
     {
@@ -10,6 +11,7 @@ class Warehouse extends MY_Controller
         $this->load->model('Warehouse_model', 'warehouse');
         $this->load->model('M_gudang', 'm_gudang');
         $this->load->model('M_master');
+        $this->load->library('Warehouse_stock');
 
         $this->_init_warehouse_tables();
     }
@@ -19,6 +21,8 @@ class Warehouse extends MY_Controller
      */
     private function _init_warehouse_tables()
     {
+        $this->warehouse->ensure_integrity_schema();
+
         // 1. Temporary Table for Requests
         $this->db->query("CREATE TABLE IF NOT EXISTS tbl_temp_pengajuan (
             temp_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -68,8 +72,8 @@ class Warehouse extends MY_Controller
             'controller' => 'warehouse',
             'function' => 'index',
             'title' => 'Warehouse Management System',
-            'perusahaan' => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses' => $conf['hakakses']['divisi_nama'],
+            'perusahaan' => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses' => ($conf['hakakses']['divisi_nama'] ?? ''),
             // Lightweight initial data
             'warehouses' => $this->warehouse->get_all_warehouses(),
         ];
@@ -87,8 +91,8 @@ class Warehouse extends MY_Controller
             'controller' => 'warehouse',
             'function' => 'guide',
             'title' => 'Panduan Operasional (SOP) Gudang',
-            'perusahaan' => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses' => $conf['hakakses']['divisi_nama'],
+            'perusahaan' => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses' => ($conf['hakakses']['divisi_nama'] ?? ''),
         ];
 
         $this->load_admin_view('admin/warehouse/guide', $data);
@@ -285,8 +289,8 @@ class Warehouse extends MY_Controller
             'controller' => 'warehouse',
             'function' => 'order',
             'title' => 'Pemesanan Material',
-            'perusahaan' => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses' => $conf['hakakses']['divisi_nama'],
+            'perusahaan' => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses' => ($conf['hakakses']['divisi_nama'] ?? ''),
             'materials' => $this->warehouse->get_materials_dropdown(),
             'suppliers' => $this->warehouse->get_suppliers_dropdown(),
             // Fetch low stock items as recommendations for ordering
@@ -306,11 +310,12 @@ class Warehouse extends MY_Controller
             'controller' => 'warehouse',
             'function' => 'purchase',
             'title' => 'Penerimaan & Pembelian Material',
-            'perusahaan' => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses' => $conf['hakakses']['divisi_nama'],
+            'perusahaan' => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses' => ($conf['hakakses']['divisi_nama'] ?? ''),
             'materials' => $this->warehouse->get_materials_dropdown(),
             'suppliers' => $this->warehouse->get_suppliers_dropdown(),
             'temp_items' => $this->warehouse->get_purchase_temp_items(),
+            'legacy_drafts' => $this->warehouse->get_unowned_drafts('purchase'),
             'cart_total' => $this->warehouse->get_purchase_temp_total(),
             'recent_purchases' => $this->m_gudang->getDataPembelian()->result(),
             'rekening' => $this->db->get_where('tbl_rekening', ['active' => '1'])->result() ?: $this->db->get('tbl_rekening')->result()
@@ -324,154 +329,29 @@ class Warehouse extends MY_Controller
      */
     public function purchase_add_item()
     {
-        if ($this->input->post()) {
-            $data = [
-                'material_id' => $this->input->post('material_id', true),
-                'rak_id' => $this->input->post('rak_id', true),
-                'qty' => $this->input->post('qty', true),
-                'harga' => $this->input->post('harga', true),
-            ];
-            $this->db->insert('tbl_temp_beli', $data);
-            // [USER ACTIVITY] Log draft input
-            log_activity($this->session->userdata('id'), 'input_item_keranjang', 'Warehouse', $this->input->post('material_id', true));
-
-            $this->session->set_flashdata('success', 'Item berhasil ditambahkan ke keranjang.');
-        }
+        try {
+            $this->_begin(); $this->_actor_lock();
+            $material = $this->warehouse_stock->material($this->input->post('material_id', true));
+            $data = array_merge($this->_cart_where('purchase'), ['material_id' => $material->material_id,
+                'rak_id' => $this->_rack($this->input->post('rak_id', true), 1),
+                'qty' => $this->_number($this->input->post('qty', true), true),
+                'harga' => $this->_number($this->input->post('harga', true))]);
+            $this->_checked($this->db->insert('tbl_temp_beli', $data)); $this->_commit();
+            $this->session->set_flashdata('success', 'Item ditambahkan ke keranjang Anda.');
+        } catch (Throwable $e) { $this->_rollback(); $this->session->set_flashdata('error', $e->getMessage()); }
         redirect('warehouse/purchase');
     }
 
-    /**
-     * Delete item from purchase cart
-     */
     public function purchase_delete_item($temp_id)
     {
-        $this->db->delete('tbl_temp_beli', ['temp_id' => $temp_id]);
-        $this->session->set_flashdata('success', 'Item berhasil dihapus.');
-        redirect('warehouse/purchase');
+        $this->_delete_cart_item('purchase', $temp_id); redirect('warehouse/purchase');
     }
 
-    /**
-     * Finalize purchase transaction
-     */
     public function purchase_finalize()
     {
-        if ($this->input->post()) {
-            $supplier_id = $this->input->post('supplier_id', true);
-            $pembelian_tgl = $this->input->post('pembelian_tgl', true);
-            $no_faktur = $this->input->post('no_faktur', true);
-            $total = $this->input->post('pembelian_total', true);
-
-            $metode_bayar = $this->input->post('metode_bayar', true);
-
-            $temp_items = $this->warehouse->get_purchase_temp_items();
-
-            if (empty($temp_items)) {
-                $this->session->set_flashdata('error', 'Keranjang masih kosong!');
-                redirect('warehouse/purchase');
-            }
-
-            $this->db->trans_start();
-
-            // 1. Record Header
-            $purchase_data = [
-                'supplier_id' => $supplier_id,
-                'pembelian_tgl' => $pembelian_tgl,
-                'pembelian_waktu' => date('Y-m-d H:i:s'),
-                'no_faktur' => $no_faktur,
-                'metode_bayar' => $metode_bayar,
-                'karyawan_id' => $this->session->userdata('id'),
-                'pembelian_total' => $total
-            ];
-            $this->db->insert('tbl_pembelian', $purchase_data);
-            $pembelian_id = $this->db->insert_id();
-
-            // 2. Record Detail & Update Stock
-            foreach ($temp_items as $item) {
-                $detail_data = [
-                    'pembelian_id' => $pembelian_id,
-                    'material_id' => $item->material_id,
-                    'rak_id' => $item->rak_id,
-                    'qty' => $item->qty,
-                    'harga_beli' => $item->harga,
-                    'subtotal' => $item->qty * $item->harga
-                ];
-                $this->db->insert('tbl_pembelian_detail', $detail_data);
-
-                // Update Stock (Main Warehouse ID 1) with specific Rack
-                $this->m_gudang->update_stock_with_log(
-                    $item->material_id,
-                    1,
-                    $item->qty,
-                    'Pembelian',
-                    $pembelian_id,
-                    'Pembelian Ref: ' . $no_faktur,
-                    $item->rak_id
-                );
-            }
-
-            // 3. Payment Logic
-            if ($metode_bayar == 'Cash' || $metode_bayar == 'Transfer') {
-                $supplier = $this->db->get_where('tbl_supplier', ['supplier_id' => $supplier_id])->row();
-
-                $pengeluaran_data = [
-                    'pengeluaran_tgl' => $pembelian_tgl,
-                    'kategori_pengeluaran_id' => 1, // Pembelanjaan Bahan Baku
-                    'pengeluaran_detail' => 'Pembelian Material (No. Faktur: ' . $no_faktur . ')',
-                    'pengeluaran_jumlah' => $total,
-                    'pengeluaran_penerima' => $supplier ? $supplier->supplier_nama : 'Supplier ID: ' . $supplier_id,
-                    'metode_bayar' => ($metode_bayar == 'Cash' ? 'tunai' : 'transfer'),
-                    'user_id' => $this->session->userdata('id'),
-                    'perusahaan_id' => 1, // Fix: Selalu dibebankan ke perusahaan utama (Pusat) / ID 1
-                    'created_at' => date('Y-m-d H:i:s')
-                ];
-
-                if ($metode_bayar == 'Transfer') {
-                    $pengeluaran_data['rekening_id'] = $this->input->post('rekening_id', true);
-                    $pengeluaran_data['rekening_tujuan'] = $this->input->post('rekening_tujuan', true);
-                }
-
-                $this->db->insert('tbl_pengeluaran', $pengeluaran_data);
-            } else if ($metode_bayar == 'Hutang') {
-                $hutang_data = [
-                    'pembelian_id' => $pembelian_id,
-                    'supplier_id' => $supplier_id,
-                    'total_tagihan' => $total,
-                    'total_bayar' => 0,
-                    'sisa_hutang' => $total,
-                    'jatuh_tempo' => $this->input->post('jatuh_tempo', true),
-                    'status' => '0', // Unpaid
-                    'created_at' => date('Y-m-d H:i:s')
-                ];
-                $this->db->insert('tbl_hutang', $hutang_data);
-            }
-
-            // 3. Clear Temp
-            $this->db->empty_table('tbl_temp_beli');
-
-            $this->db->trans_complete();
-
-            if ($this->db->trans_status() === TRUE) {
-                // [AUDIT LOG] Manual entry for explicit tracking
-                $this->_log_manual("Finalisasi Pembelian Material: $no_faktur", json_encode([
-                    'supplier_id' => $supplier_id,
-                    'total' => $total,
-                    'items_count' => count($temp_items)
-                ]), 'WRITE');
-
-                // [USER ACTIVITY] For performance dashboard
-                log_activity($this->session->userdata('id'), 'input_pembelian', 'Warehouse', $pembelian_id);
-
-                $this->session->set_flashdata('success', 'Transaksi pembelian berhasil disimpan.');
-            } else {
-                $this->session->set_flashdata('error', 'Gagal menyimpan transaksi.');
-            }
-        }
-        redirect('warehouse/purchase');
+        $this->_save_purchase();
     }
 
-    /**
-     * Edit Purchase View
-     */
     public function purchase_edit($pembelian_id)
     {
         $conf = $this->_get_conf();
@@ -493,14 +373,15 @@ class Warehouse extends MY_Controller
         $details = $this->db->get()->result();
 
         // Get Rekening (if transfer)
-        $pengeluaran = $this->db->get_where('tbl_pengeluaran', ['pengeluaran_detail' => 'Pembelian Material (No. Faktur: ' . $pembelian->no_faktur . ')'])->row();
+        $expenses = $this->_purchase_expenses($pembelian); $pengeluaran = $expenses ? $expenses[0] : null;
+        if ($pengeluaran && $pengeluaran->metode_bayar === 'transfer') $pembelian->metode_bayar = 'transfer';
 
         $data = [
             'controller' => 'warehouse',
             'function' => 'purchase_edit',
             'title' => 'Edit Pembelian Material',
-            'perusahaan' => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses' => $conf['hakakses']['divisi_nama'],
+            'perusahaan' => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses' => ($conf['hakakses']['divisi_nama'] ?? ''),
             'pembelian' => $pembelian,
             'details' => $details,
             'pengeluaran' => $pengeluaran,
@@ -517,147 +398,148 @@ class Warehouse extends MY_Controller
      */
     public function purchase_update($pembelian_id)
     {
-        if ($this->input->post()) {
-            $pembelian = $this->db->get_where('tbl_pembelian', ['pembelian_id' => $pembelian_id])->row();
-            if (!$pembelian)
-                redirect('warehouse/laporan_pembelian');
-
-            $supplier_id = $this->input->post('supplier_id', true);
-            $pembelian_tgl = $this->input->post('pembelian_tgl', true);
-            $no_faktur = $this->input->post('no_faktur', true);
-            $metode_bayar = $this->input->post('metode_bayar', true);
-
-            $material_ids = $this->input->post('material_id', true);
-            $rak_ids = $this->input->post('rak_id', true);
-            $qtys = $this->input->post('qty', true);
-            $hargas = $this->input->post('harga', true);
-
-            if (empty($material_ids)) {
-                $this->session->set_flashdata('error', 'Keranjang material tidak boleh kosong!');
-                redirect('warehouse/purchase_edit/' . $pembelian_id);
-            }
-
-            $this->db->trans_start();
-
-            // 1. REVERT OLD STOCK LOGIC
-            $old_details = $this->db->get_where('tbl_pembelian_detail', ['pembelian_id' => $pembelian_id])->result();
-            foreach ($old_details as $old) {
-                // Reverse it by passing qty as negative
-                $this->m_gudang->update_stock_with_log(
-                    $old->material_id,
-                    1,
-                    -$old->qty,
-                    'Koreksi/Edit Pembelian',
-                    $pembelian_id,
-                    'Revert Invoice: ' . $pembelian->no_faktur,
-                    $old->rak_id
-                );
-            }
-
-            // 2. Clear old detail, hutang, pengeluaran
-            $this->db->delete('tbl_pembelian_detail', ['pembelian_id' => $pembelian_id]);
-            $this->db->delete('tbl_hutang', ['pembelian_id' => $pembelian_id]);
-            $this->db->delete('tbl_pengeluaran', ['pengeluaran_detail' => 'Pembelian Material (No. Faktur: ' . $pembelian->no_faktur . ')']);
-
-            // 3. Process new data
-            $total = 0;
-            for ($i = 0; $i < count($material_ids); $i++) {
-                $mId = $material_ids[$i];
-                $rId = empty($rak_ids[$i]) ? null : $rak_ids[$i];
-                $q = $qtys[$i];
-                $h = str_replace(['Rp ', '.'], '', $hargas[$i]);
-                $sub = $q * $h;
-                $total += $sub;
-
-                $detail_data = [
-                    'pembelian_id' => $pembelian_id,
-                    'material_id' => $mId,
-                    'rak_id' => $rId,
-                    'qty' => $q,
-                    'harga_beli' => $h,
-                    'subtotal' => $sub
-                ];
-                $this->db->insert('tbl_pembelian_detail', $detail_data);
-
-                // Add new stock
-                $this->m_gudang->update_stock_with_log(
-                    $mId,
-                    1,
-                    $q,
-                    'Pembelian/Koreksi',
-                    $pembelian_id,
-                    'Pembelian Ref (Edit): ' . $no_faktur,
-                    $rId
-                );
-            }
-
-            // 4. Update Header
-            $purchase_data = [
-                'supplier_id' => $supplier_id,
-                'pembelian_tgl' => $pembelian_tgl,
-                'no_faktur' => $no_faktur,
-                'metode_bayar' => $metode_bayar,
-                'pembelian_total' => $total
-            ];
-            $this->db->where('pembelian_id', $pembelian_id);
-            $this->db->update('tbl_pembelian', $purchase_data);
-
-            // 5. Re-create Payment Logic
-            if ($metode_bayar == 'Cash' || $metode_bayar == 'Transfer') {
-                $supplier = $this->db->get_where('tbl_supplier', ['supplier_id' => $supplier_id])->row();
-                $pengeluaran_data = [
-                    'pengeluaran_tgl' => $pembelian_tgl,
-                    'kategori_pengeluaran_id' => 1,
-                    'pengeluaran_detail' => 'Pembelian Material (No. Faktur: ' . $no_faktur . ')',
-                    'pengeluaran_jumlah' => $total,
-                    'pengeluaran_penerima' => $supplier ? $supplier->supplier_nama : 'Supplier ID: ' . $supplier_id,
-                    'metode_bayar' => ($metode_bayar == 'Cash' ? 'tunai' : 'transfer'),
-                    'user_id' => $this->session->userdata('id'),
-                    'perusahaan_id' => 1, // Fix: Selalu dibebankan ke perusahaan utama
-                    'created_at' => date('Y-m-d H:i:s')
-                ];
-
-                if ($metode_bayar == 'Transfer') {
-                    $pengeluaran_data['rekening_id'] = $this->input->post('rekening_id', true);
-                    $pengeluaran_data['rekening_tujuan'] = $this->input->post('rekening_tujuan', true);
-                }
-                $this->db->insert('tbl_pengeluaran', $pengeluaran_data);
-            } else if ($metode_bayar == 'Hutang') {
-                $hutang_data = [
-                    'pembelian_id' => $pembelian_id,
-                    'supplier_id' => $supplier_id,
-                    'total_tagihan' => $total,
-                    'total_bayar' => 0,
-                    'sisa_hutang' => $total,
-                    'jatuh_tempo' => $this->input->post('jatuh_tempo', true),
-                    'status' => '0',
-                    'created_at' => date('Y-m-d H:i:s')
-                ];
-                $this->db->insert('tbl_hutang', $hutang_data);
-            }
-
-            $this->db->trans_complete();
-
-            if ($this->db->trans_status() === TRUE) {
-                // [AUDIT LOG]
-                $this->_log_manual("Edit Pembelian Material: $no_faktur", json_encode([
-                    'supplier_id' => $supplier_id,
-                    'total' => $total,
-                    'items_count' => count($material_ids)
-                ]), 'UPDATE');
-
-                log_activity($this->session->userdata('id'), 'edit_pembelian', 'Warehouse', $pembelian_id);
-                $this->session->set_flashdata('success', 'Transaksi pembelian berhasil diupdate.');
-            } else {
-                $this->session->set_flashdata('error', 'Gagal update transaksi.');
-            }
-        }
-        redirect('warehouse/laporan_pembelian');
+        $this->_save_purchase($pembelian_id);
     }
 
-    /**
-     * 3. UPDATE STOK (Direct Adjustment)
-     */
+    private function _save_purchase($id = null)
+    {
+        try {
+            $supplier = $this->_id($this->input->post('supplier_id', true));
+            if (!$this->db->get_where('tbl_supplier', ['supplier_id' => $supplier])->row()) throw new RuntimeException('Supplier tidak ditemukan.');
+            $date = $this->_date($this->input->post('pembelian_tgl', true));
+            $invoice = $this->input->post('no_faktur', true);
+            if (!is_string($invoice) || trim($invoice) === '' || strlen($invoice) > 100) throw new RuntimeException('Nomor faktur tidak valid.');
+            $method = $this->input->post('metode_bayar', true);
+            if (!in_array($method, ['Cash','Transfer','Hutang'], true)) throw new RuntimeException('Metode pembayaran tidak valid.');
+            $this->_begin(); $this->_actor_lock(); $old = null;
+            if ($id !== null) {
+                $id = $this->_id($id);
+                $old = $this->db->query('SELECT * FROM tbl_pembelian WHERE pembelian_id = ? FOR UPDATE', [$id])->row();
+                if (!$old) throw new RuntimeException('Pembelian tidak ditemukan.');
+                $this->_assert_purchase_editable($old);
+                $ids = $this->input->post('material_id', true); $qtys = $this->input->post('qty', true);
+                $prices = $this->input->post('harga', true); $racks = $this->input->post('rak_id', true);
+                if (!is_array($ids) || !$ids || !is_array($qtys) || !is_array($prices)
+                    || count($ids) !== count($qtys) || count($ids) !== count($prices) || ($racks !== null && !is_array($racks))) throw new RuntimeException('Data rincian pembelian tidak lengkap.');
+                $items = [];
+                foreach ($ids as $i => $m) {
+                    if (!array_key_exists($i, $qtys) || !array_key_exists($i, $prices)) throw new RuntimeException('Rincian pembelian tidak sesuai.');
+                    $items[] = (object)['material_id' => $m, 'qty' => $qtys[$i], 'harga' => $this->_number($prices[$i], false, true), 'rak_id' => $racks[$i] ?? null];
+                }
+            } else {
+                $items = $this->_cart('purchase'); if (!$items) throw new RuntimeException('Keranjang Anda masih kosong.');
+            }
+            usort($items, function ($a, $b) { return (int)$a->material_id <=> (int)$b->material_id; });
+            $total = 0;
+            foreach ($items as $item) {
+                $material = $this->warehouse_stock->material($item->material_id); $item->material_id = $material->material_id;
+                $item->qty = $this->_number($item->qty, true); $item->harga = $this->_number($item->harga);
+                if (round($item->qty * $material->konversi, 2) <= 0) throw new RuntimeException('Jumlah pembelian terlalu kecil untuk satuan stok.');
+                $item->rak_id = $this->_rack($item->rak_id, 1); $total += round($item->qty * $item->harga, 2);
+            }
+            $total = round($total); if ($total > 2147483647) throw new RuntimeException('Total pembelian melebihi batas penyimpanan.');
+            if ($old) {
+                $details = $this->db->order_by('material_id', 'ASC')->get_where('tbl_pembelian_detail', ['pembelian_id' => $id])->result();
+                // Apply only net changes at each material/rack, so an unchanged invoice can be edited after consumption.
+                $deltas = [];
+                foreach ($details as $d) { $key = $d->material_id . ':' . ($d->rak_id ?: 0); $deltas[$key] = ($deltas[$key] ?? 0) - (float)$d->qty; }
+                foreach ($items as $d) { $key = $d->material_id . ':' . ($d->rak_id ?: 0); $deltas[$key] = ($deltas[$key] ?? 0) + $d->qty; }
+                ksort($deltas, SORT_NATURAL);
+                foreach ($deltas as $key => $change) if (abs($change) > 0.00001) {
+                    list($m, $rack) = explode(':', $key); $mat = $this->warehouse_stock->material($m);
+                    $this->warehouse_stock->post((int)$m, 1, round($change * $mat->konversi, 2), 'Pembelian', $id,
+                        'Koreksi pembelian #' . $id, $rack ? (int)$rack : null);
+                }
+                $this->_checked($this->db->delete('tbl_pembelian_detail', ['pembelian_id' => $id]));
+                $this->_checked($this->db->delete('tbl_hutang', ['pembelian_id' => $id]));
+                foreach ($this->_purchase_expenses($old) as $expense) $this->_checked($this->db->delete('tbl_pengeluaran', ['id' => $expense->id]));
+            }
+            $data = ['supplier_id' => $supplier, 'pembelian_tgl' => $date, 'no_faktur' => trim($invoice),
+                'metode_bayar' => $this->_stored_purchase_method($method), 'pembelian_total' => $total];
+            if ($old) $this->_checked($this->db->update('tbl_pembelian', $data, ['pembelian_id' => $id]));
+            else {
+                $data['karyawan_id'] = $this->_id($this->session->userdata('karyawan_id')); $data['pembelian_waktu'] = date('Y-m-d H:i:s');
+                $this->_checked($this->db->insert('tbl_pembelian', $data)); $id = $this->db->insert_id();
+            }
+            foreach ($items as $item) {
+                $this->_checked($this->db->insert('tbl_pembelian_detail', ['pembelian_id' => $id, 'material_id' => $item->material_id,
+                    'rak_id' => $item->rak_id, 'qty' => $item->qty, 'harga_beli' => $item->harga, 'subtotal' => round($item->qty * $item->harga, 2)]));
+                if (!$old) {
+                    $mat = $this->warehouse_stock->material($item->material_id);
+                    $this->warehouse_stock->post($item->material_id, 1, round($item->qty * $mat->konversi, 2), 'Pembelian', $id, 'Pembelian #' . $id . ': ' . $invoice, $item->rak_id);
+                }
+            }
+            $this->_purchase_payment($id, $supplier, $date, trim($invoice), $total, $method);
+            if (!$old) $this->_checked($this->db->delete('tbl_temp_beli', $this->_cart_where('purchase')));
+            $this->_commit(); $this->_audit($old ? 'Edit Pembelian' : 'Finalisasi Pembelian', ['id' => $id, 'total' => $total, 'items' => count($items)]);
+            $this->session->set_flashdata('success', 'Pembelian berhasil disimpan.');
+        } catch (Throwable $e) { $this->_rollback(); $this->session->set_flashdata('error', $e->getMessage()); }
+        redirect($id !== null && isset($old) && $old ? 'warehouse/laporan_pembelian' : 'warehouse/purchase');
+    }
+
+    private function _stored_purchase_method($method)
+    {
+        $column = $this->db->query("SHOW COLUMNS FROM tbl_pembelian LIKE 'metode_bayar'")->row();
+        if (!$column || stripos($column->Type, 'enum(') !== 0) return $method;
+        preg_match_all("/'([^']+)'/", $column->Type, $matches);
+        $options = $method === 'Hutang' ? ['Hutang','hutang','kredit'] : ($method === 'Transfer' ? ['Transfer','transfer','cash'] : ['Cash','cash','tunai']);
+        foreach ($options as $value) if (in_array($value, $matches[1], true)) return $value;
+        throw new RuntimeException('Metode pembayaran belum didukung struktur pembelian.');
+    }
+
+    private function _purchase_payment($id, $supplier, $date, $invoice, $total, $method)
+    {
+        if ($method === 'Hutang') {
+            $due = $this->_date($this->input->post('jatuh_tempo', true)); if ($due < $date) throw new RuntimeException('Jatuh tempo sebelum tanggal pembelian.');
+            $debt = ['pembelian_id' => $id, 'supplier_id' => $supplier, 'total_tagihan' => $total, 'total_bayar' => 0,
+                'sisa_hutang' => $total, 'jatuh_tempo' => $due, 'status' => 'BELUM LUNAS', 'created_at' => date('Y-m-d H:i:s')];
+            $columns = $this->db->query('SHOW COLUMNS FROM tbl_hutang')->result();
+            foreach ($columns as $column) if (preg_match('/(?:VIRTUAL|STORED|PERSISTENT) GENERATED/i', $column->Extra)) unset($debt[$column->Field]);
+            $this->_checked($this->db->insert('tbl_hutang', $debt));
+        } else {
+            $supplier_row = $this->db->get_where('tbl_supplier', ['supplier_id' => $supplier])->row();
+            $expense = ['pengeluaran_tgl' => $date, 'kategori_pengeluaran_id' => 1,
+                'pengeluaran_detail' => 'Pembelian Material #' . $id . ' (No. Faktur: ' . $invoice . ')',
+                'pengeluaran_jumlah' => $total, 'pengeluaran_penerima' => $supplier_row->supplier_nama,
+                'metode_bayar' => $method === 'Cash' ? 'tunai' : 'transfer', 'user_id' => $this->session->userdata('id'),
+                'perusahaan_id' => 1, 'created_at' => date('Y-m-d H:i:s')];
+            if ($method === 'Transfer') {
+                $account = $this->_id($this->input->post('rekening_id', true));
+                if (!$this->db->get_where('tbl_rekening', ['id' => $account])->row()) throw new RuntimeException('Rekening tidak ditemukan.');
+                $expense['rekening_id'] = $account; $expense['rekening_tujuan'] = $this->input->post('rekening_tujuan', true);
+            }
+            $this->_checked($this->db->insert('tbl_pengeluaran', $expense));
+        }
+    }
+
+    private function _purchase_expenses($purchase)
+    {
+        $new_label = 'Pembelian Material #' . $purchase->pembelian_id . ' (No. Faktur: ' . $purchase->no_faktur . ')';
+        $rows = $this->db->get_where('tbl_pengeluaran', ['pengeluaran_detail' => $new_label])->result();
+        if ($rows) return $rows;
+        $legacy = 'Pembelian Material (No. Faktur: ' . $purchase->no_faktur . ')';
+        $rows = $this->db->get_where('tbl_pengeluaran', ['pengeluaran_detail' => $legacy])->result();
+        if ($rows && count($this->db->get_where('tbl_pembelian', ['no_faktur' => $purchase->no_faktur])->result()) > 1) throw new RuntimeException('Referensi pengeluaran lama ambigu; koreksi referensi sebelum mengedit pembelian.');
+        return $rows;
+    }
+
+    private function _assert_purchase_editable($purchase)
+    {
+        $debts = $this->db->query('SELECT * FROM tbl_hutang WHERE pembelian_id = ? FOR UPDATE', [$purchase->pembelian_id])->result();
+        foreach ($debts as $debt) {
+            if ((float)$debt->total_bayar > 0 || ($this->db->table_exists('tbl_hutang_pembayaran')
+                && $this->db->get_where('tbl_hutang_pembayaran', ['hutang_id' => $debt->hutang_id])->row())) throw new RuntimeException('Pembelian sudah memiliki pembayaran hutang; riwayat pembayaran harus dipertahankan.');
+        }
+        if ($this->db->table_exists('tbl_return_pembelian')) {
+            if ($this->db->field_exists('pembelian_id', 'tbl_return_pembelian')) {
+                $return = $this->db->get_where('tbl_return_pembelian', ['pembelian_id' => $purchase->pembelian_id])->row();
+            } else {
+                $return = $this->db->where('supplier_id', $purchase->supplier_id)->where('return_tgl >=', $purchase->pembelian_tgl)->get('tbl_return_pembelian')->row();
+            }
+            if ($return) throw new RuntimeException('Ada retur terkait supplier setelah pembelian ini; verifikasi keterkaitan retur sebelum koreksi/hapus.');
+        }
+    }
+
     public function stock()
     {
         $conf = $this->_get_conf();
@@ -668,8 +550,8 @@ class Warehouse extends MY_Controller
             'controller' => 'warehouse',
             'function' => 'stock',
             'title' => 'Manajemen Stok Gudang',
-            'perusahaan' => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses' => $conf['hakakses']['divisi_nama'],
+            'perusahaan' => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses' => ($conf['hakakses']['divisi_nama'] ?? ''),
             'warehouses' => $this->warehouse->get_all_warehouses(),
             'selected_gudang' => $gudang_id,
             'selected_category' => $category,
@@ -685,35 +567,23 @@ class Warehouse extends MY_Controller
      */
     public function reset_stock_gudang($gudang_id)
     {
-        // Require specific permission or just allow if it's accessible.
-        // Assuming user has access to warehouse module.
-        if ($gudang_id) {
-            $this->db->trans_start();
-
-            // Reset stok_gudang to 0
-            $this->db->where('gudang_id', $gudang_id);
-            $this->db->update('tbl_stok_gudang', ['qty' => 0]);
-
-            // Clear log usage (tbl_stok_log) for this warehouse
-            $this->db->where('gudang_id', $gudang_id);
-            $this->db->delete('tbl_stok_log');
-
-            $this->db->trans_complete();
-
-            if ($this->db->trans_status() === TRUE) {
-                // Log action
-                $this->_log_manual("Reset Stok & Penggunaan", "Gudang ID: $gudang_id", 'DELETE');
-                $this->session->set_flashdata('success', 'Stok dan log penggunaan bahan gudang berhasil direset.');
-            } else {
-                $this->session->set_flashdata('error', 'Gagal mereset stok gudang.');
+        try {
+            if (!in_array((int)$this->session->userdata('level'), [1,2,17], true)) throw new RuntimeException('Akses reset stok ditolak.');
+            $warehouse = $this->_warehouse($gudang_id); $this->_begin();
+            $materials = $this->db->order_by('material_id', 'ASC')->get('tbl_material')->result();
+            foreach ($materials as $material) {
+                $rows = $this->warehouse_stock->rows($material->material_id, $warehouse);
+                foreach ($rows as $row) {
+                    $qty = (float)$row->qty;
+                    if ($qty != 0) $this->warehouse_stock->post($material->material_id, $warehouse, -$qty, 'Adjustment', 0, 'Reset stok gudang', $row->rak_id);
+                }
             }
-        }
-        redirect('warehouse/stock?gudang_id=' . $gudang_id);
+            $this->_commit(); $this->_audit('Reset stok gudang', ['gudang_id' => $warehouse]);
+            $this->session->set_flashdata('success', 'Saldo gudang dinolkan; riwayat mutasi tetap tersimpan.');
+        } catch (Throwable $e) { $this->_rollback(); $this->session->set_flashdata('error', $e->getMessage()); }
+        redirect('warehouse/stock?gudang_id=' . (int)$gudang_id);
     }
 
-    /**
-     * AJAX Detail Dispatch
-     */
     public function ajax_detail_dispatch($material_id)
     {
         $gudang_id = $this->input->get('gudang_id');
@@ -792,11 +662,12 @@ class Warehouse extends MY_Controller
             'controller' => 'warehouse',
             'function' => 'dispatch',
             'title' => 'Pengiriman Ke Produksi',
-            'perusahaan' => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses' => $conf['hakakses']['divisi_nama'],
+            'perusahaan' => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses' => ($conf['hakakses']['divisi_nama'] ?? ''),
             'materials' => $this->warehouse->get_materials_dropdown(),
             'warehouses' => $this->warehouse->get_all_warehouses(),
             'temp_items' => $this->warehouse->get_dispatch_temp_items(),
+            'legacy_drafts' => $this->warehouse->get_unowned_drafts('dispatch'),
             'recent_dispatches' => $this->m_gudang->getPengambilanWithDetails()->result(),
             'materials_ready' => $this->db
                 ->select('m.*, b.bahan_nama, s.satuan_nama, COALESCE(sg.qty, 0) as jumlah_stok')
@@ -817,231 +688,125 @@ class Warehouse extends MY_Controller
      */
     public function dispatch_add_item()
     {
-        if ($this->input->post()) {
-            $material_id = $this->input->post('material_id', true);
-            $qty = $this->input->post('qty', true);
-            $bahan_id = $this->input->post('bahan_id', true);
-
-            // Fetch material konversi
-            $material = $this->db->get_where('tbl_material', ['material_id' => $material_id])->row();
-            $konversi = $material ? (float) ($material->konversi ?: 1) : 1;
-
-            // Check availability in Main Warehouse (ID 1)
-            $available = $this->warehouse->get_current_stock($material_id, 1);
-
-            // Check if already in temp to sum up
-            $existing = $this->db->get_where('tbl_temp_pengambilan', ['material_id' => $material_id])->row();
-            $new_qty = ($existing ? $existing->qty : 0) + $qty;
-            $new_qty_base = $new_qty * $konversi;
-
-            if ($available < $new_qty_base) {
-                $avail_in_unit = $available / $konversi;
-                $this->session->set_flashdata('error', 'Stok tidak mencukupi! Tersedia: ' . number_format($avail_in_unit, 2) . ' (Di keranjang: ' . ($existing ? $existing->qty : 0) . ')');
-                redirect('warehouse/dispatch');
-                return;
-            }
-
-            if ($existing) {
-                $this->db->where('temp_id', $existing->temp_id);
-                $this->db->update('tbl_temp_pengambilan', [
-                    'qty' => $new_qty,
-                    'keterangan' => $this->input->post('keterangan', true) ?: $existing->keterangan
-                ]);
-            } else {
-                $data = [
-                    'material_id' => $material_id,
-                    'bahan_id' => $bahan_id,
-                    'qty' => $qty,
-                    'keterangan' => $this->input->post('keterangan', true)
-                ];
-                $this->db->insert('tbl_temp_pengambilan', $data);
-            }
-
-            log_activity($this->session->userdata('id'), 'input_data_pengambilan', 'Warehouse', $material_id);
-            $this->session->set_flashdata('success', 'Item berhasil ditambahkan ke rencana pengiriman.');
-        }
-        redirect('warehouse/dispatch');
+        $this->_dispatch_cart_action(false);
     }
 
-    /**
-     * AJAX: Quick Add item to dispatch cart (Drag & Drop)
-     */
     public function ajax_dispatch_add_item()
     {
-        $material_id = $this->input->post('material_id', true);
-        $bahan_id = $this->input->post('bahan_id', true);
-        $qty = (float) ($this->input->post('qty', true) ?: 1);
-
-        // Fetch material konversi
-        $material = $this->db->get_where('tbl_material', ['material_id' => $material_id])->row();
-        $konversi = $material ? (float) ($material->konversi ?: 1) : 1;
-
-        // 1. Calculate total current quantity in temp for this material
-        $q_temp = $this->db->query("SELECT SUM(qty) as total FROM tbl_temp_pengambilan WHERE material_id = ?", [$material_id])->row();
-        $current_temp_total = (float) ($q_temp->total ?? 0);
-
-        // 2. Identify Gudang Utama dynamically
-        $g_utama = $this->db->get_where('tbl_gudang', ['gudang_nama' => 'Gudang Utama'])->row();
-        $u_id = $g_utama ? $g_utama->gudang_id : 1;
-
-        // 3. Check physical availability
-        $q_stock = $this->db->query("SELECT qty FROM tbl_stok_gudang WHERE material_id = ? AND gudang_id = ?", [$material_id, $u_id])->row();
-        $avail = $q_stock ? (float) $q_stock->qty : 0;
-
-        $proposed = $current_temp_total + $qty;
-        $proposed_base = $proposed * $konversi;
-
-        if ($avail < $proposed_base) {
-            $avail_unit = $avail / $konversi;
-            echo json_encode([
-                'status' => 'error',
-                'message' => "STOK TIDAK CUKUP! Tersedia: $avail_unit. Di Picklist: $current_temp_total. Gagal menambah: $qty."
-            ]);
-            return;
-        }
-
-        // 3. Update existing row or insert new
-        $existing = $this->db->get_where('tbl_temp_pengambilan', [
-            'material_id' => $material_id
-        ])->row();
-
-        // 3. Update existing row (Increment Qty) or insert new
-        if ($existing) {
-            $this->db->where('temp_id', $existing->temp_id);
-            $this->db->update('tbl_temp_pengambilan', ['qty' => $existing->qty + $qty]);
-            echo json_encode(['status' => 'success', 'message' => 'Quantity bertambah (+1)']);
-        } else {
-            $this->db->insert('tbl_temp_pengambilan', [
-                'material_id' => $material_id,
-                'bahan_id' => $bahan_id,
-                'qty' => $qty,
-                'keterangan' => ''
-            ]);
-            echo json_encode(['status' => 'success', 'message' => 'Ditambahkan ke Picklist']);
-        }
+        $this->_dispatch_cart_action(true);
     }
 
-    /**
-     * AJAX: Update quantity of item already in dispatch cart
-     */
     public function ajax_dispatch_update_qty()
     {
-        $temp_id = $this->input->post('temp_id', true);
-        $qty = (float) $this->input->post('qty', true);
-
-        // Get current entry info
-        $temp = $this->db->get_where('tbl_temp_pengambilan', ['temp_id' => $temp_id])->row();
-        if (!$temp) {
-            echo json_encode(['status' => 'error', 'message' => 'Data tidak ditemukan']);
-            return;
-        }
-
-        // Fetch material konversi
-        $material = $this->db->get_where('tbl_material', ['material_id' => $temp->material_id])->row();
-        $konversi = $material ? (float) ($material->konversi ?: 1) : 1;
-
-        // Check stock availability
-        $available = $this->warehouse->get_current_stock($temp->material_id, 1);
-        $qty_base = $qty * $konversi;
-
-        if ($available < $qty_base) {
-            $avail_unit = $available / $konversi;
-            echo json_encode(['status' => 'error', 'message' => 'Stok tidak cukup! (Max: ' . $avail_unit . ')']);
-            return;
-        }
-
-        // Update
-        $this->db->where('temp_id', $temp_id);
-        $this->db->update('tbl_temp_pengambilan', ['qty' => $qty]);
-
-        echo json_encode(['status' => 'success', 'message' => 'Qty diperbarui']);
+        try {
+            $this->_begin(); $this->_actor_lock();
+            $where = array_merge($this->_cart_where('dispatch'), ['temp_id' => $this->_id($this->input->post('temp_id', true))]);
+            $row = $this->db->get_where('tbl_temp_pengambilan', $where)->row();
+            if (!$row) throw new RuntimeException('Item tidak ditemukan pada keranjang Anda.');
+            $material = $this->warehouse_stock->material($row->material_id);
+            $qty = $this->_number($this->input->post('qty', true), true);
+            $other = 0;
+            foreach ($this->_cart('dispatch') as $r) if ($r->material_id == $row->material_id && $r->temp_id != $row->temp_id) $other += (float)$r->qty;
+            if (round(($qty + $other) * $material->konversi, 2) > $this->warehouse_stock->total($row->material_id, 1)) throw new RuntimeException('Stok tidak mencukupi.');
+            $this->_checked($this->db->update('tbl_temp_pengambilan', ['qty' => $qty], $where)); $this->_commit();
+            echo json_encode(['status' => 'success', 'message' => 'Qty diperbarui.']);
+        } catch (Throwable $e) { $this->_rollback(); echo json_encode(['status' => 'error', 'message' => $e->getMessage()]); }
     }
 
-    /**
-     * Delete item from dispatch cart
-     */
+    private function _dispatch_cart_action($ajax)
+    {
+        try {
+            $this->_begin(); $this->_actor_lock();
+            $material = $this->warehouse_stock->material($this->input->post('material_id', true));
+            $input = $this->input->post('qty', true);
+            $qty = $this->_number($input === null && $ajax ? 1 : $input, true);
+            $where = array_merge($this->_cart_where('dispatch'), ['material_id' => $material->material_id]);
+            $rows = $this->db->get_where('tbl_temp_pengambilan', $where)->result();
+            $total = $qty; foreach ($rows as $row) $total += (float)$row->qty;
+            if (round($total * $material->konversi, 2) > $this->warehouse_stock->total($material->material_id, 1)) throw new RuntimeException('Stok tidak mencukupi.');
+            $note = $this->input->post('keterangan', true) ?: '';
+            if ($rows) $this->_checked($this->db->update('tbl_temp_pengambilan', ['qty' => (float)$rows[0]->qty + $qty,
+                'keterangan' => $note ?: $rows[0]->keterangan], ['temp_id' => $rows[0]->temp_id]));
+            else $this->_checked($this->db->insert('tbl_temp_pengambilan', array_merge($where,
+                ['bahan_id' => $material->bahan_id, 'qty' => $qty, 'keterangan' => $note])));
+            $this->_commit();
+            if ($ajax) echo json_encode(['status' => 'success', 'message' => 'Ditambahkan ke picklist Anda.']);
+            else $this->session->set_flashdata('success', 'Item ditambahkan ke picklist Anda.');
+        } catch (Throwable $e) {
+            $this->_rollback();
+            if ($ajax) echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+            else $this->session->set_flashdata('error', $e->getMessage());
+        }
+        if (!$ajax) redirect('warehouse/dispatch');
+    }
+
     public function dispatch_delete_item($temp_id)
     {
-        $this->db->delete('tbl_temp_pengambilan', ['temp_id' => $temp_id]);
-        $this->session->set_flashdata('success', 'Item berhasil dihapus.');
-        redirect('warehouse/dispatch');
+        $this->_delete_cart_item('dispatch', $temp_id); redirect('warehouse/dispatch');
     }
 
-    /**
-     * Finalize dispatch transaction
-     */
+    public function claim_legacy_draft()
+    {
+        $kind = $this->input->post('kind', true);
+        if (!in_array($kind, ['purchase', 'dispatch'], true)) { show_404(); return; }
+        try {
+            $this->_begin(); $this->_actor_lock();
+            $id = $this->_id($this->input->post('temp_id', true)); $table = $kind === 'purchase' ? 'tbl_temp_beli' : 'tbl_temp_pengambilan';
+            $draft = $this->db->query('SELECT * FROM ' . $table . ' WHERE temp_id = ? FOR UPDATE', [$id])->row();
+            if (!$draft || $draft->user_id !== null) throw new RuntimeException('Draft sudah diambil petugas lain atau tidak ditemukan.');
+            $material = $this->warehouse_stock->material($draft->material_id); $qty = $this->_number($draft->qty, true);
+            if ($kind === 'purchase') { $this->_number($draft->harga); $this->_rack($draft->rak_id, 1); }
+            else {
+                $total = $qty; foreach ($this->_cart('dispatch') as $r) if ($r->material_id == $draft->material_id) $total += (float)$r->qty;
+                if (round($total * $material->konversi, 2) > $this->warehouse_stock->total($draft->material_id, 1)) throw new RuntimeException('Stok draft lama tidak mencukupi. Koreksi data draft terlebih dahulu.');
+            }
+            $this->_checked($this->db->update($table, $this->_cart_where($kind), ['temp_id' => $id, 'user_id' => null])); $this->_commit();
+            $this->session->set_flashdata('success', 'Draft lama berhasil diambil ke keranjang Anda.');
+        } catch (Throwable $e) { $this->_rollback(); $this->session->set_flashdata('error', $e->getMessage()); }
+        redirect('warehouse/' . $kind);
+    }
+
+    private function _delete_cart_item($kind, $id)
+    {
+        try {
+            $this->_begin(); $this->_actor_lock();
+            $where = array_merge($this->_cart_where($kind), ['temp_id' => $this->_id($id)]);
+            $table = $kind === 'purchase' ? 'tbl_temp_beli' : 'tbl_temp_pengambilan';
+            if (!$this->db->get_where($table, $where)->row()) throw new RuntimeException('Item tidak ditemukan pada keranjang Anda.');
+            $this->_checked($this->db->delete($table, $where)); $this->_commit();
+            $this->session->set_flashdata('success', 'Item dihapus.');
+        } catch (Throwable $e) { $this->_rollback(); $this->session->set_flashdata('error', $e->getMessage()); }
+    }
+
     public function dispatch_finalize()
     {
-        if ($this->input->post()) {
-            $gudang_id = $this->input->post('gudang_id', true);
-            $pengambilan_tgl = $this->input->post('pengambilan_tgl', true);
-
-            $temp_items = $this->warehouse->get_dispatch_temp_items();
-
-            if (empty($temp_items)) {
-                $this->session->set_flashdata('error', 'Rencana pengiriman masih kosong!');
-                redirect('warehouse/dispatch');
+        try {
+            $date = $this->_date($this->input->post('pengambilan_tgl', true));
+            $destination = $this->_warehouse($this->input->post('gudang_id', true));
+            if ($destination === 1) throw new RuntimeException('Gudang tujuan harus berbeda dari Gudang Utama.');
+            $this->_begin(); $this->_actor_lock();
+            $items = $this->_cart('dispatch'); if (!$items) throw new RuntimeException('Picklist Anda masih kosong.');
+            $this->_checked($this->db->insert('tbl_pengambilan', ['pengambilan_tgl' => $date,
+                'pengambilan_waktu' => date('Y-m-d H:i:s'), 'karyawan_id' => $this->_id($this->session->userdata('karyawan_id')),
+                'gudang_id' => $destination]));
+            $id = $this->db->insert_id();
+            foreach ($items as $item) {
+                $material = $this->warehouse_stock->material($item->material_id);
+                $qty = $this->_number($item->qty, true); $base = round($qty * $material->konversi, 2);
+                if ($base <= 0) throw new RuntimeException('Jumlah terlalu kecil untuk satuan stok.');
+                $note = (string)($item->keterangan ?? '');
+                $this->_checked($this->db->insert('tbl_pengambilan_detail', ['pengambilan_id' => $id,
+                    'material_id' => $item->material_id, 'qty' => $qty, 'gudang_id' => $destination, 'keterangan' => substr($note, 0, 100)]));
+                $this->warehouse_stock->post($item->material_id, 1, -$base, 'Mutation', $id, 'Dikirim ke Produksi: ' . $note, null, true);
+                $this->warehouse_stock->post($item->material_id, $destination, $base, 'Mutation', $id, 'Diterima dari Gudang Utama: ' . $note);
             }
-
-            $this->db->trans_start();
-
-            // 1. Record Header
-            $mut_data = [
-                'pengambilan_tgl' => $pengambilan_tgl,
-                'pengambilan_waktu' => date('Y-m-d H:i:s'),
-                'karyawan_id' => $this->session->userdata('id'),
-                'gudang_id' => $gudang_id,
-            ];
-            $this->db->insert('tbl_pengambilan', $mut_data);
-            $pengambilan_id = $this->db->insert_id();
-
-            // 2. Record Detail & Update Stock
-            foreach ($temp_items as $item) {
-                $det_data = [
-                    'pengambilan_id' => $pengambilan_id,
-                    'material_id' => $item->material_id,
-                    'qty' => $item->qty,
-                    'gudang_id' => $gudang_id,
-                    'keterangan' => $item->keterangan ?? ''
-                ];
-                $this->db->insert('tbl_pengambilan_detail', $det_data);
-
-                // Update Stocks
-                $log_note = !empty($item->keterangan) ? " ($item->keterangan)" : "";
-
-                // Out from Main (1)
-                $this->m_gudang->update_stock_with_log($item->material_id, 1, -$item->qty, 'Mutation', $pengambilan_id, 'Dikirim ke Produksi' . $log_note);
-                // In to Production (gudang_id)
-                $this->m_gudang->update_stock_with_log($item->material_id, $gudang_id, $item->qty, 'Mutation', $pengambilan_id, 'Diterima dari Gudang Utama' . $log_note);
-            }
-
-            // 3. Clear Temp
-            $this->db->empty_table('tbl_temp_pengambilan');
-
-            $this->db->trans_complete();
-
-            if ($this->db->trans_status() === TRUE) {
-                // [AUDIT LOG]
-                $this->_log_manual("Pengiriman Material ke Produksi", json_encode([
-                    'gudang_tujuan' => $gudang_id,
-                    'item_count' => count($temp_items)
-                ]), 'WRITE');
-
-                // [USER ACTIVITY]
-                log_activity($this->session->userdata('id'), 'dispatch_material', 'Warehouse', $pengambilan_id);
-
-                // We only set last_dispatch_id, the view will handle the success alert + print option
-                $this->session->set_flashdata('last_dispatch_id', $pengambilan_id);
-            } else {
-                $this->session->set_flashdata('error', 'Gagal memproses pengiriman.');
-            }
-        }
+            $this->_checked($this->db->delete('tbl_temp_pengambilan', $this->_cart_where('dispatch'))); $this->_commit();
+            $this->_audit('Pengiriman Material ke Produksi', ['gudang_tujuan' => $destination, 'item_count' => count($items)]);
+            $this->session->set_flashdata('last_dispatch_id', $id);
+        } catch (Throwable $e) { $this->_rollback(); $this->session->set_flashdata('error', $e->getMessage()); }
         redirect('warehouse/dispatch');
     }
 
-    /**
-     * Print Surat Jalan (Delivery Note)
-     */
     public function print_dispatch($id)
     {
         $this->db->select('p.*, g.gudang_nama, k.nama_lengkap as pengambil_nama, u.username as creator');
@@ -1080,69 +845,31 @@ class Warehouse extends MY_Controller
         $conf = $this->_get_conf();
 
         if ($this->input->post()) {
-            $material_id = $this->input->post('material_id', true);
-            $gudang_id = $this->input->post('gudang_id', true);
-            $son_real = (float) $this->input->post('son_real', true);
-            $son_aplikasi = (float) $this->input->post('son_aplikasi', true);
-            $sync_now = $this->input->post('sync_now', true) == '1' ? true : false;
-            $catatan = $this->input->post('catatan', true) ?: 'Koreksi Stok Opname';
-
-            $this->db->trans_start();
-
-            // 1. Record Opname
-            $opname_data = [
-                'material_id' => $material_id,
-                'son_tgl' => date('Y-m-d H:i:s'),
-                'son_aplikasi' => $son_aplikasi,
-                'son_real' => $son_real,
-                'gudang_id' => $gudang_id,
-                'verifikasi' => ($sync_now ? '1' : '0'),
-                'son_keterangan' => $catatan
-            ];
-            $this->db->insert('tbl_stok_opname', $opname_data);
-            $opname_id = $this->db->insert_id();
-
-            // 2. Sync if requested
-            if ($sync_now) {
-                $diff = $son_real - $son_aplikasi;
-                if ($diff != 0) {
-                    $this->m_gudang->update_stock_with_log(
-                        $material_id,
-                        $gudang_id,
-                        $diff,
-                        'Opname',
-                        $opname_id,
-                        "Auto-Sync Opname: " . ($diff > 0 ? "+" : "") . $diff . " unit. " . $catatan
-                    );
-                }
-            }
-
-            $this->db->trans_complete();
-
-            if ($this->db->trans_status() === TRUE) {
-                $msg = 'Data Opname berhasil disimpan.';
-                if ($sync_now) {
-                    $msg .= ' Stok telah diperbarui secara otomatis.';
-                    // [AUDIT LOG]
-                    $this->_log_manual("Stok Opname & Sinkronisasi: $material_id", "Real: $son_real, App: $son_aplikasi", 'WRITE');
-                }
-
-                // [USER ACTIVITY]
-                log_activity($this->session->userdata('id'), 'stok_opname', 'Warehouse', $opname_id);
-
-                $this->session->set_flashdata('success', $msg);
-            } else {
-                $this->session->set_flashdata('error', 'Gagal menyimpan stok opname.');
-            }
-            redirect('warehouse/opname');
+            try {
+                $warehouse = $this->_warehouse($this->input->post('gudang_id', true));
+                $real = $this->_number($this->input->post('son_real', true));
+                $snapshot = $this->_number($this->input->post('son_aplikasi', true));
+                $sync = $this->input->post('sync_now', true) === '1';
+                $note = $this->input->post('catatan', true) ?: 'Koreksi stok opname';
+                $this->_begin(); $material = $this->warehouse_stock->material($this->input->post('material_id', true));
+                $base = $this->warehouse_stock->total($material->material_id, $warehouse); $current = $base / $material->konversi;
+                if (abs(round($current, 2) - $snapshot) > 0.00001) throw new RuntimeException('Stok telah berubah. Muat ulang data sebelum menyimpan opname.');
+                $this->_checked($this->db->insert('tbl_stok_opname', ['material_id' => $material->material_id,
+                    'gudang_id' => $warehouse, 'son_tgl' => date('Y-m-d H:i:s'), 'son_aplikasi' => round($current, 2),
+                    'son_real' => $real, 'verifikasi' => $sync ? '1' : '0', 'son_keterangan' => substr($note, 0, 200)]));
+                $id = $this->db->insert_id();
+                if ($sync) $this->warehouse_stock->post($material->material_id, $warehouse, round($real * $material->konversi - $base, 2), 'Opname', $id, $note, null, true);
+                $this->_commit(); $this->session->set_flashdata('success', 'Opname berhasil disimpan' . ($sync ? ' dan stok diperbarui.' : '.'));
+            } catch (Throwable $e) { $this->_rollback(); $this->session->set_flashdata('error', $e->getMessage()); }
+            redirect('warehouse/opname'); return;
         }
 
         $data = [
             'controller' => 'warehouse',
             'function' => 'opname',
             'title' => 'Stok Opname (Penyesuaian)',
-            'perusahaan' => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses' => $conf['hakakses']['divisi_nama'],
+            'perusahaan' => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses' => ($conf['hakakses']['divisi_nama'] ?? ''),
             'materials' => $this->warehouse->get_materials_dropdown(),
             'warehouses' => $this->warehouse->get_all_warehouses(),
             'recent_opname' => $this->m_gudang->getDataStokOpname()->result()
@@ -1314,8 +1041,8 @@ class Warehouse extends MY_Controller
             'controller' => 'warehouse',
             'function' => 'ledger',
             'title' => 'Kartu Stok (Ledger)',
-            'perusahaan' => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses' => $conf['hakakses']['divisi_nama'],
+            'perusahaan' => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses' => ($conf['hakakses']['divisi_nama'] ?? ''),
             'current_gudang' => $gudang_id,
             'warehouses' => $warehouses,
             'logs' => $logs,
@@ -1334,78 +1061,25 @@ class Warehouse extends MY_Controller
      */
     public function actionAdjustmentStok()
     {
-        $material_id = $this->input->post('material_id', true);
-        $gudang_id = $this->input->post('gudang_id', true);
-        $qty_aktual_input = (float) $this->input->post('qty_aktual', true);
-        $catatan = $this->input->post('catatan', true) ?: 'Saldo Awal / Adjustment Manual';
-
-        if (empty($material_id) || empty($gudang_id)) {
-            echo json_encode(['success' => false, 'message' => 'Material dan Gudang harus dipilih.']);
-            return;
-        }
-        
-        // Convert display unit (from UI) to base unit
-        $material = $this->db->where('material_id', $material_id)->get('tbl_material')->row();
-        $konversi = ($material && !empty($material->konversi)) ? (float) $material->konversi : 1;
-        $qty_aktual = $qty_aktual_input * $konversi;
-
-        // 1. Get current stock in system
-        $current = $this->db->where([
-            'material_id' => $material_id,
-            'gudang_id' => $gudang_id
-        ])->get('tbl_stok_gudang')->row();
-
-        $qty_sistem = $current ? (float) $current->qty : 0;
-
-        $diff = $qty_aktual - $qty_sistem;
-
-        if ($diff == 0) {
-            echo json_encode(['success' => false, 'message' => 'Stok aktual sama dengan stok sistem. Tidak ada perubahan.']);
-            return;
-        }
-
-        // Convert diff back to display units because update_stock_with_log expects display units
-        $diff_display = $diff / $konversi;
-
-        // 3. Verify Owner/Developer PIN from tbl_karyawan (pin_produksi)
-        $submitted_pin = $this->input->post('owner_pin', true);
-
-        $this->db->select('k.nama_lengkap, u.username');
-        $this->db->from('tbl_karyawan k');
-        $this->db->join('users u', 'u.karyawan_id = k.karyawan_id');
-        $this->db->where('k.pin_produksi', $submitted_pin);
-        $this->db->group_start();
-        $this->db->where_in('u.role_id', [1, 5, 17]); // Admin, Operator Gudang, Owner Role
-        $this->db->or_where('u.username', 'nizarsuryadi'); // Developer Bypass
-        $this->db->group_end();
-        
-        $authorizer = $this->db->get()->row();
-
-        if (!$authorizer) {
-            echo json_encode(['success' => false, 'message' => 'VERIFIKASI GAGAL! PIN salah atau Anda tidak memiliki otoritas (Admin/Operator/Owner).']);
-            return;
-        }
-
-        $catatan .= " - Diotorisasi oleh: " . $authorizer->nama_lengkap;
-
-        // 4. Update stock with log (pass display units!)
-        $result = $this->m_gudang->update_stock_with_log($material_id, $gudang_id, $diff_display, 'Adjustment', 0, $catatan);
-
-        if ($result) {
-            // [AUDIT LOG]
-            $this->_log_manual("Adjustment Stok Manual: $material_id", "Qty Aktual (Base Unit): $qty_aktual, Diff: $diff_display (Display Unit), Catatan: $catatan", 'WRITE');
-            // [USER ACTIVITY]
-            log_activity($this->session->userdata('id'), 'stock_adjustment', 'Warehouse', $material_id);
-
-            echo json_encode(['success' => true, 'message' => 'Stok berhasil diperbarui secara manual.']);
-        } else {
-            echo json_encode(['success' => false, 'message' => 'Gagal memperbarui stok.']);
-        }
+        try {
+            $warehouse = $this->_warehouse($this->input->post('gudang_id', true));
+            $actual = $this->_number($this->input->post('qty_aktual', true));
+            $pin = $this->input->post('owner_pin', true);
+            if (!is_string($pin) || !preg_match('/^\d{4,6}$/D', $pin)) throw new RuntimeException('PIN otorisasi tidak valid.');
+            $this->db->select('k.nama_lengkap, u.username')->from('tbl_karyawan k')->join('users u', 'u.karyawan_id = k.karyawan_id')
+                ->where('k.pin_produksi', $pin)->group_start()->where_in('u.role_id', [1,5,17])->or_where('u.username', 'nizarsuryadi')->group_end();
+            if ((int)$this->session->userdata('perusahaan_id') !== 1) $this->db->where('k.perusahaan_id', $this->session->userdata('perusahaan_id'));
+            $authorizer = $this->db->get()->row();
+            if (!$authorizer) throw new RuntimeException('PIN salah atau petugas tidak berwenang.');
+            $this->_begin(); $material = $this->warehouse_stock->material($this->input->post('material_id', true));
+            $base = $this->warehouse_stock->total($material->material_id, $warehouse); $delta = round($actual * $material->konversi - $base, 2);
+            $note = ($this->input->post('catatan', true) ?: 'Adjustment manual') . ' - Diotorisasi oleh: ' . $authorizer->nama_lengkap;
+            $this->warehouse_stock->post($material->material_id, $warehouse, $delta, 'Adjustment', 0, $note, null, true);
+            $this->_commit(); $this->_audit('Adjustment stok', ['material_id' => $material->material_id, 'base_delta' => $delta, 'catatan' => $note]);
+            echo json_encode(['success' => true, 'message' => $delta == 0 ? 'Stok sudah sesuai.' : 'Stok berhasil diperbarui.']);
+        } catch (Throwable $e) { $this->_rollback(); echo json_encode(['success' => false, 'message' => $e->getMessage()]); }
     }
 
-    /**
-     * AJAX: Get material list for selector
-     */
     public function get_material_list_json()
     {
         $q = $this->input->get('q', true);
@@ -1481,8 +1155,8 @@ class Warehouse extends MY_Controller
             'controller' => 'warehouse',
             'function' => 'racks',
             'title' => 'Manajemen Rak Penyimpanan',
-            'perusahaan' => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses' => $conf['hakakses']['divisi_nama'],
+            'perusahaan' => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses' => ($conf['hakakses']['divisi_nama'] ?? ''),
             'warehouses' => $this->warehouse->get_all_warehouses(),
             'racks' => $this->warehouse->get_racks_extended()
         ];
@@ -1495,68 +1169,18 @@ class Warehouse extends MY_Controller
      */
     public function ajax_update_material_rack()
     {
-        $material_id = $this->input->post('material_id', true);
-        $gudang_id = $this->input->post('gudang_id', true);
-        $rak_asal = $this->input->post('rak_asal', true);
-        $rak_tujuan = $this->input->post('rak_tujuan', true);
-        $catatan = $this->input->post('catatan', true) ?: 'Penataan Stok (Bin Location)';
-
-        if (!$material_id || !$gudang_id || !$rak_tujuan) {
-            echo json_encode(['status' => 'error', 'message' => 'Data tidak lengkap.']);
-            return;
-        }
-
-        if ($rak_asal == $rak_tujuan) {
-            echo json_encode(['status' => 'error', 'message' => 'Material sudah berada di rak tujuan yang sama.']);
-            return;
-        }
-
-        $this->db->trans_start();
-
-        // 1. Ambil stok di lokasi asal
-        $source_where = [
-            'material_id' => $material_id,
-            'gudang_id' => $gudang_id,
-            'rak_id' => (empty($rak_asal) ? NULL : $rak_asal)
-        ];
-        $source = $this->db->get_where('tbl_stok_gudang', $source_where)->row();
-
-        if (!$source || $source->qty <= 0) {
-            echo json_encode(['status' => 'error', 'message' => 'Stok di lokasi asal tidak ditemukan atau sudah kosong.']);
-            return;
-        }
-
-        $qty_to_move = (float) $source->qty;
-
-        // 2. Kurangi dari asal
-        $this->m_gudang->update_stock_with_log(
-            $material_id,
-            $gudang_id,
-            -$qty_to_move,
-            'Mutasi Rak (Out)',
-            0,
-            $catatan . " (Pindah ke Rak ID: $rak_tujuan)",
-            (empty($rak_asal) ? NULL : $rak_asal)
-        );
-
-        // 3. Tambah ke tujuan
-        $this->m_gudang->update_stock_with_log(
-            $material_id,
-            $gudang_id,
-            $qty_to_move,
-            'Mutasi Rak (In)',
-            0,
-            $catatan . " (Masuk dari " . ($rak_asal ? "Rak ID: $rak_asal" : "Staging Area") . ")",
-            $rak_tujuan
-        );
-
-        $this->db->trans_complete();
-
-        if ($this->db->trans_status() === TRUE) {
-            echo json_encode(['status' => 'success', 'message' => 'Koordinat rak berhasil diperbarui.']);
-        } else {
-            echo json_encode(['status' => 'error', 'message' => 'Gagal memperbarui data rak.']);
-        }
+        try {
+            $material = $this->_id($this->input->post('material_id', true)); $warehouse = $this->_warehouse($this->input->post('gudang_id', true));
+            $source = $this->_rack($this->input->post('rak_asal', true), $warehouse); $target = $this->_rack($this->input->post('rak_tujuan', true), $warehouse);
+            if ($target === null || $source === $target) throw new RuntimeException('Rak tujuan harus diisi dan berbeda dari asal.');
+            $this->_begin(); $rows = $this->warehouse_stock->rows($material, $warehouse, $source, true);
+            $qty = 0; foreach ($rows as $r) $qty += (float)$r->qty;
+            if ($qty <= 0) throw new RuntimeException('Stok di rak asal kosong.');
+            $note = $this->input->post('catatan', true) ?: 'Penataan rak';
+            $this->warehouse_stock->post($material, $warehouse, -$qty, 'Mutation', 0, $note . ' (Keluar rak)', $source);
+            $this->warehouse_stock->post($material, $warehouse, $qty, 'Mutation', 0, $note . ' (Masuk rak)', $target);
+            $this->_commit(); echo json_encode(['status' => 'success', 'message' => 'Stok berhasil dipindah ke rak tujuan.']);
+        } catch (Throwable $e) { $this->_rollback(); echo json_encode(['status' => 'error', 'message' => $e->getMessage()]); }
     }
 
     public function ajax_add_rak()
@@ -1596,16 +1220,16 @@ class Warehouse extends MY_Controller
 
     public function ajax_delete_rak($id)
     {
-        if ($this->warehouse->delete_rak($id)) {
-            echo json_encode(['status' => 'success', 'message' => 'Rak berhasil dihapus.']);
-        } else {
-            echo json_encode(['status' => 'error', 'message' => 'Gagal menghapus rak.']);
-        }
+        try {
+            $id = $this->_id($id); $this->_begin();
+            if (!$this->db->query('SELECT * FROM tbl_rak WHERE rak_id = ? FOR UPDATE', [$id])->row()) throw new RuntimeException('Rak tidak ditemukan.');
+            foreach (['tbl_stok_gudang','tbl_stok_log','tbl_pembelian_detail','tbl_temp_beli'] as $table) {
+                if ($this->db->get_where($table, ['rak_id' => $id])->row()) throw new RuntimeException('Rak masih terkait stok atau riwayat transaksi.');
+            }
+            $this->_checked($this->warehouse->delete_rak($id)); $this->_commit(); echo json_encode(['status' => 'success', 'message' => 'Rak berhasil dihapus.']);
+        } catch (Throwable $e) { $this->_rollback(); echo json_encode(['status' => 'error', 'message' => $e->getMessage()]); }
     }
 
-    /**
-     * AJAX: Get products inside a specific rack
-     */
     public function ajax_get_rack_contents($rak_id)
     {
         $this->db->select('sg.*, b.bahan_nama, m.varian, s.satuan_nama');
@@ -1631,8 +1255,8 @@ class Warehouse extends MY_Controller
             'controller' => 'warehouse',
             'function' => 'materials',
             'title' => 'Master Bahan & Material',
-            'perusahaan' => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses' => $conf['hakakses']['divisi_nama'],
+            'perusahaan' => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses' => ($conf['hakakses']['divisi_nama'] ?? ''),
             'satuan' => $this->db->get('tbl_satuan')->result(),
         ];
 
@@ -1742,21 +1366,22 @@ class Warehouse extends MY_Controller
 
     public function actionDeleteBahanBaku($id = null)
     {
-        if (!$id)
-            return;
-
-        $this->db->trans_start();
-        // Delete related materials first
-        $this->db->delete('tbl_material', ['bahan_id' => $id]);
-        // Delete the bahan
-        $this->db->delete('tbl_bahan', ['bahan_id' => $id]);
-        $this->db->trans_complete();
-
-        if ($this->db->trans_status() === TRUE) {
-            echo json_encode(['status' => 'success', 'pesan' => 'Bahan dan varian terkait berhasil dihapus.']);
-        } else {
-            echo json_encode(['status' => 'error', 'pesan' => 'Gagal menghapus data.']);
-        }
+        try {
+            $id = $this->_id($id); $this->_begin();
+            if (!$this->db->query('SELECT bahan_id FROM tbl_bahan WHERE bahan_id = ? FOR UPDATE', [$id])->row()) throw new RuntimeException('Bahan tidak ditemukan.');
+            foreach (['tbl_product','tbl_bom','tbl_bahan_product'] as $table) {
+                if ($this->db->table_exists($table) && $this->db->field_exists('bahan_id', $table)
+                    && $this->db->get_where($table, ['bahan_id' => $id])->row()) throw new RuntimeException('Bahan masih digunakan produk/BOM.');
+            }
+            $materials = $this->db->order_by('material_id', 'ASC')->get_where('tbl_material', ['bahan_id' => $id])->result();
+            foreach ($materials as $m) { $this->warehouse_stock->material($m->material_id); $this->_assert_material_unused($m->material_id); }
+            foreach ($materials as $m) {
+                $this->_checked($this->db->delete('tbl_stok_gudang', ['material_id' => $m->material_id]));
+                $this->_checked($this->db->delete('tbl_material', ['material_id' => $m->material_id]));
+            }
+            $this->_checked($this->db->delete('tbl_bahan', ['bahan_id' => $id])); $this->_commit();
+            echo json_encode(['status' => 'success', 'pesan' => 'Bahan dan varian tidak terpakai berhasil dihapus.']);
+        } catch (Throwable $e) { $this->_rollback(); echo json_encode(['status' => 'error', 'pesan' => $e->getMessage()]); }
     }
 
     public function get_material_count_by_bahan()
@@ -1797,7 +1422,8 @@ class Warehouse extends MY_Controller
         $varian = trim($this->input->post('varian', true));
         $barcode = trim($this->input->post('barcode', true));
         $satuan = $this->input->post('satuan_gudang_id', true);
-        $konversi = $this->input->post('konversi', true);
+        try { $konversi = $this->_number($this->input->post('konversi', true), true); }
+        catch (Throwable $e) { echo json_encode(['status' => 'error', 'pesan' => $e->getMessage()]); return; }
 
         // Check duplicate barcode
         if (!empty($barcode)) {
@@ -1838,7 +1464,15 @@ class Warehouse extends MY_Controller
         $varian = trim($this->input->post('varian', true));
         $barcode = trim($this->input->post('barcode', true));
         $satuan = $this->input->post('satuan_gudang_id', true);
-        $konversi = $this->input->post('konversi', true);
+        try { $konversi = $this->_number($this->input->post('konversi', true), true); }
+        catch (Throwable $e) { echo json_encode(['status' => 'error', 'pesan' => $e->getMessage()]); return; }
+
+        $old = $this->db->get_where('tbl_material', ['material_id' => $id])->row();
+        if (!$old) { echo json_encode(['status' => 'error', 'pesan' => 'Material tidak ditemukan.']); return; }
+        if ((float)$old->konversi != $konversi || (int)$old->satuan_gudang_id != (int)$satuan) {
+            try { $this->_assert_material_unused($id); }
+            catch (Throwable $e) { echo json_encode(['status' => 'error', 'pesan' => 'Konversi/satuan material yang sudah terpakai tidak dapat diubah.']); return; }
+        }
 
         // Check duplicate barcode
         if (!empty($barcode)) {
@@ -1929,71 +1563,42 @@ class Warehouse extends MY_Controller
 
     public function actionDeleteMaterial()
     {
-        $id = $this->input->post('material_id', true);
-        // Begin transaction to ensure atomic deletion of material and related data
-        $this->db->trans_start();
-        // Delete related stock entries in gudang
-        $this->db->where('material_id', $id);
-        $this->db->delete('tbl_stok_gudang');
-        // Delete related stock log entries
-        $this->db->where('material_id', $id);
-        $this->db->delete('tbl_stok_log');
-        // Delete dependent purchase detail rows (foreign key)
-        $this->db->where('material_id', $id);
-        $this->db->delete('tbl_pembelian_detail');
-        // Delete dependent pengambilan detail rows (foreign key)
-        $this->db->where('material_id', $id);
-        $this->db->delete('tbl_pengambilan_detail');
-        // Delete dependent stok opname rows
-        $this->db->where('material_id', $id);
-        $this->db->delete('tbl_stok_opname');
-        // Delete dependent return pembelian detail rows
-        $this->db->where('material_id', $id);
-        $this->db->delete('tbl_return_pembelian_detail');
-        // Delete material record
-        $this->db->where('material_id', $id);
-        $this->db->delete('tbl_material');
-        $this->db->trans_complete();
-
-        if ($this->db->trans_status() === FALSE) {
-            echo json_encode(['status' => 'error', 'pesan' => 'Gagal menghapus varian dan data terkait.']);
-        } else {
-            // Audit log for deletion
-            $this->_log_manual('Delete Material Variant', "Material ID: $id", 'DELETE');
-            echo json_encode(['status' => 'success', 'pesan' => 'Varian berhasil dihapus beserta data terkait.']);
-        }
+        $this->_delete_materials([$this->input->post('material_id', true)]);
     }
 
     public function actionDeleteMaterialBulk()
     {
-        $ids = $this->input->post('ids', true);
-        if (empty($ids) || !is_array($ids)) {
-            echo json_encode(['status' => 'error', 'pesan' => 'Tidak ada varian yang dipilih.']);
-            return;
+        $this->_delete_materials($this->input->post('ids', true));
+    }
+
+    private function _delete_materials($ids)
+    {
+        try {
+            if (!is_array($ids) || !$ids || count($ids) > 1000) throw new RuntimeException('Pilih material yang akan dihapus.');
+            $ids = array_unique(array_map([$this, '_id'], $ids)); sort($ids, SORT_NUMERIC);
+            $this->_begin();
+            foreach ($ids as $id) { $this->warehouse_stock->material($id); $this->_assert_material_unused($id); }
+            foreach ($ids as $id) {
+                $this->_checked($this->db->delete('tbl_stok_gudang', ['material_id' => $id]));
+                $this->_checked($this->db->delete('tbl_material', ['material_id' => $id]));
+            }
+            $this->_commit(); echo json_encode(['status' => 'success', 'pesan' => count($ids) . ' varian tidak terpakai berhasil dihapus.']);
+        } catch (Throwable $e) { $this->_rollback(); echo json_encode(['status' => 'error', 'pesan' => $e->getMessage()]); }
+    }
+
+    private function _assert_material_unused($id)
+    {
+        foreach ($this->db->get_where('tbl_stok_gudang', ['material_id' => $id])->result() as $stock) {
+            if ((float)$stock->qty != 0) throw new RuntimeException('Material masih memiliki saldo stok dan tidak dapat dihapus.');
         }
-
-        $this->db->trans_start();
-        $this->db->where_in('material_id', $ids);
-        $this->db->delete('tbl_stok_gudang');
-        $this->db->where_in('material_id', $ids);
-        $this->db->delete('tbl_stok_log');
-        $this->db->where_in('material_id', $ids);
-        $this->db->delete('tbl_pembelian_detail');
-        $this->db->where_in('material_id', $ids);
-        $this->db->delete('tbl_pengambilan_detail');
-        $this->db->where_in('material_id', $ids);
-        $this->db->delete('tbl_stok_opname');
-        $this->db->where_in('material_id', $ids);
-        $this->db->delete('tbl_return_pembelian_detail');
-        $this->db->where_in('material_id', $ids);
-        $this->db->delete('tbl_material');
-        $this->db->trans_complete();
-
-        if ($this->db->trans_status() === FALSE) {
-            echo json_encode(['status' => 'error', 'pesan' => 'Gagal menghapus varian dan data terkait.']);
-        } else {
-            $this->_log_manual('Delete Bulk Material Variant', "Material IDs: " . implode(',', $ids), 'DELETE');
-            echo json_encode(['status' => 'success', 'pesan' => count($ids) . ' varian berhasil dihapus.']);
+        $refs = ['tbl_stok_log' => 'material_id', 'tbl_pembelian_detail' => 'material_id',
+            'tbl_pengambilan_detail' => 'material_id', 'tbl_stok_opname' => 'material_id',
+            'tbl_return_pembelian_detail' => 'material_id', 'tbl_pengajuan_material_detail' => 'material_id',
+            'tbl_temp_beli' => 'material_id', 'tbl_temp_pengambilan' => 'material_id', 'tbl_temp_pengajuan' => 'material_id',
+            'bom_lines' => 'bahan_id', 'tbl_bom_dynamic_mapping' => 'material_id'];
+        foreach ($refs as $table => $column) {
+            if ($this->db->table_exists($table) && $this->db->field_exists($column, $table)
+                && $this->db->get_where($table, [$column => $id])->row()) throw new RuntimeException('Material sudah dipakai oleh transaksi/BOM/keranjang. Riwayat tidak boleh dihapus.');
         }
     }
 
@@ -2075,8 +1680,8 @@ class Warehouse extends MY_Controller
             'controller' => 'warehouse',
             'function' => 'stock_report',
             'title' => 'Laporan Rekapitulasi Stok',
-            'perusahaan' => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses' => $conf['hakakses']['divisi_nama'],
+            'perusahaan' => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses' => ($conf['hakakses']['divisi_nama'] ?? ''),
             'warehouses' => $report_data['warehouses'],
             'report_data' => $report_data['data']
         ];
@@ -2094,8 +1699,8 @@ class Warehouse extends MY_Controller
             'controller' => 'warehouse',
             'function'   => 'analytics',
             'title'      => 'Laporan Gudang',
-            'perusahaan' => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses'   => $conf['hakakses']['divisi_nama'],
+            'perusahaan' => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses'   => ($conf['hakakses']['divisi_nama'] ?? ''),
         ];
         $this->load_admin_view('admin/warehouse/analytics', $data);
     }
@@ -2114,8 +1719,8 @@ class Warehouse extends MY_Controller
             'controller'        => 'warehouse',
             'function'          => 'laporan_stok_harian',
             'title'             => 'Laporan Stok Harian',
-            'perusahaan'        => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses'          => $conf['hakakses']['divisi_nama'],
+            'perusahaan'        => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses'          => ($conf['hakakses']['divisi_nama'] ?? ''),
             'date_from'         => $date_from,
             'date_to'           => $date_to,
             'selected_warehouse'=> $warehouse_id,
@@ -2138,8 +1743,8 @@ class Warehouse extends MY_Controller
             'controller'  => 'warehouse',
             'function'    => 'laporan_fast_moving',
             'title'       => 'Laporan Bahan Sering Diproduksi',
-            'perusahaan'  => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses'    => $conf['hakakses']['divisi_nama'],
+            'perusahaan'  => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses'    => ($conf['hakakses']['divisi_nama'] ?? ''),
             'date_from'   => $date_from,
             'date_to'     => $date_to,
             'fast_moving' => $this->warehouse->get_fast_moving_materials(50, $date_from, $date_to),
@@ -2160,8 +1765,8 @@ class Warehouse extends MY_Controller
             'controller'      => 'warehouse',
             'function'        => 'laporan_supplier',
             'title'           => 'Laporan Pembelian per Supplier',
-            'perusahaan'      => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses'        => $conf['hakakses']['divisi_nama'],
+            'perusahaan'      => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses'        => ($conf['hakakses']['divisi_nama'] ?? ''),
             'date_from'       => $date_from,
             'date_to'         => $date_to,
             'supplier_summary'=> $this->warehouse->get_supplier_purchase_summary($date_from, $date_to),
@@ -2178,8 +1783,8 @@ class Warehouse extends MY_Controller
         $data = [
             'controller'  => 'warehouse', 'function' => 'laporan_nilai_inventaris',
             'title'       => 'Nilai Inventaris Gudang',
-            'perusahaan'  => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses'    => $conf['hakakses']['divisi_nama'],
+            'perusahaan'  => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses'    => ($conf['hakakses']['divisi_nama'] ?? ''),
             'inventaris'  => $data_inv,
             'total_nilai' => $total_nilai,
         ];
@@ -2193,8 +1798,8 @@ class Warehouse extends MY_Controller
         $data = [
             'controller' => 'warehouse', 'function' => 'laporan_stok_kritis',
             'title'      => 'Laporan Stok Kritis',
-            'perusahaan' => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses'   => $conf['hakakses']['divisi_nama'],
+            'perusahaan' => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses'   => ($conf['hakakses']['divisi_nama'] ?? ''),
             'stok_kritis'=> $this->warehouse->get_critical_stock(),
         ];
         $this->load_admin_view('admin/warehouse/laporan_stok_kritis', $data);
@@ -2208,8 +1813,8 @@ class Warehouse extends MY_Controller
         $data = [
             'controller' => 'warehouse', 'function' => 'laporan_dead_stock',
             'title'      => 'Laporan Stok Tidak Bergerak',
-            'perusahaan' => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses'   => $conf['hakakses']['divisi_nama'],
+            'perusahaan' => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses'   => ($conf['hakakses']['divisi_nama'] ?? ''),
             'dead_stock' => $this->warehouse->get_dead_stock($days),
             'days'       => $days,
         ];
@@ -2224,8 +1829,8 @@ class Warehouse extends MY_Controller
         $data = [
             'controller'  => 'warehouse', 'function' => 'laporan_tren_pembelian',
             'title'       => 'Tren Pembelian Bulanan',
-            'perusahaan'  => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses'    => $conf['hakakses']['divisi_nama'],
+            'perusahaan'  => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses'    => ($conf['hakakses']['divisi_nama'] ?? ''),
             'trend'       => $trend,
             'trend_json'  => json_encode(array_values($trend)),
         ];
@@ -2241,8 +1846,8 @@ class Warehouse extends MY_Controller
         $data = [
             'controller'  => 'warehouse', 'function' => 'laporan_pembelian_vs_pemakaian',
             'title'       => 'Pembelian vs Pemakaian',
-            'perusahaan'  => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses'    => $conf['hakakses']['divisi_nama'],
+            'perusahaan'  => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses'    => ($conf['hakakses']['divisi_nama'] ?? ''),
             'date_from'   => $date_from,
             'date_to'     => $date_to,
             'comparison'  => $this->warehouse->get_purchase_vs_usage($date_from, $date_to),
@@ -2270,8 +1875,8 @@ class Warehouse extends MY_Controller
             'controller' => 'warehouse',
             'function' => 'returns',
             'title' => 'Retur Pembelian Supplier',
-            'perusahaan' => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses' => $conf['hakakses']['divisi_nama'],
+            'perusahaan' => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses' => ($conf['hakakses']['divisi_nama'] ?? ''),
             'returns' => $returns
         ];
 
@@ -2283,51 +1888,33 @@ class Warehouse extends MY_Controller
      */
     public function ajax_sync_stock()
     {
-        if (!$this->input->is_ajax_request())
-            exit('No direct access allowed');
-
-        $materials = $this->db->get('tbl_material')->result();
-        $warehouses = $this->db->get('tbl_gudang')->result();
-        $fixed_count = 0;
-
-        foreach ($materials as $m) {
-            foreach ($warehouses as $w) {
-                $this->db->select('SUM(qty_in) - SUM(qty_out) as actual_qty');
-                $this->db->where('material_id', $m->material_id);
-                $this->db->where('gudang_id', $w->gudang_id);
-                $log_res = $this->db->get('tbl_stok_log')->row();
-                $actual_qty = $log_res ? (float) $log_res->actual_qty : 0;
-
-                $current_stock = $this->db->get_where('tbl_stok_gudang', [
-                    'material_id' => $m->material_id,
-                    'gudang_id' => $w->gudang_id
-                ])->row();
-
-                if (!$current_stock) {
-                    if ($actual_qty != 0) {
-                        $this->db->insert('tbl_stok_gudang', [
-                            'material_id' => $m->material_id,
-                            'gudang_id' => $w->gudang_id,
-                            'qty' => $actual_qty
-                        ]);
-                        $fixed_count++;
-                    }
-                } else {
-                    if (abs((float) $current_stock->qty - $actual_qty) > 0.0001) {
-                        $this->db->where('stok_id', $current_stock->stok_id);
-                        $this->db->update('tbl_stok_gudang', ['qty' => $actual_qty]);
-                        $fixed_count++;
+        if (!$this->input->is_ajax_request()) { show_404(); return; }
+        try {
+            $this->_begin(); $fixed = 0;
+            $materials = $this->db->order_by('material_id', 'ASC')->get('tbl_material')->result();
+            foreach ($materials as $material) {
+                $this->warehouse_stock->material($material->material_id);
+                // Last rack balance is already in base units, including legacy conversions and production deductions.
+                $logs = $this->db->order_by('log_id', 'ASC')->get_where('tbl_stok_log', ['material_id' => $material->material_id])->result();
+                $latest = [];
+                foreach ($logs as $log) $latest[$log->gudang_id . ':' . ($log->rak_id ?: 0)] = $log;
+                foreach ($latest as $log) {
+                    $where = ['material_id' => $material->material_id, 'gudang_id' => $log->gudang_id, 'rak_id' => $log->rak_id ?: null];
+                    $stocks = $this->db->get_where('tbl_stok_gudang', $where)->result();
+                    if (count($stocks) > 1) throw new RuntimeException('Ada saldo ganda pada rak; koreksi sebelum sinkronisasi.');
+                    if ($stocks) {
+                        if (abs((float)$stocks[0]->qty - (float)$log->qty_balance) > 0.00001) {
+                            $this->_checked($this->db->update('tbl_stok_gudang', ['qty' => $log->qty_balance], ['stok_id' => $stocks[0]->stok_id])); $fixed++;
+                        }
+                    } else {
+                        $this->_checked($this->db->insert('tbl_stok_gudang', array_merge($where, ['qty' => $log->qty_balance]))); $fixed++;
                     }
                 }
             }
-        }
-
-        echo json_encode(['success' => true, 'message' => "Stock synchronization complete. $fixed_count records adjusted."]);
+            $this->_commit(); echo json_encode(['success' => true, 'message' => $fixed . ' saldo rak disinkronkan.']);
+        } catch (Throwable $e) { $this->_rollback(); echo json_encode(['success' => false, 'message' => $e->getMessage()]); }
     }
 
-    /**
-     * 11. SMART SCANNER: AJAX Barcode Lookup
-     */
     public function ajax_lookup_barcode()
     {
         if (!$this->input->is_ajax_request())
@@ -2755,7 +2342,7 @@ class Warehouse extends MY_Controller
             'total_rows' => $this->m_gudang->getbelibahan()->num_rows(),
             'bahan' => $this->db->get('tbl_bahan')->result(),
             'supplier' => $this->db->get('tbl_supplier')->result(),
-            'temp' => $this->m_gudang->getTemp('tbl_temp_beli')->result(),
+            'temp' => $this->warehouse->get_purchase_temp_items(),
             'jml_stok_minim' => $this->m_gudang->stok_minim()->num_rows(),
             'level' => $this->db->get_where('users', array('user_id' => $userid))->row_array(),
         );
@@ -2792,7 +2379,7 @@ class Warehouse extends MY_Controller
             'total_rows' => $this->m_gudang->getbelibahan()->num_rows(),
             'bahan' => $this->db->get('tbl_bahan')->result(),
             'supplier' => $this->db->get('tbl_supplier')->result(),
-            'temp' => $this->m_gudang->getTemp('tbl_temp_beli')->result(),
+            'temp' => $this->warehouse->get_purchase_temp_items(),
         );
         $this->load_admin_view('admin/gudang/daftarPembelian', $data);
     }
@@ -2841,7 +2428,7 @@ class Warehouse extends MY_Controller
             'total_return' => $this->db->get('tbl_return_pembelian')->num_rows(),
             'bahan' => $this->db->get('tbl_bahan')->result(),
             'supplier' => $this->db->get('tbl_supplier')->result(),
-            'temp' => $this->m_gudang->getTemp('tbl_temp_beli')->result(),
+            'temp' => $this->warehouse->get_purchase_temp_items(),
             'jml_stok_minim' => $this->m_gudang->stok_minim()->num_rows(),
         ];
         $this->load_admin_view('admin/gudang/daftarPembelian', $data);
@@ -2880,7 +2467,7 @@ class Warehouse extends MY_Controller
             'function' => $this->uri->segment(2),
             'title' => 'Pengambilan Material ke Produksi',
             'karyawan' => $this->M_master->get_karyawan()->result(),
-            'temp' => $this->m_gudang->getTemp('tbl_temp_pengambilan')->result(),
+            'temp' => $this->warehouse->get_dispatch_temp_items(),
             'cabang' => $this->db->get('tbl_perusahaan')->result(),
             'gudang' => $this->db->get('tbl_gudang')->result(),
             'material_ready' => $this->db->select('tbl_material.*, tbl_bahan.bahan_nama, tbl_satuan.satuan_nama, COALESCE(tbl_stok_gudang.qty, 0) as jumlah_stok')->from('tbl_material')->join('tbl_bahan', 'tbl_material.bahan_id = tbl_bahan.bahan_id')->join('tbl_stok_gudang', 'tbl_material.material_id = tbl_stok_gudang.material_id AND tbl_stok_gudang.gudang_id = 1', 'inner')->join('tbl_satuan', 'tbl_material.satuan_gudang_id = tbl_satuan.satuan_id', 'left')->where('tbl_stok_gudang.qty >', 0)->order_by('tbl_bahan.bahan_nama', 'ASC')->get()->result(),
@@ -2891,21 +2478,7 @@ class Warehouse extends MY_Controller
 
     public function action_add_barang_keluar()
     {
-        $material_id = $this->input->post('material_id', true);
-        $qty = $this->input->post('qty', true);
-        $stok = $this->m_gudang->getStok($material_id)->row_array();
-        if (!$stok || $qty > $stok['qty']) {
-            $this->session->set_flashdata('error', 'Stok tidak mencukupi');
-            redirect('warehouse/PengambilanBahan');
-            return;
-        }
-        $data = array('material_id' => $material_id, 'bahan_id' => $this->input->post('bahan_id', true), 'qty' => $qty);
-        if ($this->db->insert('tbl_temp_pengambilan', $data)) {
-            $this->session->set_flashdata('success', 'Berhasil menambahkan material');
-        } else {
-            $this->session->set_flashdata('error', 'Gagal menambahkan material');
-        }
-        redirect('warehouse/PengambilanBahan');
+        $this->dispatch_add_item();
     }
 
     public function cetak_barcode_semua()
@@ -2921,29 +2494,29 @@ class Warehouse extends MY_Controller
     }
     public function deletePembelian($id)
     {
-        $where = array('pembelian_id' => $id);
-        $this->m_gudang->deleteData('tbl_pembelian_detail', $where);
-        $this->m_gudang->deleteData('tbl_hutang', $where);
-        $this->m_gudang->deleteData('tbl_pembelian', $where);
+        try {
+            $this->_begin(); $id = $this->_id($id);
+            $purchase = $this->db->query('SELECT * FROM tbl_pembelian WHERE pembelian_id = ? FOR UPDATE', [$id])->row();
+            if (!$purchase) throw new RuntimeException('Pembelian tidak ditemukan.');
+            $this->_assert_purchase_editable($purchase);
+            $details = $this->db->order_by('material_id', 'ASC')->get_where('tbl_pembelian_detail', ['pembelian_id' => $id])->result();
+            foreach ($details as $d) {
+                $material = $this->warehouse_stock->material($d->material_id);
+                $this->warehouse_stock->post($d->material_id, 1, -round($d->qty * $material->konversi, 2), 'Pembelian', $id,
+                    'Pembatalan pembelian #' . $id, $d->rak_id ?: null);
+            }
+            foreach ($this->_purchase_expenses($purchase) as $expense) $this->_checked($this->db->delete('tbl_pengeluaran', ['id' => $expense->id]));
+            foreach (['tbl_pembelian_detail','tbl_hutang','tbl_pembelian'] as $table) $this->_checked($this->db->delete($table, ['pembelian_id' => $id]));
+            $this->_commit(); $this->session->set_flashdata('success', 'Pembelian dibatalkan dan stok dikoreksi.');
+        } catch (Throwable $e) { $this->_rollback(); $this->session->set_flashdata('error', $e->getMessage()); }
         redirect('warehouse/DaftarPembelian');
     }
 
     public function updateHarga()
     {
-        $pemb_detail_id = $this->input->post('pemb_detail_id', true);
-        $harga = str_replace(',', '', $this->input->post('pemb_harga', true));
-        $harga = is_numeric($harga) ? $harga : 0;
-        $this->db->update('tbl_pembelian_detail', array('pemb_harga' => $harga), array('pemb_detail_id' => $pemb_detail_id));
-        redirect('warehouse/DaftarPembelian');
+        $this->session->set_flashdata('error', 'Ubah harga melalui Edit Pembelian agar total, stok, dan pembayaran tetap sesuai.');
+        redirect('warehouse/laporan_pembelian');
     }
-    // =====================================================
-    // 16. MASTER CATEGORIES (Migrated from Kategori)
-    // =====================================================
-
-
-    // =====================================================
-    // 17. MASTER SUB-CATEGORIES (Migrated from Subkategori)
-    // =====================================================
 
     public function subcategories()
     {
@@ -3118,11 +2691,7 @@ class Warehouse extends MY_Controller
 
     public function actionDeleteBahanLegacy($id)
     {
-        $this->db->where('bahan_id', $id);
-        if ($this->db->delete('tbl_bahan')) {
-            $this->session->set_flashdata('success', 'Data Berhasil Dihapus');
-        }
-        redirect('warehouse/materials_jasa');
+        $this->actionDeleteBahanBaku($id);
     }
 
     public function bulkUpdateSatuan()
@@ -3274,9 +2843,7 @@ class Warehouse extends MY_Controller
 
     public function deleteTempAmbil($id)
     {
-        $where = array('temp_id' => $id);
-        $this->m_gudang->deleteData('tbl_temp_pengambilan', $where);
-        redirect('warehouse/PengambilanBahan');
+        $this->dispatch_delete_item($id);
     }
 
     public function syncronisasi_stok()
@@ -3292,7 +2859,7 @@ class Warehouse extends MY_Controller
             'bulanini' => date('m'),
             'tampilData' => $this->m_gudang->stokjasa_masuk($this->session->userdata('perusahaan_id'))->result(),
             'total_rows' => $this->m_gudang->getDataBahan()->num_rows(),
-            'logo' => $conf['perusahaan']['logo'],
+            'logo' => ($conf['perusahaan']['logo'] ?? ''),
             'gudangmasuk' => $this->m_gudang->stokjasa($this->session->userdata('perusahaan_id'))->num_rows(),
             'jml_stok_minim' => $this->m_gudang->stok_minim()->num_rows(),
             'level' => $this->db->get_where('users', array('user_id' => $userid))->row_array(),
@@ -3354,8 +2921,8 @@ class Warehouse extends MY_Controller
             'controller' => 'warehouse',
             'function' => 'requests',
             'title' => 'Pengajuan Material Produksi',
-            'perusahaan' => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses' => $conf['hakakses']['divisi_nama'],
+            'perusahaan' => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses' => ($conf['hakakses']['divisi_nama'] ?? ''),
             'materials' => $this->warehouse->get_materials_dropdown(),
             'warehouses' => $this->warehouse->get_all_warehouses(),
             'temp_items' => $this->warehouse->get_temp_requests($user_id),
@@ -3367,16 +2934,14 @@ class Warehouse extends MY_Controller
 
     public function requests_add_item()
     {
-        if ($this->input->post()) {
-            $data = [
-                'material_id' => $this->input->post('material_id', true),
-                'qty' => $this->input->post('qty', true),
-                'keterangan' => $this->input->post('keterangan', true),
-                'user_id' => $this->session->userdata('id')
-            ];
-            $this->db->insert('tbl_temp_pengajuan', $data);
-            $this->session->set_flashdata('success', 'Item ditambahkan ke daftar pengajuan.');
-        }
+        try {
+            $this->_begin(); $user = $this->_actor_lock();
+            $material = $this->warehouse_stock->material($this->input->post('material_id', true));
+            $this->_checked($this->db->insert('tbl_temp_pengajuan', ['material_id' => $material->material_id,
+                'qty' => $this->_number($this->input->post('qty', true), true), 'user_id' => $user,
+                'keterangan' => $this->input->post('keterangan', true) ?: '']));
+            $this->_commit(); $this->session->set_flashdata('success', 'Item ditambahkan ke pengajuan.');
+        } catch (Throwable $e) { $this->_rollback(); $this->session->set_flashdata('error', $e->getMessage()); }
         redirect('warehouse/requests');
     }
 
@@ -3389,54 +2954,24 @@ class Warehouse extends MY_Controller
 
     public function requests_finalize()
     {
-        if ($this->input->post()) {
-            $user_id = $this->session->userdata('id');
-            $gudang_id = $this->input->post('gudang_id', true);
-            $pengajuan_tgl = $this->input->post('pengajuan_tgl', true);
-
-            $temp_items = $this->warehouse->get_temp_requests($user_id);
-
-            if (empty($temp_items)) {
-                $this->session->set_flashdata('error', 'Daftar pengajuan masih kosong!');
-                redirect('warehouse/requests');
+        try {
+            $date = $this->_date($this->input->post('pengajuan_tgl', true)); $warehouse = $this->_warehouse($this->input->post('gudang_id', true));
+            if ($warehouse === 1) throw new RuntimeException('Pilih gudang produksi tujuan.');
+            $this->_begin(); $user = $this->_actor_lock();
+            $items = $this->db->order_by('material_id', 'ASC')->get_where('tbl_temp_pengajuan', ['user_id' => $user])->result();
+            if (!$items) throw new RuntimeException('Daftar pengajuan masih kosong.');
+            $this->_checked($this->db->insert('tbl_pengajuan_material', ['pengajuan_tgl' => $date, 'pengajuan_waktu' => date('H:i:s'),
+                'karyawan_id' => $this->_id($this->session->userdata('karyawan_id')), 'gudang_id' => $warehouse,
+                'status' => 0, 'perusahaan_id' => $this->_id($this->session->userdata('perusahaan_id'))]));
+            $id = $this->db->insert_id();
+            foreach ($items as $item) {
+                $this->warehouse_stock->material($item->material_id);
+                $this->_checked($this->db->insert('tbl_pengajuan_material_detail', ['pengajuan_id' => $id,
+                    'material_id' => $item->material_id, 'qty' => $this->_number($item->qty, true), 'keterangan' => $item->keterangan ?: '']));
             }
-
-            $this->db->trans_start();
-
-            // 1. Header
-            $header_data = [
-                'pengajuan_tgl' => $pengajuan_tgl,
-                'pengajuan_waktu' => date('H:i:s'),
-                'karyawan_id' => $this->session->userdata('karyawan_id') ?: $user_id,
-                'gudang_id' => $gudang_id,
-                'status' => 0, // Pending
-                'perusahaan_id' => $this->session->userdata('perusahaan_id')
-            ];
-            $this->db->insert('tbl_pengajuan_material', $header_data);
-            $pengajuan_id = $this->db->insert_id();
-
-            // 2. Details
-            foreach ($temp_items as $item) {
-                $detail_data = [
-                    'pengajuan_id' => $pengajuan_id,
-                    'material_id' => $item->material_id,
-                    'qty' => $item->qty,
-                    'keterangan' => $item->keterangan
-                ];
-                $this->db->insert('tbl_pengajuan_material_detail', $detail_data);
-            }
-
-            // 3. Clear Temp
-            $this->db->delete('tbl_temp_pengajuan', ['user_id' => $user_id]);
-
-            $this->db->trans_complete();
-
-            if ($this->db->trans_status() === TRUE) {
-                $this->session->set_flashdata('success', 'Pengajuan material berhasil dikirim dan menunggu verifikasi.');
-            } else {
-                $this->session->set_flashdata('error', 'Gagal mengirim pengajuan.');
-            }
-        }
+            $this->_checked($this->db->delete('tbl_temp_pengajuan', ['user_id' => $user])); $this->_commit();
+            $this->session->set_flashdata('success', 'Pengajuan berhasil dikirim dan menunggu verifikasi.');
+        } catch (Throwable $e) { $this->_rollback(); $this->session->set_flashdata('error', $e->getMessage()); }
         redirect('warehouse/requests');
     }
 
@@ -3458,59 +2993,54 @@ class Warehouse extends MY_Controller
      */
     public function ajax_process_request_to_dispatch($id)
     {
-        $details = $this->warehouse->get_request_details($id);
-        if (empty($details)) {
-            echo json_encode(['status' => 'error', 'message' => 'Detail pengajuan tidak ditemukan.']);
-            return;
-        }
-
-        $this->db->trans_start();
-
-        // 1. Clear current dispatch temp for this user
-        $this->db->empty_table('tbl_temp_pengambilan'); // Or by user_id if table supports it
-
-        // 2. Map items to dispatch temp
-        foreach ($details as $item) {
-            $this->db->insert('tbl_temp_pengambilan', [
-                'material_id' => $item->material_id,
-                'bahan_id' => ($this->db->get_where('tbl_material', ['material_id' => $item->material_id])->row()->bahan_id),
-                'qty' => $item->qty,
-                'keterangan' => 'Referensi DOC#' . str_pad($id, 5, '0', STR_PAD_LEFT) . ': ' . $item->keterangan
-            ]);
-        }
-
-        // 3. Mark request as 'Processing' or Verified
-        $this->db->where('pengajuan_id', $id)->update('tbl_pengajuan_material', ['status' => 1]); // 1 = Verified/Processed
-
-        $this->db->trans_complete();
-
-        if ($this->db->trans_status() === TRUE) {
-            echo json_encode(['status' => 'success', 'message' => 'Data berhasil dipindahkan ke Dispatch Staging.']);
-        } else {
-            echo json_encode(['status' => 'error', 'message' => 'Gagal memproses pengajuan.']);
-        }
+        try {
+            $this->_begin(); $this->_actor_lock();
+            $header = $this->_request_lock($id);
+            if ((int)$header->status !== 0) throw new RuntimeException('Pengajuan sudah diproses.');
+            if ($this->_cart('dispatch')) throw new RuntimeException('Selesaikan atau kosongkan picklist Anda sebelum memproses pengajuan.');
+            $warehouse = $this->_warehouse($header->gudang_id);
+            if ($warehouse === 1) throw new RuntimeException('Gudang tujuan tidak valid.');
+            $details = $this->db->order_by('material_id', 'ASC')->get_where('tbl_pengajuan_material_detail', ['pengajuan_id' => $header->pengajuan_id])->result();
+            if (!$details) throw new RuntimeException('Detail pengajuan kosong.');
+            $totals = [];
+            foreach ($details as $item) {
+                $material = $this->warehouse_stock->material($item->material_id); $qty = $this->_number($item->qty, true);
+                $totals[$material->material_id] = ($totals[$material->material_id] ?? 0) + $qty;
+                if (round($totals[$material->material_id] * $material->konversi, 2) > $this->warehouse_stock->total($material->material_id, 1)) throw new RuntimeException('Stok pengajuan tidak mencukupi.');
+                $this->_checked($this->db->insert('tbl_temp_pengambilan', array_merge($this->_cart_where('dispatch'),
+                    ['material_id' => $material->material_id, 'bahan_id' => $material->bahan_id, 'qty' => $qty,
+                    'keterangan' => 'Referensi DOC#' . str_pad($header->pengajuan_id, 5, '0', STR_PAD_LEFT) . ': ' . ($item->keterangan ?? '')])));
+            }
+            $this->_checked($this->db->update('tbl_pengajuan_material', ['status' => 1], ['pengajuan_id' => $header->pengajuan_id, 'status' => 0]));
+            $this->_commit(); echo json_encode(['status' => 'success', 'message' => 'Pengajuan dipindahkan ke picklist Anda.']);
+        } catch (Throwable $e) { $this->_rollback(); echo json_encode(['status' => 'error', 'message' => $e->getMessage()]); }
     }
 
-    /**
-     * Reject request
-     */
     public function requests_reject($id)
     {
-        $this->db->where('pengajuan_id', $id)->update('tbl_pengajuan_material', ['status' => 2]); // 2 = Rejected
-        $this->session->set_flashdata('success', 'Pengajuan berhasil ditolak.');
+        try {
+            $this->_begin(); $header = $this->_request_lock($id);
+            if ((int)$header->status !== 0) throw new RuntimeException('Pengajuan sudah diproses.');
+            $this->_checked($this->db->update('tbl_pengajuan_material', ['status' => 2], ['pengajuan_id' => $header->pengajuan_id, 'status' => 0]));
+            $this->_commit(); $this->session->set_flashdata('success', 'Pengajuan ditolak.');
+        } catch (Throwable $e) { $this->_rollback(); $this->session->set_flashdata('error', $e->getMessage()); }
         redirect('warehouse/requests');
     }
 
-    /**
-     * SYSTEM RESET - Prepare for Warehouse Reset
-     */
+    private function _request_lock($id)
+    {
+        $header = $this->db->query('SELECT * FROM tbl_pengajuan_material WHERE pengajuan_id = ? FOR UPDATE', [$this->_id($id)])->row();
+        if (!$header || ((int)$this->session->userdata('perusahaan_id') !== 1 && (int)$header->perusahaan_id !== (int)$this->session->userdata('perusahaan_id'))) throw new RuntimeException('Pengajuan tidak ditemukan atau berada di cabang lain.');
+        return $header;
+    }
+
     public function system_reset()
     {
         $conf = $this->_get_conf();
 
         // Security: Only allow high-level roles (e.g. Manager or Admin)
         // Adjust this if necessary
-        if ($this->session->userdata('level') > 2) {
+        if (!in_array((int)$this->session->userdata('level'), [1,2,17], true)) {
             $this->session->set_flashdata('error', 'Anda tidak memiliki hak akses untuk fitur ini.');
             redirect('warehouse');
         }
@@ -3519,8 +3049,8 @@ class Warehouse extends MY_Controller
             'controller' => 'warehouse',
             'function' => 'system_reset',
             'title' => 'Factory Reset Data Gudang',
-            'perusahaan' => $conf['perusahaan']['nama_perusahaan'],
-            'hakakses' => $conf['hakakses']['divisi_nama'],
+            'perusahaan' => ($conf['perusahaan']['nama_perusahaan'] ?? ''),
+            'hakakses' => ($conf['hakakses']['divisi_nama'] ?? ''),
         ];
 
         $this->load_admin_view('admin/warehouse/system_reset', $data);
@@ -3539,7 +3069,7 @@ class Warehouse extends MY_Controller
         }
 
         // Security
-        if ($this->session->userdata('level') > 2) {
+        if (!in_array((int)$this->session->userdata('level'), [1,2,17], true)) {
             $this->session->set_flashdata('error', 'Akses ditolak.');
             redirect('warehouse');
         }
@@ -3796,4 +3326,106 @@ class Warehouse extends MY_Controller
 
         echo json_encode(['status' => 'success', 'data' => $formatted_data]);
     }
+    private function _checked($result)
+    {
+        if (!$result) {
+            log_message('error', 'Warehouse write failed: ' . json_encode($this->db->error()));
+            throw new RuntimeException('Gagal menyimpan transaksi gudang.');
+        }
+        return $result;
+    }
+
+    private function _begin()
+    {
+        if (!empty($this->data['is_readonly']) && empty($this->data['is_developer'])) throw new RuntimeException('Mode Read-Only tidak mengizinkan perubahan gudang.');
+        if ($this->warehouse_db_debug === null) $this->warehouse_db_debug = $this->db->db_debug;
+        $this->db->db_debug = false;
+        $this->_checked($this->db->trans_begin());
+    }
+
+    private function _commit()
+    {
+        if (!$this->db->trans_status()) throw new RuntimeException('Transaksi gudang gagal.');
+        $this->_checked($this->db->trans_commit());
+        $this->_restore_db_debug();
+    }
+
+    private function _rollback()
+    {
+        $this->db->trans_rollback(); $this->_restore_db_debug();
+    }
+
+    private function _restore_db_debug()
+    {
+        if ($this->warehouse_db_debug !== null) { $this->db->db_debug = $this->warehouse_db_debug; $this->warehouse_db_debug = null; }
+    }
+
+    private function _id($value)
+    {
+        if (!is_scalar($value) || !ctype_digit((string)$value) || (int)$value <= 0) throw new InvalidArgumentException('ID tidak valid.');
+        return (int)$value;
+    }
+
+    private function _number($value, $positive = false, $formatted = false)
+    {
+        if ($formatted && is_string($value)) {
+            $value = trim(str_replace('Rp', '', $value));
+            if (strpos($value, ',') !== false || preg_match('/^\d{1,3}(?:\.\d{3})+$/D', $value)) $value = str_replace(['.', ','], ['', '.'], $value);
+        }
+        if (!is_scalar($value) || !is_numeric($value) || !is_finite((float)$value) || (float)$value < 0
+            || ($positive && (float)$value <= 0) || (float)$value > ($positive ? 99999999.99 : 9999999999)
+            || abs((float)$value * 100 - round((float)$value * 100)) > 0.00001) throw new InvalidArgumentException('Jumlah/harga harus valid, maksimal 2 angka desimal.');
+        return (float)$value;
+    }
+
+    private function _date($value)
+    {
+        if (!is_string($value) || !preg_match('/^\d{4}-\d{2}-\d{2}$/D', $value)) throw new InvalidArgumentException('Tanggal tidak valid.');
+        $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+        if (!$date || $date->format('Y-m-d') !== $value || $value < '1900-01-01') throw new InvalidArgumentException('Tanggal tidak valid.');
+        return $value;
+    }
+
+    private function _actor_lock()
+    {
+        $id = $this->_id($this->session->userdata('id'));
+        if (!$this->db->query('SELECT user_id FROM users WHERE user_id = ? FOR UPDATE', [$id])->row()) throw new RuntimeException('Sesi pengguna tidak valid.');
+        return $id;
+    }
+
+    private function _cart_where($kind)
+    {
+        return ['user_id' => $this->_id($this->session->userdata('id')), 'perusahaan_id' => $this->_id($this->session->userdata('perusahaan_id'))];
+    }
+
+    private function _cart($kind)
+    {
+        return $this->db->order_by('material_id', 'ASC')->get_where($kind === 'purchase' ? 'tbl_temp_beli' : 'tbl_temp_pengambilan', $this->_cart_where($kind))->result();
+    }
+
+    private function _warehouse($id)
+    {
+        $id = $this->_id($id);
+        $warehouse = $this->db->get_where('tbl_gudang', ['gudang_id' => $id])->row();
+        if (!$warehouse) throw new RuntimeException('Gudang tidak ditemukan.');
+        // Warehouses are shared centrally in this schema; restrict by company only when that column exists.
+        if (isset($warehouse->perusahaan_id) && (int)$this->session->userdata('perusahaan_id') !== 1
+            && (int)$warehouse->perusahaan_id !== (int)$this->session->userdata('perusahaan_id')) throw new RuntimeException('Gudang berada di cabang lain.');
+        return $id;
+    }
+
+    private function _rack($id, $warehouse)
+    {
+        if ($id === null || $id === '' || $id === '0' || $id === 0) return null;
+        $id = $this->_id($id); $rack = $this->db->get_where('tbl_rak', ['rak_id' => $id])->row();
+        if (!$rack || (int)$rack->gudang_id !== (int)$warehouse || (isset($rack->is_active) && !$rack->is_active)) throw new RuntimeException('Rak tidak sesuai gudang atau tidak aktif.');
+        return $id;
+    }
+
+    private function _audit($title, $payload, $verb = 'WRITE')
+    {
+        try { $this->_log_manual($title, json_encode($payload), $verb); }
+        catch (Throwable $e) { log_message('error', 'Audit gudang gagal: ' . $e->getMessage()); }
+    }
+
 }

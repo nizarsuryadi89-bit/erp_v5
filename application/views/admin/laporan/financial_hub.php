@@ -485,6 +485,19 @@
                             style="background:linear-gradient(135deg,#8b5cf6,#7c3aed);">→ Mutasi e-Wallet</a>
                     </div>
                 </div>
+                <div class="col-lg-3 col-md-6">
+                    <div class="rcard"
+                        style="border-color:rgba(79,70,229,.35);background:linear-gradient(135deg,#f8faff,white);">
+                        <div>
+                            <div class="rcard-icon" style="background:linear-gradient(135deg,#4f46e5,#06b6d4);"><i
+                                    class="fa fa-money-check-alt"></i></div>
+                            <h4>Mutasi Saldo Harian <span class="badge-new">UTAMA</span></h4>
+                            <p>Konsolidasi mutasi seluruh channel: Kas Tunai, Bank Transfer, Mesin EDC, dan E-Wallet dalam satu layar.</p>
+                        </div>
+                        <a href="<?= base_url('laporan/mutasi_harian') ?>" class="btn-r"
+                            style="background:linear-gradient(135deg,#4f46e5,#06b6d4);">→ Buka Mutasi Harian</a>
+                    </div>
+                </div>
             </div>
 
         </div><!-- /container -->

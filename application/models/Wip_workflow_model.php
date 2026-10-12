@@ -12,6 +12,7 @@ class Wip_workflow_model extends CI_Model
     }
 
     private $storage_checked = false;
+    private $operator_names = [];
 
     public function assert_transactional_storage()
     {
@@ -37,6 +38,8 @@ class Wip_workflow_model extends CI_Model
         $branch = (int) $this->session->userdata('perusahaan_id');
         $employee = null;
         if ($pin !== null && $pin !== '') {
+            if (!is_string($pin) || !preg_match('/\A[0-9]{4,6}\z/', $pin))
+                throw new DomainException('PIN operator harus terdiri dari 4–6 digit.');
             $this->db->where('pin_produksi', $pin);
             if (!$admin) $this->db->where('perusahaan_id', $branch);
             $employee = $this->db->get('tbl_karyawan')->row();
@@ -79,7 +82,11 @@ class Wip_workflow_model extends CI_Model
             $item = $this->db->query('SELECT * FROM tbl_produksi WHERE produksi_id = ? FOR UPDATE', [$id])->row();
             $this->assert_access($item, $actor);
             if ($nospk !== null && (string) $item->nospk !== (string) $nospk) throw new DomainException('Item bukan milik SPK yang dipilih.');
-            if ($item->status_produksi !== 'on_pb') throw new DomainException('Item harus diserahterimakan ke PB dahulu sebelum diberikan kepada konsumen.');
+            if (!in_array((string)$item->status_produksi, ['on_pb', 'done'], true) || $this->finishing_open($item)) {
+                throw new DomainException('Item belum selesai untuk diberikan kepada konsumen.');
+            }
+            $steps = $this->steps($item, true);
+            if ($steps && !Production_workflow::all_completed($steps)) throw new DomainException('Masih ada tahap produksi yang belum selesai.');
             $this->wip_quality->assert_handover($item);
             $items[] = $item;
         }
@@ -101,9 +108,11 @@ class Wip_workflow_model extends CI_Model
         $suffix = $lock ? ' FOR UPDATE' : '';
         $steps = $this->db->query('SELECT * FROM detail_produksi WHERE produksi_id = ? '
             . 'ORDER BY routing_urutan, detail_produksi_id' . $suffix, [(int) $item->produksi_id])->result();
-        $routes = $this->db->where('product_id', $item->product_id)
-            ->group_start()->where('harga_id', null)->or_where('harga_id', $item->harga_id)->group_end()
-            ->order_by('routing_urutan')->order_by('routing_id')->get('routing')->result();
+        $this->db->where('product_id', $item->product_id);
+        if ($this->db->field_exists('harga_id', 'routing')) {
+            $this->db->group_start()->where('harga_id', null)->or_where('harga_id', $item->harga_id)->group_end();
+        }
+        $routes = $this->db->order_by('routing_urutan')->order_by('routing_id')->get('routing')->result();
         foreach ($steps as $step) {
             $matched = null;
             foreach ($routes as $route) {
@@ -116,7 +125,14 @@ class Wip_workflow_model extends CI_Model
             }
             $step->routing_operator_id = $matched ? $matched->operator_id : null;
             $step->routing_name = $matched ? $matched->routing_name : '';
-            $step->is_finishing = $matched ? (int) ($matched->is_finishing ?? 0) : 0;
+            $role = (int) $step->routing_operator_id;
+            if ($role && !array_key_exists($role, $this->operator_names)) {
+                $operator = $this->db->get_where('tbl_operator', ['operator_id' => $role])->row();
+                $this->operator_names[$role] = $operator->operator_nama ?? '';
+            }
+            $step->operator_nama = $this->operator_names[$role] ?? '';
+            $step->is_finishing = (int) Production_workflow::finishing_step($matched ?: $step);
+            if (Production_workflow::finishing_operator($step)) $step->is_finishing = 1;
             $step->bom_line_id = $matched ? ($matched->bom_line_id ?? null) : null;
             $step->workflow_version = Production_workflow::version($step);
         }
@@ -125,9 +141,11 @@ class Wip_workflow_model extends CI_Model
 
     private function initialize_steps($item)
     {
-        $routes = $this->db->where('product_id', $item->product_id)
-            ->group_start()->where('harga_id', null)->or_where('harga_id', $item->harga_id)->group_end()
-            ->order_by('routing_urutan')->order_by('routing_id')->get('routing')->result();
+        $this->db->where('product_id', $item->product_id);
+        if ($this->db->field_exists('harga_id', 'routing')) {
+            $this->db->group_start()->where('harga_id', null)->or_where('harga_id', $item->harga_id)->group_end();
+        }
+        $routes = $this->db->order_by('routing_urutan')->order_by('routing_id')->get('routing')->result();
         if (!$routes) throw new DomainException('Routing belum tersedia. Lengkapi master routing sebelum mulai.');
         foreach ($routes as $route) {
             $this->write('detail_produksi', ['produksi_id' => $item->produksi_id,
@@ -140,7 +158,12 @@ class Wip_workflow_model extends CI_Model
     {
         if ($where === null) $ok = $this->db->insert($table, $data);
         else $ok = $this->db->where($where)->update($table, $data);
-        if (!$ok) throw new RuntimeException('Penyimpanan produksi gagal.');
+        if (!$ok) {
+            $db_err = $this->db->error();
+            $detail = !empty($db_err['message']) ? ': ' . $db_err['message'] : '';
+            log_message('error', "Penyimpanan {$table} gagal" . $detail);
+            throw new RuntimeException("Penyimpanan {$table} gagal" . $detail);
+        }
     }
 
     private function log($item, $to, $actor, $note)
@@ -184,6 +207,8 @@ class Wip_workflow_model extends CI_Model
                 }
             }
             $processed = [];
+            $already_started = [];
+            $auto_pb = [];
             foreach ($items as $id => $item) {
                 $steps = $this->steps($item, true);
                 if ($action === 'handover') {
@@ -231,8 +256,19 @@ class Wip_workflow_model extends CI_Model
                 if ($action !== 'start' && empty($expected[$id])) {
                     throw new DomainException('Identitas tahap wajib diisi. Muat ulang halaman produksi.');
                 }
-                $step = Production_workflow::current_step($steps, $action, $expected[$id] ?? null);
+                $step = Production_workflow::current_step($steps, $action === 'start' ? 'inspect' : $action, $expected[$id] ?? null);
                 $this->assert_operator($step, $actor);
+                // An old screen or a retried request may start the same operation twice.
+                // Return its current state without replacing worker/time, posting stock, or logging again.
+                if ($action === 'start' && (string) $step->status_produksi === '1'
+                    && in_array((string) $item->status_produksi, ['proses', 'finishing'], true)) {
+                    $already_started[] = $id;
+                    $processed[] = $id;
+                    continue;
+                }
+                if ($action === 'start') {
+                    Production_workflow::current_step($steps, 'start', $expected[$id] ?? null);
+                }
                 if (!empty($versions[$id]) && !hash_equals($step->workflow_version, (string) $versions[$id])) {
                     throw new DomainException('Hasil tahap telah berubah. Muat ulang sebelum menyimpan.');
                 }
@@ -241,6 +277,7 @@ class Wip_workflow_model extends CI_Model
                 $note = $fields['_note'] ?? '';
                 unset($fields['_note']);
                 $now = date('Y-m-d H:i:s');
+                $completed_all = false;
                 $header = ['status_produksi' => 'proses', 'update_time' => $now];
                 if (empty($item->tgl_mulai)) $header['tgl_mulai'] = $now;
                 if ($action === 'start') {
@@ -260,6 +297,10 @@ class Wip_workflow_model extends CI_Model
                     $note = 'Pembatalan mulai; operator #' . $step->operator_id . ', mesin #' . ($step->mesin_id ?? 0)
                         . ', waktu mulai ' . ($step->waktu_mulai ?? '-') . ' tetap tersimpan';
                 } else {
+                    if (Production_workflow::finishing_step($step) && empty($step->waktu_mulai)) {
+                        // A finishing result records its first activity without a separate Start action.
+                        $fields['waktu_mulai'] = $now;
+                    }
                     $failed = !empty($fields['_failed']);
                     unset($fields['_failed']);
                     if (!array_key_exists('qty_output', $fields)) {
@@ -270,6 +311,7 @@ class Wip_workflow_model extends CI_Model
                     $fields['qty_output'] = (float) ($step->qty_output ?? 0) + $qty;
                     $fields['qty_missing'] = (float) ($step->qty_missing ?? 0) + $missing;
                     $partial = $failed || $fields['qty_output'] + 0.000001 < (float) $item->qty;
+                    if ($partial && Production_workflow::finishing_step($step)) $header['status_produksi'] = 'finishing';
                     if ($partial && empty($versions[$id])) {
                         throw new DomainException('Muat ulang halaman untuk mencatat hasil parsial/rusak dengan aman.');
                     }
@@ -277,16 +319,23 @@ class Wip_workflow_model extends CI_Model
                     if (!$partial) $fields['waktu_selesai'] = $now;
                     $fields['operator_id'] = $actor['employee_id'] ?: $step->operator_id;
                     $step->status_produksi = $fields['status_produksi'];
-                    if (!$partial && !empty($step->is_finishing) && !empty($item->finishing_id) && property_exists($item, 'status_finishing')) {
+                    if (!$partial && Production_workflow::finishing_step($step) && !empty($item->finishing_id) && property_exists($item, 'status_finishing')) {
                         $header['status_finishing'] = 'done';
                         $item->status_finishing = 'done';
                     }
                     if (Production_workflow::all_completed($steps)) {
                         $header['status_produksi'] = $this->finishing_open($item) ? 'finishing' : 'done';
-                        if ($header['status_produksi'] === 'done') $header['tgl_selesai'] = $now;
+                        if ($header['status_produksi'] === 'done') {
+                            $completed_all = true;
+                            $header['status_produksi'] = 'on_pb';
+                            $header['tgl_selesai'] = $now;
+                            $header['tgl_kirim_pb'] = $now;
+                            $auto_pb[] = $id;
+                        }
                     }
                     $note = ($partial ? 'Hasil parsial/rijek; tahap tetap terbuka' : 'Tahap selesai')
-                        . '; baik: ' . $qty . '; rusak: ' . $missing . ($note ? '; ' . $note : '');
+                        . '; baik: ' . $qty . '; rusak: ' . $missing . ($note ? '; ' . $note : '')
+                        . ($completed_all ? '; otomatis masuk data PB' : '');
                 }
                 // Append event evidence; never replace historical notes. The nonce also separates
                 // cancel/resume cycles and zero-output failed attempts for optimistic retry checks.
@@ -294,7 +343,7 @@ class Wip_workflow_model extends CI_Model
                 $fields['catatan'] = trim((string) ($step->catatan ?? '') . "\n" . $now . ' | ' . $entry
                     . (!empty($fields['catatan']) ? ' | ' . $fields['catatan'] : '') . ' [event:' . bin2hex(random_bytes(8)) . ']');
                 $this->write('detail_produksi', $fields, ['detail_produksi_id' => $step->detail_produksi_id]);
-                if ($header['status_produksi'] === 'done') $this->wip_quality->enroll($item, $actor);
+                if ($completed_all) $this->wip_quality->enroll($item, $actor);
                 $this->write('tbl_produksi', $header, ['produksi_id' => $id]);
                 $this->log($item, $header['status_produksi'], $actor,
                     'Tahap #' . $step->detail_produksi_id . ': ' . ($note ?: 'Produksi dimulai'));
@@ -304,13 +353,20 @@ class Wip_workflow_model extends CI_Model
                 throw new RuntimeException('Transaksi produksi gagal. Tidak ada hasil yang disimpan.');
             }
             $started = false;
-            return ['success' => true, 'status' => true, 'message' => count($processed) . ' item berhasil diproses.',
-                'processed_ids' => $processed, 'count' => count($processed)];
-        } catch (Exception $e) {
+            return ['success' => true, 'status' => true, 'message' => $already_started && count($already_started) === count($processed)
+                    ? 'Tahap sudah dimulai. Daftar produksi diperbarui.' : count($processed) . ' item berhasil diproses.'
+                        . ($auto_pb ? ' ' . count($auto_pb) . ' item selesai dan otomatis masuk data PB.' : ''),
+                'processed_ids' => $processed, 'already_started_ids' => $already_started, 'auto_pb_ids' => $auto_pb, 'count' => count($processed)];
+        } catch (Throwable $e) {
             if ($started) $this->db->trans_rollback();
-            if (!($e instanceof DomainException)) log_message('error', 'WIP workflow: ' . $e->getMessage());
+            $db_err = $this->db->error();
+            $msg = $e->getMessage();
+            if (!empty($db_err['message']) && strpos($msg, $db_err['message']) === false) {
+                $msg .= ' (' . $db_err['message'] . ')';
+            }
+            if (!($e instanceof DomainException)) log_message('error', 'WIP workflow: ' . $msg);
             return ['success' => false, 'status' => false, 'message' => $e instanceof DomainException
-                ? $e->getMessage() : 'Transaksi gagal. Perubahan dibatalkan; periksa log aplikasi.'];
+                ? $e->getMessage() : ($msg ?: 'Transaksi gagal. Perubahan dibatalkan; periksa log aplikasi.')];
         }
     }
 }

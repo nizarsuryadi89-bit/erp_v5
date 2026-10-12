@@ -1018,21 +1018,44 @@ class Penjualan extends MY_Controller
 
     public function search_konsumen_ajax()
     {
-        $term = $this->input->get('q', true);
-        $this->db->select('konsumen_id as id, konsumen_nama as text, konsumen_nohp as phone');
+        $term = trim((string) ($this->input->get('q', true) ?? ''));
+        $this->db->select('konsumen_id as id, konsumen_nama as text, konsumen_nohp as phone, is_blacklist, catatan_blacklist');
         $this->db->from('tbl_konsumen');
-        if (!empty($term)) {
+
+        $keywords = array_filter(preg_split('/\s+/', $term));
+        $clean_phone = preg_replace('/[^0-9]/', '', $term);
+
+        if (!empty($keywords)) {
             $this->db->group_start();
-            $this->db->like('LOWER(konsumen_nama)', strtolower($term));
-            $this->db->or_like('konsumen_nohp', $term);
+            foreach ($keywords as $kw) {
+                $kw_clean = strtolower($kw);
+                $this->db->group_start();
+                $this->db->like('LOWER(konsumen_nama)', $kw_clean);
+                $this->db->or_like('LOWER(konsumen_nohp)', $kw_clean);
+                $this->db->or_like('LOWER(konsumen_email)', $kw_clean);
+                if (strlen($clean_phone) >= 3) {
+                    $this->db->or_like("REPLACE(REPLACE(konsumen_nohp, ' ', ''), '-', '')", $clean_phone);
+                }
+                $this->db->group_end();
+            }
             $this->db->group_end();
         }
-        $this->db->limit(30);
-        $data = $this->db->get()->result();
+
+        $this->db->where('konsumen_nohp !=', 'MARKETPLACE');
+
+        $first_kw = strtolower(reset($keywords) ?: $term);
+        $escaped_kw = $this->db->escape_like_str($first_kw);
+        $this->db->order_by("CASE WHEN LOWER(konsumen_nama) LIKE '{$escaped_kw}%' THEN 1 ELSE 2 END", 'ASC', FALSE);
+        $this->db->order_by('konsumen_nama', 'ASC');
+        $this->db->limit(35);
+
+        $query = $this->db->get();
+        $data = $query ? $query->result() : [];
 
         // Format for Select2
         foreach ($data as $row) {
-            $row->text = $row->text . " (" . ($row->phone ?: '-') . ")";
+            $prefix = (!empty($row->is_blacklist) && $row->is_blacklist == 1) ? '[⚠️ PENGAWASAN KASIR] ' : '';
+            $row->text = $prefix . $row->text . " (" . ($row->phone ?: '-') . ")";
         }
 
         echo json_encode(['results' => $data]);

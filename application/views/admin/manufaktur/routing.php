@@ -118,9 +118,9 @@
                         <small class="text-muted">Pilih "Finishing" agar tahapan ini masuk ke antrian tab Finishing.</small>
                     </div>
                      <div class="mb-3">
-                        <label for="edit_operator_id" class="form-label">Built Of Material <span class="text-danger">*</span></label>
-                        <select name="operator_id" id="operator_id" class="form-control" required>
-                            <option value="">Pilih Operator</option>
+                        <label for="edit_bom_line_id" class="form-label">Built Of Material <span class="text-danger">*</span></label>
+                        <select name="bom_line_id" id="edit_bom_line_id" class="form-control" required>
+                            <option value="">Pilih BOM</option>
                             <?php foreach ($bom as $m): ?>
                                 <option value="<?= $m->bom_line_id ?>"><?= $m->bahan_id ?></option>
                             <?php endforeach; ?>
@@ -305,7 +305,7 @@ $(document).ready(function() {
             url: '<?= base_url('manufaktur/get_next_routing_number_ajax') ?>',
             type: 'POST',
             data: {
-                product_id: <?= $getproduct['product_id'] ?>
+                product_id: <?= json_encode((string) $getproduct['product_id']) ?>
             },
             dataType: 'json',
             success: function(response) {

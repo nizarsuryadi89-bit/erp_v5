@@ -43,32 +43,6 @@
                                     </div>
                                 </div>
 
-                                <!-- Bahan -->
-                                <div class="form-group">
-                                    <label class="col-md-2 control-label">Bahan</label>
-                                    <div class="col-md-10">
-                                        <?php if ($this->uri->segment(3) === null): ?>
-                                            <select data-plugin-selectTwo name="bahan_id" id="bahan_id"
-                                                class="form-control">
-                                                <option value="">-- Pilih Bahan Baku --</option>
-                                                <?php foreach ($bahan as $k): ?>
-                                                    <option value="<?= $k->bahan_id ?>"
-                                                        <?= ($k->bahan_id == $getproduct['bahan_id']) ? 'selected' : '' ?>>
-                                                        <?= $k->bahan_nama ?>
-                                                    </option>
-                                                <?php endforeach; ?>
-                                            </select>
-                                        <?php else: ?>
-                                            <input type="text" class="form-control" value="<?= $getproduct['bahan_nama'] ?>"
-                                                readonly>
-                                            <input type="hidden" name="product_id" value="<?= $getproduct['product_id'] ?>">
-                                            <input type="hidden" name="bahan_id" value="<?= $getproduct['bahan_id'] ?>">
-                                            <input type="hidden" name="product_img_1"
-                                                value="<?= $getproduct['product_img_1'] ?>">
-                                        <?php endif; ?>
-                                    </div>
-                                </div>
-
                                 <!-- Nama Produk, Tipe, Satuan -->
                                 <div class="form-group">
                                     <label class="col-md-2 control-label">Nama <?= $controller ?></label>
@@ -109,7 +83,7 @@
                                     <div class="col-md-10">
                                         <textarea name="product_deskripsi" id="product_deskripsi" class="form-control"
                                             rows="3" style="white-space: pre-wrap; font-family: lato;">
-                                        <?= htmlspecialchars($getproduct['product_deskripsi']) ?>
+                                        <?= htmlspecialchars($getproduct['product_deskripsi'] ?? '') ?>
                                     </textarea>
                                     </div>
                                 </div>

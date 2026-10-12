@@ -243,16 +243,17 @@ class Manufaktur extends MY_Controller
             'kategori_id' => $kategori_id,
             'subkategori_id' => $subkategori_id,
             'product_nama' => $product_nama,
-            'tipe_id' => $tipe_id,
+            'tipe_id' => $tipe_id ?: null,
             'satuan_id' => $satuan_id,
-            'side_id' => $side_id,
-            'metode_id' => $metode_id,
+            'side_id' => $side_id ?? '',
+            'metode_id' => $metode_id ?: null,
+            'detail_id' => $metode_id ?: null,
             'product_deskripsi' => $product_deskripsi,
             'created_at' => date('Y-m-d H:i:s')
         );
 
-        $this->db->insert('tbl_product', $data);
-        $this->session->set_flashdata('message', '<div class="alert alert-success" role="alert">Data Product Berhasil Ditambahkan</div>');
+        $ok = $this->db->insert('tbl_product', $data);
+        $this->session->set_flashdata($ok ? 'success' : 'error', $ok ? 'Data produk berhasil ditambahkan.' : 'Gagal menambahkan produk.');
         redirect('manufaktur');
     }
 
@@ -266,10 +267,13 @@ class Manufaktur extends MY_Controller
         $data['total_rows'] = $this->db->get('routing')->num_rows();
         $data['operator_list'] = $this->db->get('tbl_operator')->result();
         $data['routing_list'] = $this->db->get('tbl_routing')->result();
-        $data['bom'] = $this->M_master->getbom('bom_line_id')->result();
+        $data['bom'] = $kode ? $this->M_master->getbomkode('product_id', $kode)->result() : [];
+        $last = $this->db->select_max('routing_urutan')->get_where('routing', ['product_id' => $kode])->row();
+        $data['next_routing_number'] = (int) ($last->routing_urutan ?? 0) + 1;
 
         if ($kode != '') {
             $getproduct = $this->db->get_where('tbl_product', ['product_id' => $kode])->row_array();
+            if (!$getproduct) { show_404(); return; }
             $data['getproduct'] = $getproduct;
 
             $data['tampilData'] = $this->db->select('routing.*, tbl_product.product_nama, tbl_operator.*')
@@ -300,10 +304,12 @@ class Manufaktur extends MY_Controller
         $data['tampilData'] = [];
         $data['routing'] = $this->db->get('routing')->result();
         $data['satuan'] = $this->db->get('tbl_satuan')->result();
-        $data['bahan'] = $this->M_master->getDataBahan('')->result();
+        $data['bahan'] = $this->db->select('m.material_id as bahan_id, m.varian as bahan_nama')
+            ->from('tbl_material m')->order_by('m.varian', 'ASC')->get()->result();
 
         if ($kode != '') {
             $getproduct = $this->db->get_where('tbl_product', ['product_id' => $kode])->row_array();
+            if (!$getproduct) { show_404(); return; }
             $data['getproduct'] = $getproduct;
             $data['tampilData'] = $this->M_master->getbomkode('product_id', $kode)->result();
             $data['total_rows'] = $this->M_master->getbomkode('product_id', $kode)->num_rows();
@@ -323,12 +329,13 @@ class Manufaktur extends MY_Controller
         // Auto-fetch satuan_id from tbl_bahan if not provided or hidden
         $satuan_id = $this->input->post('satuan_id', true);
         if (empty($satuan_id) && $bahan_id) {
-            $bahan = $this->db->get_where('tbl_bahan', ['bahan_id' => $bahan_id])->row();
+            $material = $this->db->get_where('tbl_material', ['material_id' => $bahan_id])->row();
+            $bahan = $material ? $this->db->get_where('tbl_bahan', ['bahan_id' => $material->bahan_id])->row() : null;
             if ($bahan)
                 $satuan_id = $bahan->satuan_id;
         }
 
-        if (!$product_id || !$bahan_id || !$quantity) {
+        if (!$product_id || !$bahan_id || !is_numeric($quantity) || $quantity <= 0) {
             if ($this->input->is_ajax_request()) {
                 header('Content-Type: application/json');
                 echo json_encode(['success' => false, 'message' => 'Semua field wajib diisi!']);
@@ -377,7 +384,8 @@ class Manufaktur extends MY_Controller
             }
 
             $this->session->set_flashdata('success', 'Data BOM berhasil ditambahkan');
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
+            $this->db->trans_rollback();
             if ($this->input->is_ajax_request()) {
                 header('Content-Type: application/json');
                 echo json_encode(['success' => false, 'message' => $e->getMessage()]);
@@ -387,6 +395,86 @@ class Manufaktur extends MY_Controller
         }
 
         redirect('manufaktur/bom/' . $product_id);
+    }
+
+    public function aksi_update_bom()
+    {
+        $id = $this->input->post('bom_line_id', true);
+        $row = $this->db->get_where('bom_lines', ['bom_line_id' => $id])->row_array();
+        if (!$row) { show_404(); return; }
+        $qty = $this->input->post('quantity', true);
+        $material_id = $this->input->post('bahan_id', true);
+        $material = $this->db->get_where('tbl_material', ['material_id' => $material_id])->row_array();
+        if (!is_numeric($qty) || $qty < 0 || !$material) {
+            $this->session->set_flashdata('error', 'Quantity atau bahan tidak valid.');
+            redirect('manufaktur/bom/' . $row['product_id']);
+            return;
+        }
+        $data = ['quantity' => $qty, 'bahan_id' => $material_id,
+            'satuan_id' => $this->input->post('satuan_id', true)];
+        foreach (['panjang', 'lebar'] as $field) {
+            $value = $this->input->post('ukuran_enable', true) ? $this->input->post($field, true) : 0;
+            if ($value === '') { $value = 0; }
+            if (!is_numeric($value) || $value < 0) {
+                $this->session->set_flashdata('error', 'Ukuran tidak valid.');
+                redirect('manufaktur/bom/' . $row['product_id']);
+                return;
+            }
+            $data[$field] = $value;
+        }
+        $ok = $this->db->update('bom_lines', $data, ['bom_line_id' => $id]);
+        $this->session->set_flashdata($ok ? 'success' : 'error', $ok ? 'BOM berhasil diperbarui.' : 'Gagal memperbarui BOM.');
+        redirect('manufaktur/bom/' . $row['product_id']);
+    }
+
+    public function aksi_delete_bom()
+    {
+        $id = $this->input->post('bom_line_id', true);
+        $row = $this->db->get_where('bom_lines', ['bom_line_id' => $id])->row_array();
+        if (!$row) { show_404(); return; }
+        $ok = $this->remove_bom_rows([$id]);
+        $this->session->set_flashdata($ok ? 'success' : 'error', $ok ? 'BOM berhasil dihapus.' : 'Gagal menghapus BOM.');
+        redirect('manufaktur/bom/' . $row['product_id']);
+    }
+
+    private function remove_bom_rows(array $ids)
+    {
+        $this->db->trans_begin();
+        try {
+            $this->checked_write($this->db->where_in('bom_line_id', $ids)->update('routing', ['bom_line_id' => null]));
+            $this->checked_write($this->db->where_in('bom_line_id', $ids)->delete('bom_lines'));
+            $this->checked_write($this->db->trans_status());
+            $this->checked_write($this->db->trans_commit());
+            return true;
+        } catch (Throwable $e) {
+            $this->db->trans_rollback();
+            log_message('error', 'Delete BOM: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    public function get_next_routing_number_ajax()
+    {
+        $id = $this->input->post('product_id', true);
+        $last = $this->db->select_max('routing_urutan')->get_where('routing', ['product_id' => $id])->row();
+        $this->output->set_content_type('application/json')->set_output(json_encode([
+            'next_number' => (int) ($last->routing_urutan ?? 0) + 1
+        ]));
+    }
+
+    public function aksi_update_routing_modal()
+    {
+        return $this->action_update_routing();
+    }
+
+    public function aksi_delete_routing_modal()
+    {
+        $id = $this->input->post('routing_id', true);
+        $row = $this->db->get_where('routing', ['routing_id' => $id])->row_array();
+        if (!$row) { show_404(); return; }
+        $ok = $this->db->delete('routing', ['routing_id' => $id]);
+        $this->session->set_flashdata($ok ? 'success' : 'error', $ok ? 'Routing berhasil dihapus.' : 'Gagal menghapus routing.');
+        redirect('manufaktur/routing/' . $row['product_id']);
     }
 
     public function skalaharga()
@@ -478,158 +566,102 @@ class Manufaktur extends MY_Controller
             'product_id' => $product,
             'routing_urutan' => $this->input->post('routing_urutan', true),
             'operator_id' => $this->input->post('mesin_id', true),
+            'is_finishing' => $this->input->post('is_finishing', true) === '1' ? 1 : 0,
             'is_active' => '1',
             'created_at' => date('Y-m-d H:i:s')
         ];
 
-        $this->db->insert('routing', $data);
-        $this->session->set_flashdata('success', 'Data routing berhasil ditambahkan.');
+        $ok = $this->db->insert('routing', $data);
+        $this->session->set_flashdata($ok ? 'success' : 'error', $ok ? 'Data routing berhasil ditambahkan.' : 'Gagal menambahkan routing.');
         redirect('manufaktur/skalaharga/' . $product);
+    }
+
+    private function delete_products(array $ids)
+    {
+        $this->db->trans_begin();
+        try {
+            $products = [];
+            foreach ($ids as $id) {
+                if (!is_scalar($id) || !ctype_digit((string) $id) || (int) $id <= 0) {
+                    throw new RuntimeException('ID produk tidak valid.');
+                }
+                $product = $this->db->get_where('tbl_product', ['product_id' => $id])->row_array();
+                if (!$product) { throw new RuntimeException('Produk tidak ditemukan.'); }
+                if ($this->isProductInUse($id)) {
+                    throw new RuntimeException('Produk sudah digunakan dalam transaksi. Nonaktifkan produk untuk mempertahankan riwayat.');
+                }
+                $products[] = $product;
+            }
+            foreach (['routing', 'bom_lines', 'tbl_bom_dynamic_mapping', 'tbl_harga_product', 'tbl_product'] as $table) {
+                $this->checked_write($this->db->where_in('product_id', $ids)->delete($table));
+            }
+            $this->checked_write($this->db->trans_status());
+            $this->checked_write($this->db->trans_commit());
+            return $products;
+        } catch (Throwable $e) {
+            $this->db->trans_rollback();
+            throw $e;
+        }
     }
 
     public function deleteproduct($id)
     {
-        if (!is_numeric($id) || $id <= 0) {
-            $this->session->set_flashdata('error', 'ID produk tidak valid.');
-            $referer = $this->input->server('HTTP_REFERER');
-            redirect($referer ? $referer : 'manufaktur');
-            return;
-        }
-
-        $product = $this->db->get_where('tbl_product', ['product_id' => $id])->row();
-        if (!$product) {
-            $this->session->set_flashdata('error', 'Produk tidak ditemukan.');
-            $referer = $this->input->server('HTTP_REFERER');
-            redirect($referer ? $referer : 'manufaktur');
-            return;
-        }
-
-        // if ($this->isProductInUse($id)) {
-        //     $this->session->set_flashdata('error', 'Produk tidak dapat dihapus karena masih digunakan dalam transaksi aktif.');
-        //     redirect('manufaktur');
-        //     return;
-        // }
-
         try {
-            $this->db->query('SET FOREIGN_KEY_CHECKS = 0');
-            $this->db->trans_start();
-
-            $tables_to_clean = [
-                'tbl_harga_product' => 'product_id',
-                'bom_lines' => 'product_id',
-                'routing' => 'product_id',
-                'tbl_pemesanan_detail' => 'product_id',
-                'tbl_temp_transaksi' => 'product_id',
-                'tbl_retur_detail' => 'product_id',
-            ];
-
-            foreach ($tables_to_clean as $table => $column) {
-                if ($this->db->table_exists($table)) {
-                    $this->db->where($column, $id)->delete($table);
-                }
-            }
-
-            $this->deleteProductImage($product->product_img);
-
-            $this->db->where('product_id', $id);
-            if (!$this->db->delete('tbl_product')) {
-                throw new Exception('Gagal menghapus data produk utama');
-            }
-
-            $this->db->trans_complete();
-
-            if ($this->db->trans_status() === FALSE) {
-                throw new Exception('Gagal menghapus produk dan data terkait');
-            }
-
-            $this->session->set_flashdata('success', 'Produk "' . $product->product_nama . '" berhasil dihapus beserta semua data terkait.');
-
-        } catch (Exception $e) {
-            $this->db->trans_rollback();
-            log_message('error', 'Error deleting product: ' . $e->getMessage());
-            $this->session->set_flashdata('error', 'Gagal menghapus produk: ' . $e->getMessage());
-        } finally {
-            $this->db->query('SET FOREIGN_KEY_CHECKS = 1');
+            $products = $this->delete_products([$id]);
+            foreach ($products as $product) { $this->deleteProductImage($product['product_img'] ?? ''); }
+            $this->session->set_flashdata('success', 'Produk berhasil dihapus.');
+        } catch (Throwable $e) {
+            log_message('error', 'Delete product: ' . $e->getMessage());
+            $this->session->set_flashdata('error', $e instanceof RuntimeException ? $e->getMessage() : 'Gagal menghapus produk.');
         }
-
-        $referer = $this->input->server('HTTP_REFERER');
-        redirect($referer ? $referer : 'manufaktur');
+        redirect('manufaktur');
     }
 
     public function delete_bulk_product()
     {
+        header('Content-Type: application/json');
         $ids = $this->input->post('ids');
-        if (!empty($ids) && is_array($ids)) {
-            $this->db->query('SET FOREIGN_KEY_CHECKS = 0');
-            $this->db->trans_start();
-
-            $tables_to_clean = [
-                'tbl_harga_product' => 'product_id',
-                'bom_lines' => 'product_id',
-                'routing' => 'product_id',
-                'tbl_pemesanan_detail' => 'product_id',
-                'tbl_temp_transaksi' => 'product_id',
-                'tbl_retur_detail' => 'product_id',
-            ];
-
-            // Delete images first
-            $this->db->select('product_img');
-            $this->db->where_in('product_id', $ids);
-            $products = $this->db->get('tbl_product')->result();
-            foreach ($products as $p) {
-                $this->deleteProductImage($p->product_img);
-            }
-
-            foreach ($tables_to_clean as $table => $column) {
-                if ($this->db->table_exists($table)) {
-                    $this->db->where_in($column, $ids)->delete($table);
-                }
-            }
-
-            $this->db->where_in('product_id', $ids);
-            $this->db->delete('tbl_product');
-
-            $this->db->trans_complete();
-            $this->db->query('SET FOREIGN_KEY_CHECKS = 1');
-
-            if ($this->db->trans_status() === FALSE) {
-                echo json_encode(['status' => 'error', 'message' => 'Gagal menghapus produk']);
-            } else {
-                $this->session->set_flashdata('success', count($ids) . ' Produk berhasil dihapus beserta semua data terkait.');
-                echo json_encode(['status' => 'success']);
-            }
-        } else {
-            echo json_encode(['status' => 'error', 'message' => 'Tidak ada produk yang dipilih']);
+        if (!is_array($ids) || !$ids) {
+            echo json_encode(['status' => 'error', 'message' => 'Tidak ada produk yang dipilih.']);
+            return;
+        }
+        try {
+            $products = $this->delete_products(array_unique($ids));
+            foreach ($products as $product) { $this->deleteProductImage($product['product_img'] ?? ''); }
+            echo json_encode(['status' => 'success']);
+        } catch (Throwable $e) {
+            log_message('error', 'Delete products: ' . $e->getMessage());
+            echo json_encode(['status' => 'error', 'message' => $e instanceof RuntimeException ? $e->getMessage() : 'Gagal menghapus produk.']);
         }
     }
 
     private function isProductInUse($product_id)
     {
-        // Logic simplified assuming standard active states exist
-        $active_transaction = $this->db->where('product_id', $product_id)->count_all_results('tbl_temp_transaksi');
-        if ($active_transaction > 0)
-            return true;
-
-        $active_order = $this->db->select('COUNT(*) as count')
-            ->from('tbl_pemesanan_detail pod')
-            ->join('tbl_pemesanan po', 'po.nospk = pod.nospk')
-            ->where('pod.product_id', $product_id)
-            ->get()->row();
-
-        if ($active_order && $active_order->count > 0)
-            return true;
-
+        foreach (['tbl_temp_transaksi', 'tbl_pemesanan_detail', 'tbl_retur_detail', 'tbl_produksi'] as $table) {
+            if ($this->db->table_exists($table) && $this->db->field_exists('product_id', $table) &&
+                $this->db->where('product_id', $product_id)->count_all_results($table) > 0) {
+                return true;
+            }
+        }
         return false;
     }
 
     private function deleteProductImage($image_name)
     {
-        if (empty($image_name) || $image_name == 'official.png')
+        if (!is_string($image_name) || $image_name === '' || $image_name === 'official.png' || basename($image_name) !== $image_name) {
             return;
-        $image_path = FCPATH . 'assets/images/product/' . $image_name;
-        if (file_exists($image_path)) {
-            @unlink($image_path);
         }
+        // Cloned products can share an image. Remove it only after the last reference is gone.
+        if ($this->db->where('product_img', $image_name)->count_all_results('tbl_product') > 0) {
+            return;
+        }
+        $image_path = FCPATH . 'assets/images/product/' . $image_name;
+        if (is_file($image_path)) { @unlink($image_path); }
+    }
+
+    public function edit_product($id)
+    {
+        return $this->formUpdate($id);
     }
 
     public function formUpdate($id)
@@ -637,16 +669,19 @@ class Manufaktur extends MY_Controller
         $data = $this->get_common_data('Edit Data Product');
 
         $data['bahan'] = $this->db->get('tbl_bahan')->result();
+        $data['type'] = $this->db->get('tbl_type')->result();
+        $data['metode'] = $this->db->get('tbl_metode')->result();
         $data['kategori'] = $this->db->get('tbl_kategori')->result();
         $data['waktu'] = $this->db->get('tbl_waktu')->result();
         $data['satuan'] = $this->db->get('tbl_satuan')->result();
         $data['getProduct'] = $this->M_master->getProduct($id)->row_array();
+        if (!$data['getProduct']) { show_404(); return; }
         $data['getproduct'] = $data['getProduct']; // Alias for legacy view compatibility
         $data['getHarga'] = $this->M_master->getHarga($id)->result();
         $data['mesin_printing'] = $this->db->where_in('id', [2, 3, 4])->get('tbl_mesin_printing')->result();
         $data['getmata'] = $this->db->get('tbl_mata_cutting')->result();
         $data['side'] = $this->db->get('tbl_side')->result();
-        $data['subkategori'] = $this->M_master->get_subkategori($data['getProduct']['kategori_id']);
+        $data['subkategori'] = $this->M_master->get_subkategori($data['getProduct']['kategori_id'])->result();
         $data['segment2'] = $this->uri->segment(2);
         $data['controller'] = $this->uri->segment(1);
 
@@ -656,25 +691,30 @@ class Manufaktur extends MY_Controller
     public function actionUpdateproduct()
     {
         $product_id = $this->input->post('product_id', true);
-        if (!$product_id)
+        if (!$product_id) {
             show_error('ID produk tidak ditemukan');
+            return;
+        }
 
         $data = [
             'kategori_id' => $this->input->post('kategori_id', true),
             'subkategori_id' => $this->input->post('subkategori_id', true),
-            'bahan_id' => $this->input->post('bahan_id', true),
             'product_nama' => $this->input->post('product_nama', true),
-            'tipe_id' => $this->input->post('tipe_id', true),
+            'tipe_id' => $this->input->post('tipe_id', true) ?: null,
             'satuan_id' => $this->input->post('satuan_id', true),
             'product_deskripsi' => $this->input->post('product_deskripsi', true),
-            'side_id' => $this->input->post('side_id', true),
-            'detail_id' => $this->input->post('metode_id', true),
+            'side_id' => $this->input->post('side_id', true) ?? '',
+            'detail_id' => $this->input->post('metode_id', true) ?: null,
+            'metode_id' => $this->input->post('metode_id', true) ?: null,
         ];
 
+        if ($this->input->post('side_id', true) === null) { unset($data['side_id']); }
         $this->db->where('product_id', $product_id);
-        $this->db->update('tbl_product', $data);
-
-        $this->session->set_flashdata('success', 'Data produk berhasil diperbarui.');
+        if ($this->db->update('tbl_product', $data)) {
+            $this->session->set_flashdata('success', 'Data produk berhasil diperbarui.');
+        } else {
+            $this->session->set_flashdata('error', 'Gagal memperbarui produk.');
+        }
         redirect('product');
     }
 
@@ -692,6 +732,7 @@ class Manufaktur extends MY_Controller
         $data['waktu'] = $this->db->get('tbl_waktu')->result();
         $data['satuan'] = $this->db->get('tbl_satuan')->result();
         $data['getProduct'] = $this->M_master->getProduct($id)->row_array();
+        if (!$data['getProduct']) { show_404(); return; }
         $data['getHarga'] = $this->M_master->getHarga($id)->result();
         $data['jmlHarga'] = $this->M_master->getHarga($id)->num_rows();
         $data['getRange'] = $this->db->get('tbl_range')->result();
@@ -779,6 +820,8 @@ class Manufaktur extends MY_Controller
             $exists = $this->db->get_where('tbl_harga_product', [
                 'product_id' => $product_id,
                 'ket_1' => 2,
+                'jenisprint_id' => $price['jenisprint_id'] ?? 0,
+                'side_id' => $price['side_id'] ?? 0,
                 'qty_min' => $price['qty_min'],
                 'qty_max' => $price['qty_max']
             ])->row();
@@ -793,6 +836,7 @@ class Manufaktur extends MY_Controller
 
             // [NEW] Update Metadata JSON
             $meta_array = !empty($price['metadata']) ? json_decode($price['metadata'], true) : [];
+            if (!is_array($meta_array)) { $meta_array = []; }
             $meta_array['sisi'] = 2;
             $new_price['metadata'] = json_encode($meta_array);
 
@@ -819,6 +863,17 @@ class Manufaktur extends MY_Controller
         $product = $this->input->post('product_id', true);
         $hargaid = $this->input->post('harga_id', true);
 
+        if (empty($product) || !is_array($hargaid) || !$hargaid) {
+            echo json_encode(['success' => false, 'message' => 'Produk dan baris harga wajib diisi.']);
+            return;
+        }
+        foreach (['detail_product', 'range_id', 'ket_1', 'hpp', 'harga_1', 'harga_minimal', 'qty_min', 'qty_max', 'jenisprint_id', 'side_id'] as $field) {
+            $values = $this->input->post($field, true);
+            if ($values !== null && (!is_array($values) || count(array_filter($values, 'is_array')) > 0)) {
+                echo json_encode(['success' => false, 'message' => 'Format matriks harga tidak valid.']);
+                return;
+            }
+        }
         if (!empty($hargaid) && is_array($hargaid)) {
             $detail_product = $this->input->post('detail_product', true);
             $rangeid = $this->input->post('range_id', true);
@@ -840,6 +895,7 @@ class Manufaktur extends MY_Controller
 
             $raw_schema = $getProduct['product_form_schema'] ?? $getProduct['subcategory_form_schema'] ?? $getProduct['category_form_schema'] ?? '';
             $schema = !empty($raw_schema) ? json_decode($raw_schema, true) : [];
+            if (!is_array($schema)) { $schema = []; }
 
             // Reconstruct the dimension options map for label lookup
             $schemaSideOptions = [];
@@ -858,7 +914,7 @@ class Manufaktur extends MY_Controller
                 $unmapped_full = [];
 
                 foreach ($schema as $field) {
-                    if (isset($field['options']) && !empty($field['options']) && in_array($field['type'], ['select', 'radio'])) {
+                    if (is_array($field) && is_array($field['options'] ?? null) && isset($field['options']) && !empty($field['options']) && in_array($field['type'] ?? '', ['select', 'radio'])) {
                         $name = $field['name'] ?? '';
                         $labelLower = strtolower($field['label'] ?? '');
 
@@ -922,74 +978,92 @@ class Manufaktur extends MY_Controller
             $hpp = array_map($clean_currency, (array) $hpp);
 
             $berhasil = true;
-            foreach ($hargaid as $i => $id) {
-                if (empty($id))
-                    continue;
+            $this->db->trans_begin();
+            try {
+                foreach ($hargaid as $i => $id) {
+                    if (empty($id))
+                        continue;
 
-                // [NEW] Build JSON Metadata dynamically based on schema keys and option labels
-                $meta_array = [];
-                if (isset($ket1[$i]) && $ket1[$i] !== '') {
-                    $val1 = $schemaSideOptions[$ket1[$i]] ?? $side_map[$ket1[$i]] ?? $ket1[$i];
-                    $meta_array[$clean_key1] = $val1;
-                    if ($clean_key1 !== $key_dim1) {
-                        $meta_array[$key_dim1] = $ket1[$i];
+                    if (!is_scalar($id) || !$this->db->get_where('tbl_harga_product', ['harga_id' => $id, 'product_id' => $product])->row_array()) {
+                        throw new RuntimeException('Baris harga bukan milik produk ini.');
                     }
-                }
-                if (isset($jenisprint_id[$i]) && $jenisprint_id[$i] !== '') {
-                    $val2 = $schemaMachineOptions[$jenisprint_id[$i]] ?? $machine_map[$jenisprint_id[$i]] ?? $jenisprint_id[$i];
-                    $meta_array[$clean_key2] = $val2;
-                    if ($clean_key2 !== $key_dim2) {
-                        $meta_array[$key_dim2] = $jenisprint_id[$i];
-                    }
-                }
-                if (isset($side_id[$i]) && $side_id[$i] !== '') {
-                    $val3 = $schemaThirdOptions[$side_id[$i]] ?? $side_id[$i];
-                    $meta_array[$clean_key3] = $val3;
-                    if ($clean_key3 !== $key_dim3) {
-                        $meta_array[$key_dim3] = $side_id[$i];
-                    }
-                }
 
-                // [NEW] Dynamically add extra dimensions from Form Builder (> 3 dimensions)
-                foreach ($extraDimensions as $extDim) {
-                    $post_vals = $this->input->post('dim_' . $extDim['name'], true);
-                    if (isset($post_vals[$i]) && $post_vals[$i] !== '') {
-                        $val = $post_vals[$i];
-                        $meta_array[$extDim['name']] = $val;
+                    // [NEW] Build JSON Metadata dynamically based on schema keys and option labels
+                    $meta_array = [];
+                    if (isset($ket1[$i]) && $ket1[$i] !== '') {
+                        $val1 = $schemaSideOptions[$ket1[$i]] ?? $side_map[$ket1[$i]] ?? $ket1[$i];
+                        $meta_array[$clean_key1] = $val1;
+                        if ($clean_key1 !== $key_dim1) {
+                            $meta_array[$key_dim1] = $ket1[$i];
+                        }
+                    }
+                    if (isset($jenisprint_id[$i]) && $jenisprint_id[$i] !== '') {
+                        $val2 = $schemaMachineOptions[$jenisprint_id[$i]] ?? $machine_map[$jenisprint_id[$i]] ?? $jenisprint_id[$i];
+                        $meta_array[$clean_key2] = $val2;
+                        if ($clean_key2 !== $key_dim2) {
+                            $meta_array[$key_dim2] = $jenisprint_id[$i];
+                        }
+                    }
+                    if (isset($side_id[$i]) && $side_id[$i] !== '') {
+                        $val3 = $schemaThirdOptions[$side_id[$i]] ?? $side_id[$i];
+                        $meta_array[$clean_key3] = $val3;
+                        if ($clean_key3 !== $key_dim3) {
+                            $meta_array[$key_dim3] = $side_id[$i];
+                        }
+                    }
 
-                        // Also store the human readable label 
-                        $clean_key = str_replace('_id', '', $extDim['name']);
-                        if (isset($extDim['options'][$val])) {
-                            if ($clean_key !== $extDim['name']) {
-                                $meta_array[$clean_key] = $extDim['options'][$val];
-                            } else {
-                                $meta_array[$extDim['name'] . '_label'] = $extDim['options'][$val];
+                    // [NEW] Dynamically add extra dimensions from Form Builder (> 3 dimensions)
+                    foreach ($extraDimensions as $extDim) {
+                        $post_vals = $this->input->post('dim_' . $extDim['name'], true);
+                        if (isset($post_vals[$i]) && $post_vals[$i] !== '') {
+                            $val = $post_vals[$i];
+                            $meta_array[$extDim['name']] = $val;
+
+                            // Also store the human readable label
+                            $clean_key = str_replace('_id', '', $extDim['name']);
+                            if (isset($extDim['options'][$val])) {
+                                if ($clean_key !== $extDim['name']) {
+                                    $meta_array[$clean_key] = $extDim['options'][$val];
+                                } else {
+                                    $meta_array[$extDim['name'] . '_label'] = $extDim['options'][$val];
+                                }
                             }
                         }
                     }
+
+                    $update = [
+                        'detail_product' => $detail_product[$i] ?? '',
+                        'range_id' => !empty($rangeid[$i]) ? $rangeid[$i] : 0,
+                        'harga_1' => $harga1[$i] ?? 0,
+                        'harga_minimal' => $harga_minimal[$i] ?? 0,
+                        'qty_min' => !empty($qty_min[$i]) ? $qty_min[$i] : 0,
+                        'qty_max' => !empty($qty_max[$i]) ? $qty_max[$i] : 0,
+                        'ket_1' => ($ket1[$i] ?? '') !== '' ? $ket1[$i] : 0,
+                        'hpp' => $hpp[$i] ?? 0,
+                        'jenisprint_id' => ($jenisprint_id[$i] ?? '') !== '' ? $jenisprint_id[$i] : 0,
+                        'side_id' => ($side_id[$i] ?? '') !== '' ? $side_id[$i] : 0,
+                        'is_active' => '1',
+                        'metadata' => !empty($meta_array) ? json_encode($meta_array) : null // [NEW] Save dynamic metadata
+                    ];
+
+                    $this->db->where('product_id', $product);
+                    $this->db->where('harga_id', $id);
+                    if (!$this->db->update('tbl_harga_product', $update)) {
+                        $berhasil = false;
+                    }
                 }
 
-                $update = [
-                    'detail_product' => $detail_product[$i] ?? '',
-                    'range_id' => !empty($rangeid[$i]) ? $rangeid[$i] : 0,
-                    'harga_1' => $harga1[$i] ?? 0,
-                    'harga_minimal' => $harga_minimal[$i] ?? 0,
-                    'qty_min' => !empty($qty_min[$i]) ? $qty_min[$i] : 0,
-                    'qty_max' => !empty($qty_max[$i]) ? $qty_max[$i] : 0,
-                    'ket_1' => ($ket1[$i] !== '' && $ket1[$i] !== null) ? $ket1[$i] : 0,
-                    'hpp' => $hpp[$i] ?? 0,
-                    'jenisprint_id' => ($jenisprint_id[$i] !== '' && $jenisprint_id[$i] !== null) ? $jenisprint_id[$i] : 0,
-                    'side_id' => ($side_id[$i] !== '' && $side_id[$i] !== null) ? $side_id[$i] : 0,
-                    'is_active' => '1',
-                    'metadata' => !empty($meta_array) ? json_encode($meta_array) : null // [NEW] Save dynamic metadata
-                ];
-
-                $this->db->where('harga_id', $id);
-                if (!$this->db->update('tbl_harga_product', $update)) {
-                    $berhasil = false;
+                $berhasil = $berhasil && $this->db->trans_status();
+                if ($berhasil) {
+                    $berhasil = $this->db->trans_commit();
+                } else {
+                    $this->db->trans_rollback();
                 }
+            } catch (Throwable $e) {
+                $this->db->trans_rollback();
+                log_message('error', 'Save price matrix: ' . $e->getMessage());
+                $berhasil = false;
             }
-
             if ($berhasil) {
                 if ($this->input->is_ajax_request()) {
                     echo json_encode(['success' => true, 'message' => 'Matriks harga berhasil diperbarui']);
@@ -1011,6 +1085,7 @@ class Manufaktur extends MY_Controller
     public function get_pricing_partial($id)
     {
         $data['getProduct'] = $this->M_master->getProduct($id)->row_array();
+        if (!$data['getProduct']) { show_404(); return; }
         $data['getHarga'] = $this->M_master->getHarga($id)->result();
         $data['jmlHarga'] = $this->M_master->getHarga($id)->num_rows();
         $data['side'] = $this->db->get('tbl_side')->result();
@@ -1019,6 +1094,20 @@ class Manufaktur extends MY_Controller
         $data['segment2'] = $this->uri->segment(2);
 
         $this->load->view('admin/product/add_harga/universal_pricing', $data);
+    }
+
+    private function material_unit_cost($material_id)
+    {
+        $material = $this->db->get_where('tbl_material', ['material_id' => $material_id])->row();
+        if (!$material) { return 0; }
+        $price = $this->db->where('material_id', $material_id)->order_by('detail_id', 'DESC')
+            ->limit(1)->get('tbl_pembelian_detail')->row();
+        if (!$price) {
+            $price = $this->db->where('bahan_id', $material->bahan_id)->order_by('belanja_id', 'DESC')
+                ->limit(1)->get('tbl_belanja_bahan')->row();
+        }
+        $conversion = (float) ($material->konversi ?? 1);
+        return $price ? (float) $price->harga_beli / ($conversion > 0 ? $conversion : 1) : 0;
     }
 
     public function get_calculated_hpp_ajax($id)
@@ -1032,7 +1121,7 @@ class Manufaktur extends MY_Controller
         foreach ($bom as $i) {
             $qty = (float) $i->quantity;
             $scrap = (float) $i->scrap_factor;
-            $cost = (float) $i->unit_cost;
+            $cost = $this->material_unit_cost($i->bahan_id);
             $mat += ($qty * (1 + ($scrap / 100)) * $cost);
         }
         foreach ($routing as $i) {
@@ -1054,12 +1143,13 @@ class Manufaktur extends MY_Controller
         $data['satuan'] = $this->db->get('tbl_satuan')->result();
         $data['type'] = $this->db->get('tbl_type')->result();
         $data['getProduct'] = $this->M_master->getProduct($kode)->row_array();
+        if (!$data['getProduct']) { show_404(); return; }
         $data['getproduct'] = $data['getProduct'];
         $data['getHarga'] = $this->M_master->getHarga($kode)->result();
         $data['mesin_printing'] = $this->db->where_in('id', [2, 3, 4])->get('tbl_mesin_printing')->result();
         $data['getmata'] = $this->db->get('tbl_mata_cutting')->result();
         $data['side'] = $this->db->get('tbl_side')->result();
-        $data['subkategori'] = $this->M_master->get_subkategori($data['getProduct']['kategori_id']);
+        $data['subkategori'] = $this->M_master->get_subkategori($data['getProduct']['kategori_id'])->result();
         $data['segment2'] = $this->uri->segment(2);
         $data['controller'] = $this->uri->segment(1);
 
@@ -1072,13 +1162,10 @@ class Manufaktur extends MY_Controller
         $data = [
             'kategori_id' => $this->input->post('kategori_id', true),
             'subkategori_id' => $this->input->post('subkategori_id', true),
-            'bahan_id' => $this->input->post('bahan_id', true),
             'product_nama' => $this->input->post('product_nama', true),
             'satuan_id' => $this->input->post('satuan_id', true),
-            'product_waktu_pengerjaan' => $this->input->post('product_waktu_pengerjaan', true),
-            'satuan_waktu_id' => $this->input->post('satuan_waktu_id', true),
             'product_deskripsi' => $this->input->post('product_deskripsi', true),
-            'barcode' => $this->input->post('barcode', true),
+            'barcode_product' => $this->input->post('barcode', true),
         ];
 
         if ($this->M_master->addData('tbl_product', $data)) {
@@ -1137,16 +1224,13 @@ class Manufaktur extends MY_Controller
         $data['satuan'] = $this->db->get('tbl_satuan')->result();
         $data['step'] = $this->db->get('tbl_operator')->result();
         $data['routing'] = $this->db->get_where('routing', ['routing_id' => $id])->row_array();
+        if (!$data['routing']) { show_404(); return; }
         $data['product_list'] = $this->db->get('tbl_product')->result();
         $data['mesin_list'] = $this->db->get('tbl_mesin')->result();
-        $data['segment4'] = $this->uri->segment(4);
+        $data['segment4'] = $data['routing']['product_id'];
         $data['operator_list'] = $this->db->get('tbl_operator')->result();
-        $data['bom_list'] = $this->M_master->getbombyproduct($this->uri->segment(4))->result();
+        $data['bom_list'] = $this->M_master->getbomkode('product_id', $data['routing']['product_id'])->result();
 
-        // Warning: using $data['product'] which is not yet defined? 
-        // Logic fix needed if original code used it.
-        // Assuming $routing['product_id'] can fetch it.
-        // For now trusting original flow but it seemed buggy.
 
         $this->load_admin_view('admin/manufaktur/update_routing', $data);
     }
@@ -1154,23 +1238,28 @@ class Manufaktur extends MY_Controller
     public function action_update_routing()
     {
         $id = $this->input->post('routing_id', true);
+        $row = $this->db->get_where('routing', ['routing_id' => $id])->row_array();
+        if (!$row) { show_404(); return; }
         $data = [
             'routing_name' => $this->input->post('routing_name', true),
-            'product_id' => $this->input->post('product_id', true),
             'routing_urutan' => $this->input->post('routing_urutan', true),
             'operator_id' => $this->input->post('operator_id', true),
             'bom_line_id' => $this->input->post('bom_line_id', true),
-            'est_time' => $this->input->post('est_time', true) ?: 0,
-            'labor_cost' => str_replace(['.', ','], '', $this->input->post('labor_cost', true) ?: 0),
+            'is_finishing' => $this->input->post('is_finishing', true) === '1' ? 1 : 0,
+            'is_active' => $this->input->post('is_active', true) === '1' ? 1 : 0,
         ];
 
+        if ($this->input->post('is_active', true) === null && $this->uri->segment(2) === 'aksi_update_routing_modal') {
+            unset($data['is_active']);
+        }
+        if ($this->input->post('bom_line_id', true) === null) { unset($data['bom_line_id']); }
         if ($this->db->update('routing', $data, ['routing_id' => $id])) {
             $this->session->set_flashdata('success', 'Data routing berhasil diperbarui.');
         } else {
             $this->session->set_flashdata('error', 'Terjadi kesalahan saat memperbarui data routing.');
         }
 
-        redirect('manufaktur/routing/' . $this->input->post('product_id', true));
+        redirect('manufaktur/routing/' . $row['product_id']);
     }
 
     // ==================== AJAX / API METHODS ====================
@@ -1209,7 +1298,7 @@ class Manufaktur extends MY_Controller
                 if (is_array($meta)) {
                     $ignored = ['product_id', 'nospk', 'qty', 'panjang', 'lebar', 'kategori_id', 'keterangan', 'approve', 'lokasi_cetak'];
                     foreach ($meta as $k => $val) {
-                        if (!in_array($k, $ignored) && strpos($k, 'dim_') === false && strpos($k, '_id') === false && $val !== '') {
+                        if (!in_array($k, $ignored) && strpos($k, 'dim_') === false && strpos($k, '_id') === false && is_scalar($val) && $val !== '') {
                             $meta_desc[] = $val;
                         }
                     }
@@ -1251,11 +1340,11 @@ class Manufaktur extends MY_Controller
                     ->get()->row();
 
                 if (!$latest_price) {
-                    // Fallback to old table if using material_id there (unlikely but safe)
-                    $latest_price = $this->db->select('harga_beli')
-                        ->from('tbl_belanja_bahan')
-                        ->where('bahan_id', $row->bahan_id)
-                        ->order_by('belanja_id', 'DESC')
+                    $latest_price = $this->db->select('bb.harga_beli')
+                        ->from('tbl_belanja_bahan bb')
+                        ->join('tbl_material m', 'm.bahan_id = bb.bahan_id')
+                        ->where('m.material_id', $row->bahan_id)
+                        ->order_by('bb.belanja_id', 'DESC')
                         ->limit(1)
                         ->get()->row();
                 }
@@ -1270,7 +1359,7 @@ class Manufaktur extends MY_Controller
                     $row->unit_cost = (float) $row->manual_cost;
                 }
 
-                $satuan_id = $row->satuan_id ?? $row->prod_satuan_id;
+                $satuan_id = $row->satuan_id ?: $row->prod_satuan_id;
                 if ($satuan_id) {
                     $satuan = $this->db->get_where('tbl_satuan', ['satuan_id' => $satuan_id])->row();
                     $row->satuan = $satuan ? $satuan->satuan_nama : '-';
@@ -1544,7 +1633,7 @@ class Manufaktur extends MY_Controller
             return;
         }
 
-        if ($this->db->delete('bom_lines', ['bom_line_id' => $bom_id])) {
+        if ($this->remove_bom_rows([$bom_id])) {
             echo json_encode(['success' => true, 'message' => 'BOM berhasil dihapus']);
         } else {
             echo json_encode(['success' => false, 'message' => 'Gagal menghapus BOM']);
@@ -1561,8 +1650,7 @@ class Manufaktur extends MY_Controller
             return;
         }
 
-        $this->db->where_in('bom_line_id', $bom_ids);
-        if ($this->db->delete('bom_lines')) {
+        if ($this->remove_bom_rows($bom_ids)) {
             echo json_encode(['success' => true, 'message' => count($bom_ids) . ' BOM berhasil dihapus']);
         } else {
             echo json_encode(['success' => false, 'message' => 'Gagal menghapus BOM terpilih']);
@@ -1580,29 +1668,44 @@ class Manufaktur extends MY_Controller
         if ($harga_id === '' || $harga_id === 'null' || $harga_id === '0') {
             $harga_id = null;
         }
-        $manual_cost = $this->input->post('manual_cost', true);
-        if ($manual_cost === '') {
-            $manual_cost = null;
-        }
 
         if (!$bom_line_id) {
             echo json_encode(['success' => false, 'message' => 'ID BOM tidak ditemukan']);
             return;
         }
 
+        $bom = $this->db->get_where('bom_lines', ['bom_line_id' => $bom_line_id])->row_array();
+        if (!$bom) {
+            echo json_encode(['success' => false, 'message' => 'BOM tidak ditemukan.']);
+            return;
+        }
+        if (!empty($harga_id) && !$this->db->get_where('tbl_harga_product', ['harga_id' => $harga_id, 'product_id' => $bom['product_id']])->row_array()) {
+            echo json_encode(['success' => false, 'message' => 'Variasi tidak dimiliki produk ini.']);
+            return;
+        }
+
         $data = [
             'quantity' => $qty,
             'scrap_factor' => $scrap_factor,
-            'harga_id' => $harga_id,
-            'panjang' => 0,
-            'lebar' => 0,
             'calc_type' => $this->input->post('calc_type', true) ?: 'fixed',
             'keterangan' => $this->input->post('keterangan', true) ?: ''
         ];
 
+        if (!is_numeric($qty) || $qty < 0 || !is_numeric($scrap_factor) || $scrap_factor < 0) {
+            echo json_encode(['success' => false, 'message' => 'Quantity dan scrap harus berupa angka nonnegatif.']);
+            return;
+        }
+        if ($this->input->post('harga_id', true) !== null) {
+            $data['harga_id'] = $harga_id;
+        }
+
         // If material/variant is changed, update bahan_id and satuan_id
         if ($bahan_id) {
             $material = $this->db->get_where('tbl_material', ['material_id' => $bahan_id])->row();
+            if (!$material) {
+                echo json_encode(['success' => false, 'message' => 'Material tidak ditemukan.']);
+                return;
+            }
             if ($material) {
                 $data['bahan_id'] = $bahan_id;
                 // Update to smallest unit of new material
@@ -1634,10 +1737,13 @@ class Manufaktur extends MY_Controller
             return;
         }
 
-        $this->db->where('bom_line_id', $bom_line_id);
-        $this->db->update('bom_lines', ['harga_id' => $harga_id]);
-
-        echo json_encode(['success' => true]);
+        $bom = $this->db->get_where('bom_lines', ['bom_line_id' => $bom_line_id])->row_array();
+        if (!$bom || (!empty($harga_id) && !$this->db->get_where('tbl_harga_product', ['harga_id' => $harga_id, 'product_id' => $bom['product_id']])->row_array())) {
+            echo json_encode(['success' => false, 'message' => 'BOM atau variasi produk tidak valid.']);
+            return;
+        }
+        $ok = $this->db->where('bom_line_id', $bom_line_id)->update('bom_lines', ['harga_id' => $harga_id]);
+        echo json_encode(['success' => (bool) $ok]);
     }
 
     public function update_bom_material_inline()
@@ -1657,12 +1763,12 @@ class Manufaktur extends MY_Controller
             $satuan_id = $bahan ? $bahan->satuan_id : $material->satuan_gudang_id;
 
             $this->db->where('bom_line_id', $bom_line_id);
-            $this->db->update('bom_lines', [
+            $ok = $this->db->update('bom_lines', [
                 'bahan_id' => $bahan_id,
                 'satuan_id' => $satuan_id
             ]);
 
-            echo json_encode(['success' => true]);
+            echo json_encode(['success' => (bool) $ok]);
         } else {
             echo json_encode(['success' => false, 'message' => 'Material tidak ditemukan']);
         }
@@ -1701,7 +1807,7 @@ class Manufaktur extends MY_Controller
                 if (is_array($meta)) {
                     $ignored = ['product_id', 'nospk', 'qty', 'panjang', 'lebar', 'kategori_id', 'keterangan', 'approve', 'lokasi_cetak'];
                     foreach ($meta as $k => $val) {
-                        if (!in_array($k, $ignored) && strpos($k, 'dim_') === false && strpos($k, '_id') === false && $val !== '') {
+                        if (!in_array($k, $ignored) && strpos($k, 'dim_') === false && strpos($k, '_id') === false && is_scalar($val) && $val !== '') {
                             $meta_desc[] = $val;
                         }
                     }
@@ -1793,7 +1899,8 @@ class Manufaktur extends MY_Controller
         $adj_value = (float) $this->input->post('adj_value', true);
         $targets = $this->input->post('targets', true);
 
-        if (!$adj_value || empty($targets)) {
+        if (!$adj_value || !is_array($targets) || !$targets || array_diff($targets, ['harga_1', 'hpp']) ||
+            !in_array($adj_method, ['percent', 'flat'], true)) {
             echo json_encode(['success' => false, 'message' => 'Nilai penyesuaian atau target tidak valid.']);
             return;
         }
@@ -1894,7 +2001,7 @@ class Manufaktur extends MY_Controller
                 if (is_array($meta)) {
                     $ignored = ['product_id', 'nospk', 'qty', 'panjang', 'lebar', 'kategori_id', 'keterangan', 'approve', 'lokasi_cetak'];
                     foreach ($meta as $k => $val) {
-                        if (!in_array($k, $ignored) && strpos($k, 'dim_') === false && strpos($k, '_id') === false && $val !== '') {
+                        if (!in_array($k, $ignored) && strpos($k, 'dim_') === false && strpos($k, '_id') === false && is_scalar($val) && $val !== '') {
                             $meta_desc[] = $val;
                         }
                     }
@@ -2268,13 +2375,15 @@ class Manufaktur extends MY_Controller
             'product_nama' => $this->input->post('product_nama', true),
             'kategori_id' => $this->input->post('kategori_id', true),
             'subkategori_id' => $this->input->post('subkategori_id', true),
-            'tipe_id' => $this->input->post('tipe_id', true),
+            'tipe_id' => $this->input->post('tipe_id', true) ?: null,
             'satuan_id' => $this->input->post('satuan_id', true),
             'side_id' => $this->input->post('side_id', true),
-            'detail_id' => $this->input->post('metode_id', true),
+            'detail_id' => $this->input->post('metode_id', true) ?: null,
+            'metode_id' => $this->input->post('metode_id', true) ?: null,
             'product_deskripsi' => $this->input->post('product_deskripsi', true)
         ];
 
+        if ($this->input->post('side_id', true) === null) { unset($data['side_id']); }
         $this->db->where('product_id', $product_id);
         if ($this->db->update('tbl_product', $data)) {
             return $this->output
@@ -2333,76 +2442,125 @@ class Manufaktur extends MY_Controller
         }
     }
 
+    private function checked_write($result)
+    {
+        if (!$result) {
+            throw new RuntimeException('Gagal menyimpan perubahan database.');
+        }
+    }
+
+    private function setup_rows($product_id)
+    {
+        return [
+            'bom' => $this->db->get_where('bom_lines', ['product_id' => $product_id])->result_array(),
+            'dynamic' => $this->db->get_where('tbl_bom_dynamic_mapping', ['product_id' => $product_id])->result_array(),
+            'routing' => $this->db->get_where('routing', ['product_id' => $product_id])->result_array()
+        ];
+    }
+
+    private function mapped_variation($id, array $mapping)
+    {
+        if (empty($id)) {
+            return null;
+        }
+        if (!isset($mapping[$id])) {
+            throw new RuntimeException('Variasi pada sumber tidak mempunyai pasangan di produk tujuan.');
+        }
+        return $mapping[$id];
+    }
+
+    private function price_signature(array $price)
+    {
+        $meta = json_decode($price['metadata'] ?? '', true);
+        if (!is_array($meta)) {
+            $meta = [];
+        }
+        ksort($meta);
+        $parts = [];
+        foreach (['ket_1', 'jenisprint_id', 'side_id', 'range_id', 'qty_min', 'qty_max'] as $key) {
+            $parts[] = (string) ($price[$key] ?? 0);
+        }
+        $parts[] = $meta;
+        return json_encode($parts);
+    }
+
+    // Call inside a transaction. All copied links must belong to the destination.
+    private function copy_setup(array $setup, $target_id, array $price_map, $copy_bom = true, $copy_routing = true)
+    {
+        $bom_map = [99999 => 99999];
+        if ($copy_bom) {
+            foreach ($setup['dynamic'] as $line) {
+                $old_id = 'dyn_' . $line['id'];
+                unset($line['id']);
+                $line['product_id'] = $target_id;
+                $line['created_at'] = date('Y-m-d H:i:s');
+                $this->checked_write($this->db->insert('tbl_bom_dynamic_mapping', $line));
+                $bom_map[$old_id] = 'dyn_' . $this->db->insert_id();
+            }
+            foreach ($setup['bom'] as $line) {
+                $old_id = $line['bom_line_id'];
+                unset($line['bom_line_id']);
+                $line['product_id'] = $target_id;
+                $line['harga_id'] = $this->mapped_variation($line['harga_id'] ?? null, $price_map);
+                $line['created_at'] = date('Y-m-d H:i:s');
+                $this->checked_write($this->db->insert('bom_lines', $line));
+                $bom_map[$old_id] = $this->db->insert_id();
+            }
+        }
+        if ($copy_routing) {
+            foreach ($setup['routing'] as $route) {
+                unset($route['routing_id']);
+                $route['product_id'] = $target_id;
+                $route['harga_id'] = $this->mapped_variation($route['harga_id'] ?? null, $price_map);
+                $link = $route['bom_line_id'] ?? null;
+                if (!empty($link) && $copy_bom && !isset($bom_map[$link])) {
+                    throw new RuntimeException('Kaitan BOM pada routing sumber tidak valid.');
+                }
+                $route['bom_line_id'] = empty($link) ? null : ($bom_map[$link] ?? null);
+                $route['created_at'] = date('Y-m-d H:i:s');
+                $this->checked_write($this->db->insert('routing', $route));
+            }
+        }
+    }
+
     public function clone_product()
     {
         header('Content-Type: application/json');
         $source_id = $this->input->post('source_id', true);
         $new_name = $this->input->post('new_name', true);
-
-        if (!$source_id || !$new_name) {
+        if (!is_scalar($new_name) || !is_numeric($source_id) || $source_id <= 0 || trim((string) $new_name) === '') {
             echo json_encode(['success' => false, 'message' => 'Source ID dan Nama Baru wajib diisi.']);
             return;
         }
-
-        $source_product = $this->db->get_where('tbl_product', ['product_id' => $source_id])->row_array();
-        if (!$source_product) {
-            echo json_encode(['success' => false, 'message' => 'Produk sumber tidak ditemukan.']);
-            return;
-        }
-
-        $this->db->trans_start();
-
-        // 1. Clone Product Header
-        $new_product = $source_product;
-        unset($new_product['product_id']); // Remove PK
-        $new_product['product_nama'] = $new_name;
-        $new_product['created_at'] = date('Y-m-d H:i:s');
-
-        $this->db->insert('tbl_product', $new_product);
-        $new_product_id = $this->db->insert_id();
-
-        // 2. Clone BOM Lines with Mapping
-        $bom_mapping = [99999 => 99999]; // Default for "No Material"
-        $bom_lines = $this->db->get_where('bom_lines', ['product_id' => $source_id])->result_array();
-        foreach ($bom_lines as $line) {
-            $old_bom_id = $line['bom_line_id'];
-            unset($line['bom_line_id']);
-            $line['product_id'] = $new_product_id;
-            $line['created_at'] = date('Y-m-d H:i:s');
-
-            $this->db->insert('bom_lines', $line);
-            $bom_mapping[$old_bom_id] = $this->db->insert_id();
-        }
-
-        // 3. Clone Routing with Remapped BOM links
-        $routings = $this->db->get_where('routing', ['product_id' => $source_id])->result_array();
-        foreach ($routings as $routing) {
-            unset($routing['routing_id']);
-            $routing['product_id'] = $new_product_id;
-
-            // Remap BOM link if exists
-            if (isset($routing['bom_line_id']) && isset($bom_mapping[$routing['bom_line_id']])) {
-                $routing['bom_line_id'] = $bom_mapping[$routing['bom_line_id']];
+        $this->db->trans_begin();
+        try {
+            $product = $this->db->get_where('tbl_product', ['product_id' => $source_id])->row_array();
+            if (!$product) {
+                throw new RuntimeException('Produk sumber tidak ditemukan.');
             }
-
-            $routing['created_at'] = date('Y-m-d H:i:s');
-            $this->db->insert('routing', $routing);
-        }
-
-        // 4. Clone Scale Prices (tbl_harga_product)
-        $prices = $this->db->get_where('tbl_harga_product', ['product_id' => $source_id])->result_array();
-        foreach ($prices as $price) {
-            unset($price['harga_id']);
-            $price['product_id'] = $new_product_id;
-            $this->db->insert('tbl_harga_product', $price);
-        }
-
-        $this->db->trans_complete();
-
-        if ($this->db->trans_status() === FALSE) {
-            echo json_encode(['success' => false, 'message' => 'Gagal menduplikasi produk. Silakan coba lagi.']);
-        } else {
-            echo json_encode(['success' => true, 'message' => 'Produk berhasil diduplikasi.', 'new_id' => $new_product_id]);
+            $setup = $this->setup_rows($source_id);
+            $prices = $this->db->get_where('tbl_harga_product', ['product_id' => $source_id])->result_array();
+            unset($product['product_id']);
+            $product['product_nama'] = trim((string) $new_name);
+            $product['created_at'] = date('Y-m-d H:i:s');
+            $this->checked_write($this->db->insert('tbl_product', $product));
+            $new_id = $this->db->insert_id();
+            $price_map = [];
+            foreach ($prices as $price) {
+                $old_id = $price['harga_id'];
+                unset($price['harga_id']);
+                $price['product_id'] = $new_id;
+                $this->checked_write($this->db->insert('tbl_harga_product', $price));
+                $price_map[$old_id] = $this->db->insert_id();
+            }
+            $this->copy_setup($setup, $new_id, $price_map);
+            $this->checked_write($this->db->trans_status());
+            $this->checked_write($this->db->trans_commit());
+            echo json_encode(['success' => true, 'message' => 'Produk berhasil diduplikasi.', 'new_id' => $new_id]);
+        } catch (Throwable $e) {
+            $this->db->trans_rollback();
+            log_message('error', 'Clone product: ' . $e->getMessage());
+            echo json_encode(['success' => false, 'message' => $e instanceof RuntimeException ? $e->getMessage() : 'Gagal menduplikasi produk.']);
         }
     }
 
@@ -2410,65 +2568,66 @@ class Manufaktur extends MY_Controller
     {
         header('Content-Type: application/json');
         $template_id = $this->input->post('template_id', true);
-        $target_ids = $this->input->post('target_ids', true); // Array of IDs
-        $options = $this->input->post('options', true); // ['bom', 'routing']
-
-        if (!$template_id || empty($target_ids)) {
-            echo json_encode(['success' => false, 'message' => 'Template dan Produk Target wajib dipilih.']);
+        $target_ids = $this->input->post('target_ids', true);
+        $options = $this->input->post('options', true);
+        if (!is_numeric($template_id) || $template_id <= 0 || !is_array($target_ids) || !$target_ids ||
+            !is_array($options) || !$options || array_diff($options, ['bom', 'routing'])) {
+            echo json_encode(['success' => false, 'message' => 'Template, produk target, dan pilihan setup wajib diisi dengan benar.']);
             return;
         }
-
-        $this->db->trans_start();
-
-        foreach ($target_ids as $target_id) {
-            // 1. Clear existing if needed? Or just append? Usually better to append or clear.
-            // Let's go with clear existing for the selected options to ensure template matches.
-
-            if (in_array('bom', $options)) {
-                $this->db->delete('bom_lines', ['product_id' => $target_id]);
-
-                $bom_mapping = [99999 => 99999];
-                $bom_lines = $this->db->get_where('bom_lines', ['product_id' => $template_id])->result_array();
-                foreach ($bom_lines as $line) {
-                    $old_bom_id = $line['bom_line_id'];
-                    unset($line['bom_line_id']);
-                    $line['product_id'] = $target_id;
-                    $line['created_at'] = date('Y-m-d H:i:s');
-                    $this->db->insert('bom_lines', $line);
-                    $bom_mapping[$old_bom_id] = $this->db->insert_id();
-                }
-            }
-
-            if (in_array('routing', $options)) {
-                $this->db->delete('routing', ['product_id' => $target_id]);
-
-                $routings = $this->db->get_where('routing', ['product_id' => $template_id])->result_array();
-                foreach ($routings as $routing) {
-                    unset($routing['routing_id']);
-                    $routing['product_id'] = $target_id;
-
-                    // Remap BOM link if BOM was also copied
-                    if (in_array('bom', $options) && isset($routing['bom_line_id']) && isset($bom_mapping[$routing['bom_line_id']])) {
-                        $routing['bom_line_id'] = $bom_mapping[$routing['bom_line_id']];
-                    } else if (!in_array('bom', $options)) {
-                        // If BOM not copied, we should probably NULL the link or keep it if it's 99999
-                        if ($routing['bom_line_id'] != 99999) {
-                            $routing['bom_line_id'] = NULL;
-                        }
-                    }
-
-                    $routing['created_at'] = date('Y-m-d H:i:s');
-                    $this->db->insert('routing', $routing);
-                }
+        foreach ($target_ids as $id) {
+            if (!is_scalar($id) || !ctype_digit((string) $id) || (int) $id <= 0 || (int) $id === (int) $template_id) {
+                echo json_encode(['success' => false, 'message' => 'Produk sumber tidak boleh menjadi target dan ID target harus valid.']);
+                return;
             }
         }
-
-        $this->db->trans_complete();
-
-        if ($this->db->trans_status() === FALSE) {
-            echo json_encode(['success' => false, 'message' => 'Gagal menerapkan template.']);
-        } else {
+        $target_ids = array_unique(array_map('intval', $target_ids));
+        $copy_bom = in_array('bom', $options, true);
+        $copy_routing = in_array('routing', $options, true);
+        $this->db->trans_begin();
+        try {
+            if (!$this->db->get_where('tbl_product', ['product_id' => $template_id])->row_array()) {
+                throw new RuntimeException('Produk template tidak ditemukan.');
+            }
+            $setup = $this->setup_rows($template_id);
+            $prices = $this->db->get_where('tbl_harga_product', ['product_id' => $template_id])->result_array();
+            foreach ($target_ids as $target_id) {
+                if (!$this->db->get_where('tbl_product', ['product_id' => $target_id])->row_array()) {
+                    throw new RuntimeException('Produk target tidak ditemukan.');
+                }
+                $target_prices = $this->db->get_where('tbl_harga_product', ['product_id' => $target_id])->result_array();
+                $price_map = [];
+                foreach ($prices as $price) {
+                    $matches = [];
+                    foreach ($target_prices as $target_price) {
+                        if ($this->price_signature($price) === $this->price_signature($target_price)) {
+                            $matches[] = $target_price['harga_id'];
+                        }
+                    }
+                    if (count($matches) === 1) {
+                        $price_map[$price['harga_id']] = $matches[0];
+                    }
+                }
+                if ($copy_routing) {
+                    $this->checked_write($this->db->delete('routing', ['product_id' => $target_id]));
+                } elseif ($copy_bom) {
+                    // Keep routing, but detach links to BOM rows about to be replaced.
+                    $this->checked_write($this->db->where('product_id', $target_id)
+                        ->where('bom_line_id !=', '99999')->update('routing', ['bom_line_id' => null]));
+                }
+                if ($copy_bom) {
+                    $this->checked_write($this->db->delete('bom_lines', ['product_id' => $target_id]));
+                    $this->checked_write($this->db->delete('tbl_bom_dynamic_mapping', ['product_id' => $target_id]));
+                }
+                $this->copy_setup($setup, $target_id, $price_map, $copy_bom, $copy_routing);
+            }
+            $this->checked_write($this->db->trans_status());
+            $this->checked_write($this->db->trans_commit());
             echo json_encode(['success' => true, 'message' => 'Template berhasil diterapkan ke ' . count($target_ids) . ' produk.']);
+        } catch (Throwable $e) {
+            $this->db->trans_rollback();
+            log_message('error', 'Apply product template: ' . $e->getMessage());
+            echo json_encode(['success' => false, 'message' => $e instanceof RuntimeException ? $e->getMessage() : 'Gagal menerapkan template.']);
         }
     }
 
@@ -2590,7 +2749,7 @@ class Manufaktur extends MY_Controller
                     if (is_array($meta)) {
                         $ignored = ['product_id', 'nospk', 'qty', 'panjang', 'lebar', 'kategori_id', 'keterangan', 'approve', 'lokasi_cetak'];
                         foreach ($meta as $k => $val) {
-                            if (!in_array($k, $ignored) && strpos($k, 'dim_') === false && strpos($k, '_id') === false && $val !== '') {
+                            if (!in_array($k, $ignored) && strpos($k, 'dim_') === false && strpos($k, '_id') === false && is_scalar($val) && $val !== '') {
                                 $meta_desc[] = $val;
                             }
                         }
@@ -2645,7 +2804,7 @@ class Manufaktur extends MY_Controller
                     if (is_array($meta)) {
                         $ignored = ['product_id', 'nospk', 'qty', 'panjang', 'lebar', 'kategori_id', 'keterangan', 'approve', 'lokasi_cetak'];
                         foreach ($meta as $k => $val) {
-                            if (!in_array($k, $ignored) && strpos($k, 'dim_') === false && strpos($k, '_id') === false && $val !== '') {
+                            if (!in_array($k, $ignored) && strpos($k, 'dim_') === false && strpos($k, '_id') === false && is_scalar($val) && $val !== '') {
                                 $meta_desc[] = $val;
                             }
                         }
@@ -2676,6 +2835,7 @@ class Manufaktur extends MY_Controller
     {
         if (!$this->input->is_ajax_request()) {
             show_404();
+            return;
         }
 
         $product_id = $this->input->post('product_id');
@@ -2687,8 +2847,16 @@ class Manufaktur extends MY_Controller
             return;
         }
 
+        header('Content-Type: application/json');
         try {
-            $this->db->trans_start();
+            foreach (array_merge([$source_harga_id], $target_harga_ids) as $variation_id) {
+                if (empty($variation_id)) { continue; }
+                if (!is_scalar($variation_id) || !ctype_digit((string) $variation_id) ||
+                    !$this->db->get_where('tbl_harga_product', ['harga_id' => $variation_id, 'product_id' => $product_id])->row_array()) {
+                    throw new RuntimeException('Variasi sumber/target tidak dimiliki produk ini.');
+                }
+            }
+            $this->db->trans_begin();
 
             // Fetch BOM Sources
             if (empty($source_harga_id)) {
@@ -2709,8 +2877,7 @@ class Manufaktur extends MY_Controller
             $source_routings = $this->db->get('routing')->result_array();
 
             if (empty($source_boms) && empty($source_routings)) {
-                echo json_encode(['success' => false, 'message' => 'Tidak ada data BOM / Routing pada variasi sumber.']);
-                return;
+                throw new RuntimeException('Tidak ada data BOM / Routing pada variasi sumber.');
             }
 
             foreach ($target_harga_ids as $target_id) {
@@ -2718,7 +2885,7 @@ class Manufaktur extends MY_Controller
                 if ($target_id == $source_harga_id)
                     continue;
 
-                $db_target_id = ($target_id === '0' || $target_id === '') ? null : $target_id;
+                $db_target_id = empty($target_id) ? null : $target_id;
 
                 // 1. Delete Existing BOM and Routing for Target
                 if (empty($db_target_id)) {
@@ -2727,7 +2894,7 @@ class Manufaktur extends MY_Controller
                     $this->db->where('harga_id', $db_target_id);
                 }
                 $this->db->where('product_id', $product_id);
-                $this->db->delete('bom_lines');
+                $this->checked_write($this->db->delete('bom_lines'));
 
                 if (empty($db_target_id)) {
                     $this->db->where("(harga_id IS NULL OR harga_id = 0 OR harga_id = '')");
@@ -2735,7 +2902,7 @@ class Manufaktur extends MY_Controller
                     $this->db->where('harga_id', $db_target_id);
                 }
                 $this->db->where('product_id', $product_id);
-                $this->db->delete('routing');
+                $this->checked_write($this->db->delete('routing'));
 
                 // 2. Insert BOMs and keep mapping of Old ID -> New ID
                 $bom_id_map = [];
@@ -2745,7 +2912,7 @@ class Manufaktur extends MY_Controller
                     $bom['harga_id'] = $db_target_id;
                     $bom['created_at'] = date('Y-m-d H:i:s');
 
-                    $this->db->insert('bom_lines', $bom);
+                    $this->checked_write($this->db->insert('bom_lines', $bom));
                     $bom_id_map[$old_bom_id] = $this->db->insert_id();
                 }
 
@@ -2760,11 +2927,12 @@ class Manufaktur extends MY_Controller
                         $routing['bom_line_id'] = $bom_id_map[$routing['bom_line_id']];
                     }
 
-                    $this->db->insert('routing', $routing);
+                    $this->checked_write($this->db->insert('routing', $routing));
                 }
             }
 
-            $this->db->trans_complete();
+            $this->checked_write($this->db->trans_status());
+            $this->checked_write($this->db->trans_commit());
 
             if ($this->db->trans_status() === FALSE) {
                 echo json_encode(['success' => false, 'message' => 'Gagal memproses data di database.']);
@@ -2772,7 +2940,8 @@ class Manufaktur extends MY_Controller
                 echo json_encode(['success' => true, 'message' => 'Berhasil menyalin setup ke variasi yang dipilih.']);
             }
 
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
+            $this->db->trans_rollback();
             echo json_encode(['success' => false, 'message' => $e->getMessage()]);
         }
     }
@@ -2861,24 +3030,43 @@ class Manufaktur extends MY_Controller
             'bahan_id' => $this->input->post('bahan_id', true),
             'calc_type' => $this->input->post('calc_type', true),
             'multiplier_key' => $this->input->post('multiplier_key', true),
-            'divider_factor' => $this->input->post('divider_factor', true) ?: 1,
+            'divider_factor' => $this->input->post('divider_factor', true) ?? 1,
             'scrap_factor' => $this->input->post('scrap_factor', true) ?: 0
         ];
 
         // Only include manual_cost if explicitly passed (preserve existing value on normal save)
         $manual_cost_raw = $this->input->post('manual_cost');
         if ($manual_cost_raw !== null) {
-            $data['manual_cost'] = ($manual_cost_raw !== '') ? (float) $manual_cost_raw : null;
+            if ($this->db->field_exists('manual_cost', 'tbl_bom_dynamic_mapping')) {
+                $data['manual_cost'] = ($manual_cost_raw !== '') ? (float) $manual_cost_raw : null;
+            }
         }
 
+        if (!$data['product_id'] || !$data['bahan_id'] || !$data['attribute_key'] ||
+            !is_numeric($data['divider_factor']) || $data['divider_factor'] <= 0 ||
+            !is_numeric($data['scrap_factor']) || $data['scrap_factor'] < 0 ||
+            ($manual_cost_raw !== null && $manual_cost_raw !== '' && (!is_numeric($manual_cost_raw) || $manual_cost_raw < 0))) {
+            echo json_encode(['status' => 'error', 'message' => 'Data BOM dinamis tidak valid.']);
+            return;
+        }
+        if (!ctype_digit((string)$data['product_id']) || !ctype_digit((string)$data['bahan_id']) ||
+            !$this->db->get_where('tbl_product', ['product_id' => $data['product_id']])->row() ||
+            !$this->db->get_where('tbl_material', ['material_id' => $data['bahan_id']])->row() ||
+            !in_array($data['calc_type'], ['fixed', 'area', 'sheets_plano', 'linear_meter'], true) ||
+            !is_scalar($data['attribute_value']) || trim((string)$data['attribute_value']) === '') {
+            echo json_encode(['status' => 'error', 'message' => 'Pilih produk, varian stok material, dan perhitungan BOM yang valid.']);
+            return;
+        }
         if ($id) {
-            $this->db->where('id', $id);
-            $this->db->update('tbl_bom_dynamic_mapping', $data);
+            if (!$this->db->get_where('tbl_bom_dynamic_mapping', ['id' => $id, 'product_id' => $data['product_id']])->row_array()) {
+                echo json_encode(['status' => 'error', 'message' => 'BOM dinamis tidak ditemukan pada produk ini.']);
+                return;
+            }
+            $ok = $this->db->where('id', $id)->update('tbl_bom_dynamic_mapping', $data);
         } else {
-            $this->db->insert('tbl_bom_dynamic_mapping', $data);
+            $ok = $this->db->insert('tbl_bom_dynamic_mapping', $data);
         }
-
-        echo json_encode(['status' => 'success']);
+        echo json_encode(['status' => $ok ? 'success' : 'error', 'message' => $ok ? 'BOM dinamis tersimpan.' : 'Gagal menyimpan BOM dinamis.']);
     }
 
     public function save_dynamic_manual_cost()
@@ -2892,9 +3080,12 @@ class Manufaktur extends MY_Controller
         }
         // Empty string = reset to auto
         $manual_cost = ($manual_cost_raw !== null && $manual_cost_raw !== '') ? (float) $manual_cost_raw : null;
-        $this->db->where('id', $id);
-        $this->db->update('tbl_bom_dynamic_mapping', ['manual_cost' => $manual_cost]);
-        echo json_encode(['status' => 'success', 'manual_cost' => $manual_cost]);
+        if ($manual_cost_raw !== null && $manual_cost_raw !== '' && (!is_numeric($manual_cost_raw) || $manual_cost_raw < 0)) {
+            echo json_encode(['status' => 'error', 'message' => 'Biaya manual harus berupa angka nonnegatif.']);
+            return;
+        }
+        $ok = $this->db->where('id', $id)->update('tbl_bom_dynamic_mapping', ['manual_cost' => $manual_cost]);
+        echo json_encode(['status' => $ok ? 'success' : 'error', 'manual_cost' => $manual_cost]);
     }
 
     public function delete_dynamic_bom()
@@ -2902,9 +3093,17 @@ class Manufaktur extends MY_Controller
         header('Content-Type: application/json');
         $id = $this->input->post('id', true);
         if ($id) {
-            $this->db->where('id', $id);
-            $this->db->delete('tbl_bom_dynamic_mapping');
-            echo json_encode(['status' => 'success']);
+            $this->db->trans_begin();
+            try {
+                $this->checked_write($this->db->where('bom_line_id', 'dyn_' . $id)->update('routing', ['bom_line_id' => null]));
+                $this->checked_write($this->db->delete('tbl_bom_dynamic_mapping', ['id' => $id]));
+                $this->checked_write($this->db->trans_status());
+                $this->checked_write($this->db->trans_commit());
+                echo json_encode(['status' => 'success']);
+            } catch (Throwable $e) {
+                $this->db->trans_rollback();
+                echo json_encode(['status' => 'error', 'message' => 'Gagal menghapus BOM dinamis.']);
+            }
         } else {
             echo json_encode(['status' => 'error', 'message' => 'ID not found']);
         }

@@ -64,9 +64,9 @@ class Penjualan_manual_model extends CI_Model
         try {
             $this->db->trans_start();
 
-            $perusahaan_id = $this->session->userdata('perusahaan_id');
-            $kasir_id = $this->session->userdata('id');
-            $tanggal_transaksi = $post['tanggal_transaksi'];
+            $perusahaan_id = (int) $this->session->userdata('perusahaan_id') ?: 1;
+            $kasir_id = (int) $this->session->userdata('id') ?: 1;
+            $tanggal_transaksi = !empty($post['tanggal_transaksi']) ? $post['tanggal_transaksi'] : date('Y-m-d');
             $products = $post['products'] ?? [];
 
             if (empty($products))
@@ -100,7 +100,9 @@ class Penjualan_manual_model extends CI_Model
                 'id_jenis_transaksi' => 1, // On The Spot
                 'id_pengiriman' => 0,
                 'perusahaan_id' => $perusahaan_id,
-                'status_pembayaran' => ($post['metode_bayar'] == 'piutang') ? 'pending' : 'paid'
+                'status_pembayaran' => ($post['metode_bayar'] == 'piutang') ? 'pending' : 'paid',
+                'tanggal' => $tanggal_transaksi,
+                'created_at' => date('Y-m-d H:i:s')
             ];
             $this->db->insert('tbl_pemesanan', $pemesanan_data);
 
@@ -197,6 +199,11 @@ class Penjualan_manual_model extends CI_Model
                 if ($metode_mapped == 'cash')
                     $metode_mapped = 'tunai';
 
+                $allowed_metode = ['tunai', 'transfer', 'debit', 'kartu_kredit', 'ewallet', 'lainnya'];
+                if (!in_array($metode_mapped, $allowed_metode)) {
+                    $metode_mapped = 'tunai';
+                }
+
                 $p_detail = [
                     'pembayaran_id' => $pembayaran_id,
                     'metode' => $metode_mapped,
@@ -229,7 +236,10 @@ class Penjualan_manual_model extends CI_Model
             $this->db->trans_complete();
 
             if ($this->db->trans_status() === FALSE) {
-                throw new Exception('Database transaction failed inside trans_complete.');
+                $db_err = $this->db->error();
+                $err_details = !empty($db_err['message']) ? $db_err['message'] . ' (Code: ' . $db_err['code'] . ')' : 'Database transaction failed inside trans_complete.';
+                log_message('error', 'ERP Manual Trans Detailed MySQL Error: ' . $err_details);
+                throw new Exception('Database transaction failed: ' . $err_details);
             }
 
             return ['status' => true, 'nospk' => $nospk, 'jumlah_produk' => count($products)];
@@ -244,22 +254,14 @@ class Penjualan_manual_model extends CI_Model
     {
         $prefix = 'MAN-';
         $date = date('dmy');
+        $pattern = $prefix . $date . '-%';
 
-        $this->db->select('nospk');
-        $this->db->from('tbl_pemesanan');
-        $this->db->like('nospk', $prefix . $date, 'after');
-        $this->db->order_by('nospk', 'DESC');
-        $this->db->limit(1);
-        $query = $this->db->get();
+        // Check MAX sequence across both tbl_pemesanan and tbl_spk to prevent duplicate keys
+        $q1 = $this->db->query("SELECT MAX(CAST(SUBSTRING_INDEX(nospk, '-', -1) AS UNSIGNED)) as max_num FROM tbl_pemesanan WHERE nospk LIKE ?", [$pattern])->row();
+        $q2 = $this->db->query("SELECT MAX(CAST(SUBSTRING_INDEX(nospk, '-', -1) AS UNSIGNED)) as max_num FROM tbl_spk WHERE nospk LIKE ?", [$pattern])->row();
 
-        if ($query->num_rows() > 0) {
-            $last_spk = $query->row()->nospk;
-            $parts = explode('-', $last_spk);
-            $last_num = (int) end($parts);
-            $next_num = str_pad($last_num + 1, 3, '0', STR_PAD_LEFT);
-        } else {
-            $next_num = '001';
-        }
+        $max_num = max((int) ($q1->max_num ?? 0), (int) ($q2->max_num ?? 0));
+        $next_num = str_pad($max_num + 1, 3, '0', STR_PAD_LEFT);
 
         return $prefix . $date . '-' . $next_num;
     }
@@ -277,25 +279,34 @@ class Penjualan_manual_model extends CI_Model
 
     private function generateQrCode($nospk)
     {
-        $this->load->library('ciqrcode');
-        $config = [
-            'cacheable' => true,
-            'cachedir' => './assets/',
-            'errorlog' => './assets/',
-            'imagedir' => './assets/qrcode/',
-            'quality' => true,
-            'size' => '1024',
-            'black' => [0, 0, 0],
-            'white' => [255, 255, 255],
-        ];
-        $this->ciqrcode->initialize($config);
-        $params = [
-            'data' => "https://erp.tgmprint.com/cekpesanan/spk/" . urlencode(encrypt_spk($nospk)),
-            'level' => 'H',
-            'size' => 10,
-            'savename' => FCPATH . $config['imagedir'] . $nospk . '.png',
-        ];
-        $this->ciqrcode->generate($params);
+        try {
+            $target_dir = FCPATH . 'assets/qrcode/';
+            if (!is_dir($target_dir)) {
+                @mkdir($target_dir, 0777, true);
+            }
+
+            $this->load->library('ciqrcode');
+            $config = [
+                'cacheable' => true,
+                'cachedir' => './assets/',
+                'errorlog' => './assets/',
+                'imagedir' => './assets/qrcode/',
+                'quality' => true,
+                'size' => '1024',
+                'black' => [0, 0, 0],
+                'white' => [255, 255, 255],
+            ];
+            $this->ciqrcode->initialize($config);
+            $params = [
+                'data' => "https://erp.tgmprint.com/cekpesanan/spk/" . urlencode(encrypt_spk($nospk)),
+                'level' => 'H',
+                'size' => 10,
+                'savename' => $target_dir . $nospk . '.png',
+            ];
+            $this->ciqrcode->generate($params);
+        } catch (\Throwable $e) {
+            log_message('error', 'Generate QR Code warning: ' . $e->getMessage());
+        }
     }
 
     public function get_harga_id($product_id)

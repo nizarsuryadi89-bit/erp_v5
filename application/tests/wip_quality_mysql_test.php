@@ -2,6 +2,8 @@
 // Creates and removes ONLY a uniquely named test database; never writes to the ERP database.
 if (PHP_SAPI !== 'cli' || !in_array('--isolated-db', $argv, true)) exit("Run with --isolated-db to create a disposable QC test database.\n");
 define('BASEPATH', __DIR__);
+define('ENVIRONMENT', 'development');
+$_SERVER['HTTP_HOST'] = 'localhost';
 require __DIR__ . '/../config/database.php';
 $connection_config = $db['default'];
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
@@ -74,6 +76,7 @@ try {
     $quality = new QualityUnderTest($sql);
     verify($quality->assert_storage(), 'Additive schema uses InnoDB');
     foreach ([[1, 2], [2, 3], [3, 2], [4, 2]] as $fixture) $sql->query("INSERT INTO tbl_produksi VALUES (?, ?, 1, 10, ?, 0, 'done')", [$fixture[0], 'QC-TEST-' . $fixture[0], $fixture[1]]);
+    $sql->query("UPDATE tbl_produksi SET status_produksi = 'on_pb' WHERE produksi_id = 1");
     $actor = ['user_id' => 9, 'admin' => true, 'branch' => 2];
     $item = $sql->query('SELECT * FROM tbl_produksi WHERE produksi_id = 1')->row();
     $legacy = $sql->query('SELECT * FROM tbl_produksi WHERE produksi_id = 3')->row();

@@ -48,6 +48,9 @@ class M_pembayaran extends CI_Model
     private function buildPembayaranProdukSnapshot($item)
     {
         $metadata = $this->decodeMetadataArray($item->metadata ?? null);
+        if (!isset($item->harga_1) && !(isset($metadata['unit_price']) && is_numeric($metadata['unit_price']))) {
+            throw new DomainException('Harga item pesanan tidak ditemukan. Periksa harga tersimpan sebelum memproses pembayaran.');
+        }
         $harga_satuan = isset($metadata['unit_price']) && is_numeric($metadata['unit_price'])
             ? (float) $metadata['unit_price']
             : (float) ($item->harga_1 ?? 0);
@@ -107,23 +110,30 @@ class M_pembayaran extends CI_Model
     public function prosesTransaksi($post, $perusahaan, $userid)
     {
         $this->db->trans_start();
+        try {
 
-        $pembayaran_id = $this->insertPembayaran($post, $perusahaan, $userid);
-        $this->insertPembayaranDetail($post, $pembayaran_id);
-        $this->insertDetailDanProduksi($post['nospk'], $perusahaan);
+            $pembayaran_id = $this->insertPembayaran($post, $perusahaan, $userid);
+            $this->insertPembayaranDetail($post, $pembayaran_id);
+            if (!$this->insertDetailDanProduksi($post['nospk'], $perusahaan)) {
+                throw new DomainException('Detail pesanan tidak ditemukan. Pembayaran belum disimpan.');
+            }
 
-        // Handle piutang if payment is incomplete
-        $this->handlePiutang($post, $perusahaan, $userid);
+            // Handle piutang if payment is incomplete
+            $this->handlePiutang($post, $perusahaan, $userid);
 
-        $this->updateStatusPemesanan($post['nospk'], $post);
-        $this->generateQrCode($post['nospk']);
+            $this->updateStatusPemesanan($post['nospk'], $post);
+            $this->generateQrCode($post['nospk']);
 
-        $this->db->trans_complete();
+            $this->db->trans_complete();
 
-        if ($this->db->trans_status()) {
-            return ['status' => 'success', 'message' => 'Data Berhasil Dikirim'];
-        } else {
-            return ['status' => 'error', 'message' => 'Gagal menyimpan data'];
+            if ($this->db->trans_status()) {
+                return ['status' => 'success', 'message' => 'Data Berhasil Dikirim'];
+            } else {
+                return ['status' => 'error', 'message' => 'Gagal menyimpan data'];
+            }
+        } catch (Throwable $e) {
+            $this->db->trans_rollback();
+            throw $e;
         }
     }
 
@@ -342,6 +352,7 @@ class M_pembayaran extends CI_Model
             if (!$detail_insert_result) {
                 log_message('error', 'Gagal insert ke tbl_pembayaran_produk: ' . $this->db->last_query());
                 log_message('error', 'DB Error: ' . $this->db->error()['message']);
+                throw new RuntimeException('Detail pembayaran gagal disimpan.');
             } else {
                 log_message('debug', 'Pembayaran produk inserted successfully');
             }
@@ -351,6 +362,7 @@ class M_pembayaran extends CI_Model
 
             if (!$produksi_insert_result) {
                 log_message('error', 'Gagal insert ke tbl_produksi untuk item: ' . $item->product_id);
+                throw new RuntimeException('Produksi item gagal disimpan.');
             } else {
                 log_message('debug', 'Produksi inserted successfully for item: ' . $item->product_id);
             }
@@ -369,6 +381,11 @@ class M_pembayaran extends CI_Model
         $old_produksi = $this->db->get_where('tbl_produksi', ['nospk' => $nospk])->result();
         $prod_ids = [];
         foreach ($old_produksi as $prod) {
+            // A replacement header would get a new trx_id and deduct the same order again.
+            if ($this->db->get_where('tbl_stok_log', ['trx_type' => 'Produksi', 'trx_id' => $prod->produksi_id])->row() ||
+                in_array($prod->status_produksi, ['proses', 'finishing', 'done', 'on_pb', 'on_costumer'], true)) {
+                throw new DomainException('SPK sudah memiliki proses atau mutasi stok produksi. Revisi harus memeriksa riwayat stok terlebih dahulu.');
+            }
             $prod_ids[] = $prod->produksi_id;
         }
 
@@ -560,113 +577,56 @@ class M_pembayaran extends CI_Model
      */
     private function autoDeductStock($item, $perusahaan, $produksi_id)
     {
-        log_message('debug', 'START autoDeductStock for Produksi ID: ' . $produksi_id);
+        $this->load->library('Production_bom');
         $this->load->model('M_gudang');
-
-        // Fetch BOMs for this product and variation (if applicable)
-        $this->db->where('product_id', $item->product_id);
-        if (!empty($item->harga_id)) {
-            $this->db->group_start();
-            $this->db->where('harga_id', $item->harga_id);
-            $this->db->or_where('harga_id IS NULL', null, false);
-            $this->db->or_where('harga_id', 0);
-            $this->db->group_end();
+        $lines = $this->production_bom->resolve($item);
+        if (!$lines) return; // Services without a stock BOM do not consume inventory.
+        $warehouse = (int)(($item->lokasi_cetak ?? 0) ?: $perusahaan);
+        if ($warehouse < 1) throw new DomainException('Lokasi gudang produksi belum terisi.');
+        $usage = []; $factors = [];
+        foreach ($lines as $line) {
+            $mid = $line->bom_material_id;
+            $quantity = Production_bom::usage($line, $item);
+            if ($quantity <= 0) continue;
+            $usage[$mid] = ($usage[$mid] ?? 0) + $quantity;
+            $factor = empty($line->konversi) ? 1 : $line->konversi;
+            if (!is_numeric($factor) || !is_finite((float)$factor) || (float)$factor <= 0) throw new DomainException('Konversi BOM tidak valid.');
+            $factors[$mid] = (float)$factor;
         }
-        $boms = $this->db->get('bom_lines')->result();
-
-        if (empty($boms) && !empty($item->harga_id)) {
-            // [NEW] Fallback Logic: Check if another price tier of the SAME variation has a BOM
-            $current_harga = $this->db->get_where('tbl_harga_product', ['harga_id' => $item->harga_id])->row();
-            if ($current_harga && !empty($current_harga->metadata)) {
-                $sibling_hargas = $this->db->select('harga_id')
-                    ->where('product_id', $item->product_id)
-                    ->where('metadata', $current_harga->metadata)
-                    ->where('harga_id !=', $item->harga_id)
-                    ->get('tbl_harga_product')->result_array();
-                
-                if (!empty($sibling_hargas)) {
-                    $sibling_ids = array_column($sibling_hargas, 'harga_id');
-                    $this->db->where('product_id', $item->product_id);
-                    $this->db->where_in('harga_id', $sibling_ids);
-                    $boms = $this->db->get('bom_lines')->result();
+        if (!$usage) return;
+        ksort($usage, SORT_NUMERIC);
+        if (!$this->db->trans_begin()) throw new RuntimeException('Transaksi stok tidak tersedia.');
+        try {
+            $header = $this->db->query('SELECT produksi_id FROM tbl_produksi WHERE produksi_id = ? FOR UPDATE', [(int)$produksi_id]);
+            if (!$header || !$header->row()) throw new DomainException('Produksi tidak ditemukan.');
+            foreach ($usage as $mid => $qty) {
+                $result = $this->db->query('SELECT material_id FROM tbl_material WHERE material_id = ? FOR UPDATE', [(int)$mid]);
+                if (!$result || !$result->row()) throw new DomainException('Material BOM tidak ditemukan.');
+            }
+            $posted = $this->db->where(['trx_type' => 'Produksi', 'trx_id' => $produksi_id])->get('tbl_stok_log')->result();
+            if ($posted) {
+                $previous = [];
+                foreach ($posted as $log) {
+                    if ((int)$log->gudang_id !== $warehouse || (float)$log->qty_in > 0) throw new DomainException('Mutasi stok produksi sudah ada. Periksa riwayat sebelum mengulang.');
+                    $previous[$log->material_id] = ($previous[$log->material_id] ?? 0) + (float)$log->qty_base;
+                }
+                ksort($previous, SORT_NUMERIC);
+                if (array_keys($previous) !== array_keys($usage)) throw new DomainException('BOM berbeda dari mutasi yang sudah tercatat. Periksa riwayat stok.');
+                foreach ($usage as $mid => $qty) if (abs($qty - $previous[$mid]) > 0.0001) throw new DomainException('Jumlah BOM berbeda dari mutasi yang sudah tercatat. Periksa riwayat stok.');
+            } else {
+                foreach ($usage as $mid => $qty) {
+                    if ($qty <= 0) continue;
+                    if (!$this->M_gudang->update_stock_with_log($mid, $warehouse, -$qty / $factors[$mid], 'Produksi', $produksi_id,
+                        "Auto-Deduct Barang Jadi SPK: {$item->nospk}. Pakai: {$qty} unit produksi")) {
+                        throw new DomainException('Pengurangan stok BOM gagal. Pembayaran belum disimpan.');
+                    }
                 }
             }
+            if (!$this->db->trans_status() || !$this->db->trans_commit()) throw new RuntimeException('Pengurangan stok BOM gagal disimpan.');
+        } catch (Throwable $e) {
+            $this->db->trans_rollback();
+            throw $e;
         }
-
-        if (empty($boms)) {
-            log_message('debug', 'No BOM found for auto-deduct. Skipping.');
-            return;
-        }
-
-        foreach ($boms as $bom) {
-            $bom_qty = (float) $bom->quantity;
-            $order_qty = (float) $item->qty;
-            $panjang = (float) ($item->panjang ?: 0);
-            $lebar = (float) ($item->lebar ?: 0);
-            $berat = 0;
-
-            $calc_type = isset($bom->calc_type) ? $bom->calc_type : 'fixed';
-            $qty_usage = 0;
-
-            switch ($calc_type) {
-                case 'area':
-                    $qty_usage = ($panjang * $lebar) * $bom_qty * $order_qty;
-                    break;
-                case 'length':
-                    $qty_usage = $panjang * $bom_qty * $order_qty;
-                    break;
-                case 'weight':
-                    $qty_usage = $berat * $bom_qty * $order_qty;
-                    break;
-                case 'fixed':
-                default:
-                    $qty_usage = $bom_qty * $order_qty;
-                    break;
-            }
-
-            // Apply scrap factor
-            $scrap = isset($bom->scrap_factor) ? (float) $bom->scrap_factor : 0;
-            if ($scrap > 0) {
-                $qty_usage = $qty_usage * (1 + ($scrap / 100));
-            }
-
-            if ($qty_usage > 0 && !empty($bom->bahan_id)) {
-                $gudang_id = $item->lokasi_cetak ?: 1;
-
-                // Ambil informasi material untuk konversi Satuan Produksi -> Satuan Gudang
-                $mat = $this->db->select('m.konversi, m.varian, s.satuan_nama as satuan_gudang, sp.satuan_nama as satuan_produksi')
-                    ->from('tbl_material m')
-                    ->join('tbl_bahan b', 'm.bahan_id = b.bahan_id', 'left')
-                    ->join('tbl_satuan s', 'm.satuan_gudang_id = s.satuan_id', 'left')
-                    ->join('tbl_satuan sp', 'b.satuan_id = sp.satuan_id', 'left')
-                    ->where('m.material_id', $bom->bahan_id)
-                    ->get()->row();
-
-                $konversi = ($mat && (float)$mat->konversi > 0) ? (float)$mat->konversi : 1;
-                $sat_prod = ($mat && $mat->satuan_produksi) ? $mat->satuan_produksi : 'unit';
-                $sat_gudang = ($mat && $mat->satuan_gudang) ? $mat->satuan_gudang : 'unit';
-
-                // Konversi pengurangan stok ke Satuan Gudang karena update_stock_with_log mengalikan $qty * $konversi
-                $warehouse_reduction = (float) $qty_usage / $konversi;
-
-                $catatan = "Auto-Deduct Barang Jadi SPK: {$item->nospk}. Pakai: {$qty_usage} {$sat_prod}";
-                if ($konversi != 1) {
-                    $catatan .= " [Konversi: " . round($warehouse_reduction, 4) . " {$sat_gudang}]";
-                }
-
-                $this->M_gudang->update_stock_with_log(
-                    $bom->bahan_id, // This is material_id despite the column name bahan_id in bom_lines
-                    $gudang_id,
-                    -$warehouse_reduction, // negative to deduct in Satuan Gudang
-                    'Produksi',
-                    $produksi_id,
-                    $catatan
-                );
-                log_message('debug', "Auto-Deducted {$qty_usage} {$sat_prod} (WH: {$warehouse_reduction} {$sat_gudang}) for material_id: {$bom->bahan_id}");
-            }
-        }
-        
-        log_message('debug', 'END autoDeductStock');
     }
 
 

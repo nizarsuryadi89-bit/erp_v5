@@ -4278,6 +4278,336 @@ class Laporan extends MY_Controller
         $this->load_admin_view('admin/laporan/keuangan/mutasi_ewallet', $data);
     }
 
+    public function mutasi_harian()
+    {
+        $data = $this->_prepare_common_data('Laporan Mutasi Saldo Harian (Kas/Bank/EDC/E-Wallet)', 'mutasi_harian');
+        $perusahaan_id = $data['perusahaan_id'];
+        $ids = $this->_get_ids($perusahaan_id);
+        $ids_sql = implode(',', $ids);
+
+        // Parameters
+        $start_date = $this->input->get('start_date', true) ?: ($this->input->get('tgl_awal', true) ?: date('Y-m-d'));
+        $end_date = $this->input->get('end_date', true) ?: ($this->input->get('tgl_akhir', true) ?: date('Y-m-d'));
+        $channel = $this->input->get('channel', true) ?: 'all';
+
+        // Master lists for filters
+        $data['bank_list'] = $this->db->get('tbl_rekening')->result();
+        $data['edc_list'] = $this->db->get('tbl_mesin_edc')->result();
+        $data['ewallet_list'] = $this->db->get('tbl_ewallet')->result();
+
+        // Saldo Awal Fisik Kas Tunai (sebelum $start_date)
+        $saldo_awal_trx = $this->db->query("
+            SELECT SUM(pd.jumlah) as total 
+            FROM tbl_pembayaran_detail pd
+            JOIN tbl_pembayaran p ON pd.pembayaran_id = p.pembayaran_id
+            WHERE DATE(pd.created_at) < ? AND pd.metode = 'tunai' AND p.perusahaan_id IN ($ids_sql)
+        ", [$start_date])->row()->total ?? 0;
+
+        $saldo_awal_pengeluaran = $this->db->query("
+            SELECT SUM(pengeluaran_jumlah) as total 
+            FROM tbl_pengeluaran 
+            WHERE pengeluaran_tgl < ? AND (metode_bayar = 'tunai' OR (metode_bayar IS NULL AND (rekening_id IS NULL OR rekening_id = 0))) AND perusahaan_id IN ($ids_sql)
+        ", [$start_date])->row()->total ?? 0;
+
+        $saldo_awal_cash = (float)$saldo_awal_trx - (float)$saldo_awal_pengeluaran;
+
+        // 1. Inflow / Penerimaan dari tbl_pembayaran_detail
+        $where_channel_in = "";
+        if ($channel == 'tunai') {
+            $where_channel_in = " AND pd.metode = 'tunai'";
+        } elseif ($channel == 'transfer') {
+            $where_channel_in = " AND pd.metode = 'transfer'";
+        } elseif ($channel == 'debit' || $channel == 'edc') {
+            $where_channel_in = " AND pd.metode IN ('debit', 'kartu_kredit')";
+        } elseif ($channel == 'ewallet') {
+            $where_channel_in = " AND pd.metode = 'ewallet'";
+        }
+
+        $q_in = $this->db->query("
+            SELECT 
+                DATE(pd.created_at) as tanggal,
+                TIME(pd.created_at) as jam,
+                pd.metode,
+                CASE 
+                    WHEN pd.metode = 'tunai' THEN 'Kas Tunai'
+                    WHEN pd.metode = 'transfer' THEN CONCAT('Bank: ', COALESCE(r.nama_bank, 'Transfer'))
+                    WHEN pd.metode IN ('debit', 'kartu_kredit') THEN CONCAT('EDC: ', COALESCE(me.edc_nama, 'Mesin EDC'))
+                    WHEN pd.metode = 'ewallet' THEN CONCAT('E-Wallet: ', COALESCE(ew.ewallet_nama, 'Digital'))
+                    ELSE UPPER(pd.metode)
+                END as channel_nama,
+                COALESCE(r.nama_bank, '') as nama_bank,
+                COALESCE(r.no_rekening, '') as no_rekening,
+                COALESCE(me.edc_nama, '') as nama_edc,
+                COALESCE(ew.ewallet_nama, '') as nama_ewallet,
+                p.nospk,
+                COALESCE(k.konsumen_nama, '-') as pihak_terkait,
+                pd.jumlah as masuk,
+                0 as keluar,
+                CASE 
+                    WHEN DATE(pd.created_at) > p.tgl_bayar THEN 'Pelunasan Piutang' 
+                    ELSE 'Pembayaran SPK/DP' 
+                END as keterangan,
+                COALESCE(u.username, '-') as kasir,
+                'masuk' as arus
+            FROM tbl_pembayaran_detail pd
+            JOIN tbl_pembayaran p ON pd.pembayaran_id = p.pembayaran_id
+            LEFT JOIN tbl_konsumen k ON p.konsumen_id = k.konsumen_id
+            LEFT JOIN users u ON p.kasir_id = u.user_id
+            LEFT JOIN tbl_rekening r ON pd.bank_id = r.id
+            LEFT JOIN tbl_mesin_edc me ON pd.edc_id = me.edc_id
+            LEFT JOIN tbl_ewallet ew ON pd.ewallet_id = ew.id
+            WHERE (DATE(pd.created_at) BETWEEN ? AND ?)
+              AND p.perusahaan_id IN ($ids_sql)
+              $where_channel_in
+        ", [$start_date, $end_date])->result_array();
+
+        // 2. Outflow / Pengeluaran dari tbl_pengeluaran
+        $where_channel_out = "";
+        if ($channel == 'tunai') {
+            $where_channel_out = " AND (pg.metode_bayar = 'tunai' OR (pg.metode_bayar IS NULL AND (pg.rekening_id IS NULL OR pg.rekening_id = 0)))";
+        } elseif ($channel == 'transfer') {
+            $where_channel_out = " AND pg.metode_bayar = 'transfer'";
+        } elseif ($channel == 'debit' || $channel == 'edc') {
+            $where_channel_out = " AND pg.metode_bayar IN ('debit', 'kartu_kredit')";
+        } elseif ($channel == 'ewallet') {
+            $where_channel_out = " AND pg.metode_bayar = 'ewallet'";
+        }
+
+        $q_out = $this->db->query("
+            SELECT 
+                pg.pengeluaran_tgl as tanggal,
+                COALESCE(TIME(pg.created_at), '00:00:00') as jam,
+                COALESCE(pg.metode_bayar, 'tunai') as metode,
+                CASE 
+                    WHEN pg.metode_bayar = 'transfer' THEN CONCAT('Bank: ', COALESCE(r.nama_bank, 'Transfer'))
+                    WHEN pg.metode_bayar IN ('debit', 'kartu_kredit') THEN CONCAT('EDC: ', COALESCE(me.edc_nama, 'Mesin EDC'))
+                    WHEN pg.metode_bayar = 'ewallet' THEN CONCAT('E-Wallet: ', COALESCE(ew.ewallet_nama, 'Digital'))
+                    ELSE 'Kas Tunai'
+                END as channel_nama,
+                COALESCE(r.nama_bank, '') as nama_bank,
+                COALESCE(r.no_rekening, '') as no_rekening,
+                COALESCE(me.edc_nama, '') as nama_edc,
+                COALESCE(ew.ewallet_nama, '') as nama_ewallet,
+                '-' as nospk,
+                COALESCE(pg.pengeluaran_penerima, '-') as pihak_terkait,
+                0 as masuk,
+                pg.pengeluaran_jumlah as keluar,
+                COALESCE(pg.pengeluaran_detail, 'Pengeluaran Operasional') as keterangan,
+                COALESCE(u.username, '-') as kasir,
+                'keluar' as arus
+            FROM tbl_pengeluaran pg
+            LEFT JOIN tbl_rekening r ON pg.rekening_id = r.id
+            LEFT JOIN tbl_mesin_edc me ON pg.edc_id = me.edc_id
+            LEFT JOIN tbl_ewallet ew ON pg.ewallet_id = ew.id
+            LEFT JOIN users u ON pg.user_id = u.user_id
+            WHERE (pg.pengeluaran_tgl BETWEEN ? AND ?)
+              AND pg.perusahaan_id IN ($ids_sql)
+              $where_channel_out
+        ", [$start_date, $end_date])->result_array();
+
+        // Gabungkan
+        $mutasi = array_merge($q_in, $q_out);
+
+        // Sort descending by Date & Jam (terbaru di atas)
+        usort($mutasi, function ($a, $b) {
+            $jam_a = !empty($a['jam']) ? $a['jam'] : '00:00:00';
+            $jam_b = !empty($b['jam']) ? $b['jam'] : '00:00:00';
+            $t1 = strtotime($a['tanggal'] . ' ' . $jam_a);
+            $t2 = strtotime($b['tanggal'] . ' ' . $jam_b);
+            return $t2 - $t1;
+        });
+
+        // Totals & Per-Channel Breakdown
+        $total_masuk = 0;
+        $total_keluar = 0;
+        $channel_summary = [
+            'tunai' => ['masuk' => 0, 'keluar' => 0, 'count' => 0],
+            'transfer' => ['masuk' => 0, 'keluar' => 0, 'count' => 0],
+            'debit' => ['masuk' => 0, 'keluar' => 0, 'count' => 0],
+            'ewallet' => ['masuk' => 0, 'keluar' => 0, 'count' => 0],
+        ];
+
+        foreach ($mutasi as $m) {
+            $total_masuk += (float)$m['masuk'];
+            $total_keluar += (float)$m['keluar'];
+
+            $met = strtolower($m['metode']);
+            if ($met == 'kartu_kredit' || $met == 'edc') $met = 'debit';
+            if (!isset($channel_summary[$met])) {
+                $channel_summary[$met] = ['masuk' => 0, 'keluar' => 0, 'count' => 0];
+            }
+            $channel_summary[$met]['masuk'] += (float)$m['masuk'];
+            $channel_summary[$met]['keluar'] += (float)$m['keluar'];
+            $channel_summary[$met]['count']++;
+        }
+
+        $data['start_date'] = $start_date;
+        $data['end_date'] = $end_date;
+        $data['channel'] = $channel;
+        $data['saldo_awal_cash'] = $saldo_awal_cash;
+        $data['mutasi'] = $mutasi;
+        $data['total_masuk'] = $total_masuk;
+        $data['total_keluar'] = $total_keluar;
+        $data['net_movement'] = $total_masuk - $total_keluar;
+        $data['channel_summary'] = $channel_summary;
+
+        $this->load_admin_view('admin/laporan/keuangan/mutasi_harian', $data);
+    }
+
+    public function export_mutasi_harian()
+    {
+        $perusahaan_id = $this->input->get('perusahaan_id', true) ?: $this->session->userdata('perusahaan_id');
+        $ids = $this->_get_ids($perusahaan_id);
+        $ids_sql = implode(',', $ids);
+
+        $start_date = $this->input->get('start_date', true) ?: ($this->input->get('tgl_awal', true) ?: date('Y-m-d'));
+        $end_date = $this->input->get('end_date', true) ?: ($this->input->get('tgl_akhir', true) ?: date('Y-m-d'));
+        $channel = $this->input->get('channel', true) ?: 'all';
+
+        $where_channel_in = "";
+        if ($channel == 'tunai') $where_channel_in = " AND pd.metode = 'tunai'";
+        elseif ($channel == 'transfer') $where_channel_in = " AND pd.metode = 'transfer'";
+        elseif ($channel == 'debit' || $channel == 'edc') $where_channel_in = " AND pd.metode IN ('debit', 'kartu_kredit')";
+        elseif ($channel == 'ewallet') $where_channel_in = " AND pd.metode = 'ewallet'";
+
+        $q_in = $this->db->query("
+            SELECT 
+                DATE(pd.created_at) as tanggal,
+                TIME(pd.created_at) as jam,
+                pd.metode,
+                CASE 
+                    WHEN pd.metode = 'tunai' THEN 'Kas Tunai'
+                    WHEN pd.metode = 'transfer' THEN CONCAT('Bank: ', COALESCE(r.nama_bank, 'Transfer'))
+                    WHEN pd.metode IN ('debit', 'kartu_kredit') THEN CONCAT('EDC: ', COALESCE(me.edc_nama, 'Mesin EDC'))
+                    WHEN pd.metode = 'ewallet' THEN CONCAT('E-Wallet: ', COALESCE(ew.ewallet_nama, 'Digital'))
+                    ELSE UPPER(pd.metode)
+                END as channel_nama,
+                p.nospk,
+                COALESCE(k.konsumen_nama, '-') as pihak_terkait,
+                pd.jumlah as masuk,
+                0 as keluar,
+                CASE 
+                    WHEN DATE(pd.created_at) > p.tgl_bayar THEN 'Pelunasan Piutang' 
+                    ELSE 'Pembayaran SPK/DP' 
+                END as keterangan,
+                COALESCE(u.username, '-') as kasir
+            FROM tbl_pembayaran_detail pd
+            JOIN tbl_pembayaran p ON pd.pembayaran_id = p.pembayaran_id
+            LEFT JOIN tbl_konsumen k ON p.konsumen_id = k.konsumen_id
+            LEFT JOIN users u ON p.kasir_id = u.user_id
+            LEFT JOIN tbl_rekening r ON pd.bank_id = r.id
+            LEFT JOIN tbl_mesin_edc me ON pd.edc_id = me.edc_id
+            LEFT JOIN tbl_ewallet ew ON pd.ewallet_id = ew.id
+            WHERE (DATE(pd.created_at) BETWEEN ? AND ?)
+              AND p.perusahaan_id IN ($ids_sql)
+              $where_channel_in
+        ", [$start_date, $end_date])->result_array();
+
+        $where_channel_out = "";
+        if ($channel == 'tunai') $where_channel_out = " AND (pg.metode_bayar = 'tunai' OR (pg.metode_bayar IS NULL AND (pg.rekening_id IS NULL OR pg.rekening_id = 0)))";
+        elseif ($channel == 'transfer') $where_channel_out = " AND pg.metode_bayar = 'transfer'";
+        elseif ($channel == 'debit' || $channel == 'edc') $where_channel_out = " AND pg.metode_bayar IN ('debit', 'kartu_kredit')";
+        elseif ($channel == 'ewallet') $where_channel_out = " AND pg.metode_bayar = 'ewallet'";
+
+        $q_out = $this->db->query("
+            SELECT 
+                pg.pengeluaran_tgl as tanggal,
+                COALESCE(TIME(pg.created_at), '00:00:00') as jam,
+                COALESCE(pg.metode_bayar, 'tunai') as metode,
+                CASE 
+                    WHEN pg.metode_bayar = 'transfer' THEN CONCAT('Bank: ', COALESCE(r.nama_bank, 'Transfer'))
+                    WHEN pg.metode_bayar IN ('debit', 'kartu_kredit') THEN CONCAT('EDC: ', COALESCE(me.edc_nama, 'Mesin EDC'))
+                    WHEN pg.metode_bayar = 'ewallet' THEN CONCAT('E-Wallet: ', COALESCE(ew.ewallet_nama, 'Digital'))
+                    ELSE 'Kas Tunai'
+                END as channel_nama,
+                '-' as nospk,
+                COALESCE(pg.pengeluaran_penerima, '-') as pihak_terkait,
+                0 as masuk,
+                pg.pengeluaran_jumlah as keluar,
+                COALESCE(pg.pengeluaran_detail, 'Pengeluaran Operasional') as keterangan,
+                COALESCE(u.username, '-') as kasir
+            FROM tbl_pengeluaran pg
+            LEFT JOIN tbl_rekening r ON pg.rekening_id = r.id
+            LEFT JOIN tbl_mesin_edc me ON pg.edc_id = me.edc_id
+            LEFT JOIN tbl_ewallet ew ON pg.ewallet_id = ew.id
+            LEFT JOIN users u ON pg.user_id = u.user_id
+            WHERE (pg.pengeluaran_tgl BETWEEN ? AND ?)
+              AND pg.perusahaan_id IN ($ids_sql)
+              $where_channel_out
+        ", [$start_date, $end_date])->result_array();
+
+        $mutasi = array_merge($q_in, $q_out);
+        usort($mutasi, function ($a, $b) {
+            $jam_a = !empty($a['jam']) ? $a['jam'] : '00:00:00';
+            $jam_b = !empty($b['jam']) ? $b['jam'] : '00:00:00';
+            return strtotime($b['tanggal'] . ' ' . $jam_b) - strtotime($a['tanggal'] . ' ' . $jam_a);
+        });
+
+        // Load PHPExcel
+        require_once APPPATH . 'third_party/PHPExcel/PHPExcel.php';
+        $objPHPExcel = new PHPExcel();
+        $objPHPExcel->setActiveSheetIndex(0);
+        $sheet = $objPHPExcel->getActiveSheet();
+
+        $p_info = $this->db->get_where('tbl_perusahaan', ['id_perusahaan' => $perusahaan_id])->row();
+        $nama_pt = $p_info ? $p_info->nama_perusahaan : 'TGM ERP';
+
+        $sheet->setCellValue('A1', 'LAPORAN MUTASI SALDO HARIAN - ' . strtoupper($nama_pt));
+        $sheet->setCellValue('A2', 'PERIODE: ' . date('d/m/Y', strtotime($start_date)) . ' s/d ' . date('d/m/Y', strtotime($end_date)) . ' | CHANNEL: ' . strtoupper($channel));
+        $sheet->mergeCells('A1:I1');
+        $sheet->mergeCells('A2:I2');
+        $sheet->getStyle('A1:A2')->getFont()->setBold(true)->setSize(12);
+
+        $headers = ['NO', 'TANGGAL', 'WAKTU', 'CHANNEL / METODE', 'PIHAK TERKAIT', 'NO SPK', 'KETERANGAN', 'MASUK (RP)', 'KELUAR (RP)', 'PETUGAS'];
+        $cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+        foreach ($headers as $idx => $h) {
+            $sheet->setCellValue($cols[$idx] . '4', $h);
+        }
+        $sheet->getStyle('A4:J4')->getFont()->setBold(true);
+        $sheet->getStyle('A4:J4')->getFill()->setFillType(PHPExcel_Style_Fill::FILL_SOLID)->getStartColor()->setRGB('1E293B');
+        $sheet->getStyle('A4:J4')->getFont()->getColor()->setRGB('FFFFFF');
+
+        $row = 5;
+        $no = 1;
+        $tot_m = 0;
+        $tot_k = 0;
+        foreach ($mutasi as $m) {
+            $sheet->setCellValue('A' . $row, $no++);
+            $sheet->setCellValue('B' . $row, date('d/m/Y', strtotime($m['tanggal'])));
+            $sheet->setCellValue('C' . $row, $m['jam']);
+            $sheet->setCellValue('D' . $row, $m['channel_nama']);
+            $sheet->setCellValue('E' . $row, $m['pihak_terkait']);
+            $sheet->setCellValue('F' . $row, $m['nospk']);
+            $sheet->setCellValue('G' . $row, $m['keterangan']);
+            $sheet->setCellValue('H' . $row, $m['masuk']);
+            $sheet->setCellValue('I' . $row, $m['keluar']);
+            $sheet->setCellValue('J' . $row, $m['kasir']);
+            $tot_m += (float)$m['masuk'];
+            $tot_k += (float)$m['keluar'];
+            $row++;
+        }
+
+        // Total row
+        $sheet->setCellValue('A' . $row, 'TOTAL');
+        $sheet->mergeCells('A' . $row . ':G' . $row);
+        $sheet->setCellValue('H' . $row, $tot_m);
+        $sheet->setCellValue('I' . $row, $tot_k);
+        $sheet->getStyle('A' . $row . ':J' . $row)->getFont()->setBold(true);
+        $sheet->getStyle('A' . $row . ':J' . $row)->getFill()->setFillType(PHPExcel_Style_Fill::FILL_SOLID)->getStartColor()->setRGB('E2E8F0');
+
+        foreach ($cols as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        $filename = 'Mutasi_Saldo_Harian_' . date('Ymd_His') . '.xlsx';
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment;filename="' . $filename . '"');
+        header('Cache-Control: max-age=0');
+        $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel2007');
+        $objWriter->save('php://output');
+        exit;
+    }
+
     public function cetak_pemasukan_harian()
     {
         $data = $this->_prepare_common_data('Cetak Laporan Keuangan Harian');

@@ -41,10 +41,6 @@
                     onclick="openNestingCompletionModal()" id="btnSelesaiStok">
                     <i class="fas fa-check-double me-2"></i> Selesai & Potong Stok
                 </button>
-                <button type="button" class="btn btn-info rounded-pill px-4 fw-900 shadow-sm text-white d-none"
-                    onclick="batchMoveToPB()" id="btnKirimPB">
-                    <i class="fas fa-truck-loading me-2"></i> Kirim ke PB Terpilih
-                </button>
                 <button type="button" class="btn btn-primary rounded-pill px-4 fw-900 shadow-sm d-none"
                     onclick="openFinishingCompletionModal()" id="btnSelesaiFinishing"
                     style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none;">

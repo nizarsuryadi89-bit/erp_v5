@@ -115,7 +115,7 @@
                             <textarea name="product_deskripsi" class="form-control" rows="4" 
                                       placeholder="Masukkan deskripsi lengkap product..." 
                                       style="white-space: pre-wrap; font-family: inherit;">
-                                <?= htmlspecialchars($getproduct['product_deskripsi']) ?>
+                                <?= htmlspecialchars($getproduct['product_deskripsi'] ?? '') ?>
                             </textarea>
                             <div class="form-text">Deskripsi detail tentang product (spesifikasi, kegunaan, dll)</div>
                         </div>

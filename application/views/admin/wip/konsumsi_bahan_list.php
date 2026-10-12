@@ -44,6 +44,9 @@
                 <i class="fas fa-boxes"></i> Rekap Konsumsi Bahan 
             </h5>
             <div class="d-flex align-items-center gap-2">
+                <a href="<?= site_url('wip/live_bahan') ?>" class="btn btn-sm btn-success rounded-pill px-3 fw-bold shadow-sm">
+                    <i class="fas fa-broadcast-tower me-1"></i> Live Material
+                </a>
                 <form method="GET" action="<?= site_url('wip/konsumsi_bahan') ?>" class="d-flex align-items-center me-2">
                     <input type="date" name="start_date" class="form-control form-control-sm shadow-sm" style="width: 130px; border-radius: 20px 0 0 20px; border-right: none;" value="<?= htmlspecialchars($start_date) ?>" required>
                     <span class="input-group-text bg-white border-start-0 border-end-0 py-1" style="font-size: 0.8rem;">s/d</span>

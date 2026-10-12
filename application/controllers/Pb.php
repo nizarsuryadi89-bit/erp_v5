@@ -8,6 +8,7 @@ class Pb extends MY_Controller
         parent::__construct();
         $this->load->model('Produksi_model');
         $this->load->model('M_gudang');
+        $this->load->library('Production_workflow');
     }
 
     public function index()
@@ -200,7 +201,7 @@ class Pb extends MY_Controller
         if (!empty($nospks) && is_array($nospks)) {
             $expanded = $this->db->select('produksi_id')
                 ->where_in('nospk', $nospks)
-                ->where_in('status_produksi', ['on_pb', 'done'])
+                ->where(Production_workflow::pb_ready_sql('tbl_produksi'), null, false)
                 ->get('tbl_produksi')->result();
             foreach ($expanded as $row) {
                 if (!in_array($row->produksi_id, $ids)) {
